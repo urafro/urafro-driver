@@ -16,12 +16,16 @@ token storage (`src/lib/session.ts`), a session-gated root, the **OTP login flow
 `method: 'manual'` for now). **2G offline resilience is done** — lifecycle actions
 that fail transiently are persisted (`src/lib/queue.ts`) and a background flush
 retries them until they land (retry on network/5xx, drop on 4xx), with a
-"waiting to sync" indicator. Navigation is still a session gate (no router yet).
-**Next (Phase 6.4): background GPS on low-end Android — the remaining hard part**
-(needs a *development build* to verify; Expo Go can't run background-location
-tasks); then PoD capture UX (photo / at-door OTP) and jest-expo component tests.
-**Unit tests:** vitest covers the pure logic (`toE164`, formatters, the queue
-retry policy); component/screen tests still TODO. My background is as an amateur
+"waiting to sync" indicator. **Background GPS is built** (`src/lib/background-location.ts`
+— an expo-task-manager headless task streams fixes foreground + background; starts
+on go-online, stops on go-offline; foreground poll defers to it when active) —
+⚠️ **code-complete but UNVERIFIED on-device:** background-location tasks don't run
+in Expo Go, so it needs a **development build** to confirm the permission grant,
+Android foreground-service, and headless token read. Navigation is still a session
+gate (no router yet). **Next: verify background GPS on a dev build; then PoD capture
+UX (photo / at-door OTP) and jest-expo component tests.**
+**Unit tests:** vitest covers the pure logic (`toE164`, formatters, queue retry
+policy, api client, link builders); component/screen tests still TODO. My background is as an amateur
 business owner — weight your input toward the gaps I can't cover myself.
 
 Operate across business / product / engineering, and say which hat you're wearing

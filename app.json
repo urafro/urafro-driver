@@ -26,7 +26,11 @@
       [
         "expo-location",
         {
-          "locationWhenInUsePermission": "urAfro Driver uses your location to show nearby delivery offers and share your position during a delivery."
+          "locationWhenInUsePermission": "urAfro Driver uses your location to show nearby delivery offers and share your position during a delivery.",
+          "locationAlwaysAndWhenInUsePermission": "urAfro Driver shares your location while you're on shift — even in the background — so you can keep receiving and running deliveries.",
+          "isAndroidForegroundServiceEnabled": true,
+          "isAndroidBackgroundLocationEnabled": true,
+          "isIosBackgroundLocationEnabled": true
         }
       ]
     ]
