@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import {
   claimDelivery,
+  getDelivery,
   goOffline,
   goOnline,
   listOffers,
@@ -14,16 +15,25 @@ import {
   type Offer,
 } from '../lib/api';
 import { getCurrentLocation } from '../lib/location';
+import {
+  enqueueAction,
+  flushActions,
+  loadQueue,
+  saveQueue,
+  shouldRetry,
+  type QueuedAction,
+} from '../lib/queue';
 import { useSession } from '../state/session';
 import OffersList from '../components/OffersList';
 import ActiveJob, { type LifecycleAction } from '../components/ActiveJob';
 
 const POLL_MS = 8000;
+const FLUSH_MS = 12000;
 
-// The shift controller. Three states the driver moves through:
-//   offline  → go online (needs location) → online (poll offers) → claim → on a job.
-// Location + offers poll on a foreground interval while online and not on a job
-// (background location is a later phase). All API calls degrade softly on error.
+// The shift controller: offline → go online (needs location) → online (poll offers)
+// → claim → on a job. Lifecycle actions are 2G-resilient: a transient failure
+// queues the action and a background flush retries it until it lands (and then
+// reconciles the on-screen job). Location pings + offer polls degrade softly.
 export default function HomeScreen() {
   const { session, signOut } = useSession();
   const token = session?.token ?? '';
@@ -34,7 +44,12 @@ export default function HomeScreen() {
   const [busy, setBusy] = useState(false);
   const [locating, setLocating] = useState(false);
   const [claimingId, setClaimingId] = useState<string | null>(null);
+  const [pending, setPending] = useState(0);
   const [error, setError] = useState<string | null>(null);
+
+  // Latest job, readable from inside the (token-scoped) flush interval.
+  const jobRef = useRef<Delivery | null>(null);
+  jobRef.current = job;
 
   // While online and free, refresh location + offers on an interval.
   useEffect(() => {
@@ -57,6 +72,52 @@ export default function HomeScreen() {
       clearInterval(interval);
     };
   }, [online, job, token]);
+
+  const performAction = useCallback(
+    async (a: QueuedAction): Promise<void> => {
+      if (a.action === 'picked_up') await markPickedUp(token, a.deliveryId);
+      else if (a.action === 'in_transit') await markInTransit(token, a.deliveryId);
+      else if (a.action === 'delivered') await markDelivered(token, a.deliveryId, { method: 'manual' });
+      else await markFailed(token, a.deliveryId);
+    },
+    [token],
+  );
+
+  // Drain the pending-action queue on an interval; reconcile the active job when
+  // one of its actions finally syncs.
+  useEffect(() => {
+    if (!token) return;
+    let cancelled = false;
+    async function flush() {
+      const queue = await loadQueue();
+      if (queue.length === 0) {
+        if (!cancelled) setPending(0);
+        return;
+      }
+      const remaining = await flushActions(queue, performAction);
+      await saveQueue(remaining);
+      if (cancelled) return;
+      setPending(remaining.length);
+
+      const id = jobRef.current?.id;
+      const synced =
+        id != null && queue.some((a) => a.deliveryId === id) && !remaining.some((a) => a.deliveryId === id);
+      if (synced && id) {
+        try {
+          const fresh = await getDelivery(token, id);
+          if (!cancelled) setJob(fresh.status === 'delivered' || fresh.status === 'failed' ? null : fresh);
+        } catch {
+          if (!cancelled) setJob(null); // no longer ours
+        }
+      }
+    }
+    void flush();
+    const interval = setInterval(() => void flush(), FLUSH_MS);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, [token, performAction]);
 
   const goOnlineNow = useCallback(async () => {
     setBusy(true);
@@ -113,6 +174,7 @@ export default function HomeScreen() {
     async (to: LifecycleAction) => {
       const id = job?.id;
       if (!id) return;
+      const queued: QueuedAction = { id: `${id}:${to}`, deliveryId: id, action: to, createdAt: Date.now() };
       setBusy(true);
       setError(null);
       try {
@@ -121,12 +183,15 @@ export default function HomeScreen() {
         else if (to === 'in_transit') updated = await markInTransit(token, id);
         else if (to === 'delivered') updated = await markDelivered(token, id, { method: 'manual' });
         else updated = await markFailed(token, id);
-
-        // Delivered / failed end the job — the server frees the driver, so drop
-        // back to browsing offers.
         setJob(to === 'delivered' || to === 'failed' ? null : updated);
-      } catch {
-        setError('Could not update the job — try again.');
+      } catch (e) {
+        if (shouldRetry(e)) {
+          const q = await enqueueAction(queued);
+          setPending(q.length);
+          setError('No signal — saved. It’ll sync automatically when you’re back online.');
+        } else {
+          setError('Could not update the job — try again.');
+        }
       } finally {
         setBusy(false);
       }
@@ -162,6 +227,11 @@ export default function HomeScreen() {
         </>
       )}
 
+      {pending > 0 ? (
+        <Text style={styles.syncing}>
+          ⏳ {pending} action{pending > 1 ? 's' : ''} waiting to sync…
+        </Text>
+      ) : null}
       {error ? <Text style={styles.error}>{error}</Text> : null}
 
       <View style={styles.footer}>
@@ -184,6 +254,7 @@ const styles = StyleSheet.create({
   offBtn: { backgroundColor: '#f59e0b' },
   busy: { opacity: 0.6 },
   toggleText: { color: '#0f172a', fontSize: 18, fontWeight: '700' },
+  syncing: { color: '#fbbf24', fontSize: 13, marginTop: 16 },
   error: { color: '#fca5a5', fontSize: 14, marginTop: 16 },
   footer: {
     marginTop: 'auto',

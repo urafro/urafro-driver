@@ -13,11 +13,15 @@ token storage (`src/lib/session.ts`), a session-gated root, the **OTP login flow
 — online/offline + a foreground location/offer poll, the offers list
 (`src/components/OffersList.tsx`), claim, and the **active-job lifecycle**
 (`src/components/ActiveJob.tsx`: picked_up → in_transit → delivered + failed; PoD is
-`method: 'manual'` for now). Navigation is still a session gate (no router yet).
-**Next (Phase 6.4): background GPS on low-end Android (the hard part) + 2G offline
-resilience** (action queue/retry); then PoD capture UX (photo/at-door OTP).
-**No unit tests yet** (RN test infra is a deferred follow-up; `toE164` + the
-format helpers are the first things to cover). My background is as an amateur
+`method: 'manual'` for now). **2G offline resilience is done** — lifecycle actions
+that fail transiently are persisted (`src/lib/queue.ts`) and a background flush
+retries them until they land (retry on network/5xx, drop on 4xx), with a
+"waiting to sync" indicator. Navigation is still a session gate (no router yet).
+**Next (Phase 6.4): background GPS on low-end Android — the remaining hard part**
+(needs a *development build* to verify; Expo Go can't run background-location
+tasks); then PoD capture UX (photo / at-door OTP) and jest-expo component tests.
+**Unit tests:** vitest covers the pure logic (`toE164`, formatters, the queue
+retry policy); component/screen tests still TODO. My background is as an amateur
 business owner — weight your input toward the gaps I can't cover myself.
 
 Operate across business / product / engineering, and say which hat you're wearing
