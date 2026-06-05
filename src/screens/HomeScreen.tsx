@@ -15,6 +15,7 @@ import {
   type Offer,
 } from '../lib/api';
 import { getCurrentLocation } from '../lib/location';
+import { startBackgroundLocation, stopBackgroundLocation } from '../lib/background-location';
 import {
   enqueueAction,
   flushActions,
@@ -43,6 +44,7 @@ export default function HomeScreen() {
   const [job, setJob] = useState<DriverDelivery | null>(null);
   const [busy, setBusy] = useState(false);
   const [locating, setLocating] = useState(false);
+  const [bgActive, setBgActive] = useState(false);
   const [claimingId, setClaimingId] = useState<string | null>(null);
   const [pending, setPending] = useState(0);
   const [error, setError] = useState<string | null>(null);
@@ -57,8 +59,12 @@ export default function HomeScreen() {
     let cancelled = false;
     async function tick() {
       try {
-        const loc = await getCurrentLocation();
-        if (loc && !cancelled) await updateLocation(token, loc.lat, loc.lng);
+        // When the background stream is running it reports location; only the
+        // foreground-only fallback (bg permission denied) pings location here.
+        if (!bgActive) {
+          const loc = await getCurrentLocation();
+          if (loc && !cancelled) await updateLocation(token, loc.lat, loc.lng);
+        }
         const { data } = await listOffers(token);
         if (!cancelled) setOffers(data);
       } catch {
@@ -71,7 +77,7 @@ export default function HomeScreen() {
       cancelled = true;
       clearInterval(interval);
     };
-  }, [online, job, token]);
+  }, [online, job, token, bgActive]);
 
   const performAction = useCallback(
     async (a: QueuedAction): Promise<void> => {
@@ -131,6 +137,9 @@ export default function HomeScreen() {
       }
       const state = await goOnline(token, loc);
       setOnline(state.status !== 'offline');
+      // Best-effort background streaming; falls back to the foreground poll if the
+      // "allow all the time" permission is denied.
+      setBgActive(await startBackgroundLocation());
     } catch {
       setError('Could not go online — try again.');
     } finally {
@@ -144,7 +153,9 @@ export default function HomeScreen() {
     setError(null);
     try {
       await goOffline(token);
+      await stopBackgroundLocation();
       setOnline(false);
+      setBgActive(false);
       setOffers([]);
     } catch {
       setError('Could not go offline — try again.');
@@ -227,6 +238,9 @@ export default function HomeScreen() {
         </>
       )}
 
+      {online && bgActive ? (
+        <Text style={styles.bg}>📍  Sharing your location in the background</Text>
+      ) : null}
       {pending > 0 ? (
         <Text style={styles.syncing}>
           ⏳ {pending} action{pending > 1 ? 's' : ''} waiting to sync…
@@ -254,6 +268,7 @@ const styles = StyleSheet.create({
   offBtn: { backgroundColor: '#f59e0b' },
   busy: { opacity: 0.6 },
   toggleText: { color: '#0f172a', fontSize: 18, fontWeight: '700' },
+  bg: { color: '#86efac', fontSize: 13, marginTop: 16 },
   syncing: { color: '#fbbf24', fontSize: 13, marginTop: 16 },
   error: { color: '#fca5a5', fontSize: 14, marginTop: 16 },
   footer: {
