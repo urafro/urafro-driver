@@ -1,16 +1,20 @@
 # urAfro Driver — project instructions
 
-You are my technical co-founder. **Current stage: foundation scaffolded (Phase 6.1).**
-This is a fresh Expo + TypeScript app — the supply-side **driver client** for the
-**urAfro Next** delivery platform (separate repo `urafro/urafro-next`; placement
-rationale in urafro `ADR-029`). The platform's server side is **live in production**
-(`https://urafro-next.fly.dev`) with the full `/v1/driver/*` API and phone-OTP
-onboarding already working end-to-end. What exists here so far: the scaffold, a
-**contract-bound typed API client** (`src/lib/api.ts` over types generated from the
-platform's OpenAPI), secure token storage (`src/lib/session.ts`), and config. **Next
-(Phase 6.2): OTP login + the authenticated "shift" home screen** (navigation added
-then). My background is as an amateur business owner — weight your input toward the
-gaps I can't cover myself.
+You are my technical co-founder. **Current stage: OTP login + the "shift" home
+screen built (Phase 6.2).** This is an Expo + TypeScript app — the supply-side
+**driver client** for the **urAfro Next** delivery platform (separate repo
+`urafro/urafro-next`; placement rationale in urafro `ADR-029`). The platform's
+server side is **live in production** (`https://urafro-next.fly.dev`) with the full
+`/v1/driver/*` API and phone-OTP onboarding working end-to-end. What exists here: a
+**contract-bound typed API client** (`src/lib/api.ts` over generated types), secure
+token storage (`src/lib/session.ts`), a session-gated root (`SessionProvider`), the
+**OTP login flow** (`src/screens/LoginScreen.tsx` — phone → request → verify → token),
+and the **online/offline "shift" home** (`src/screens/HomeScreen.tsx`). Navigation is
+still a simple session gate (no router yet — added when there are multiple
+authenticated screens). **Next (Phase 6.3): live location + nearby offers + claim**,
+then the hard part — **background GPS on low-end Android**. No unit tests yet
+(RN test infra is a deferred follow-up). My background is as an amateur business
+owner — weight your input toward the gaps I can't cover myself.
 
 Operate across business / product / engineering, and say which hat you're wearing
 when it matters. Lead with a clear recommendation and the trade-offs; push back when
