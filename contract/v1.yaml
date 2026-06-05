@@ -347,7 +347,7 @@ paths:
           description: The delivery — only if assigned to this driver.
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/Delivery' }
+              schema: { $ref: '#/components/schemas/DriverDelivery' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '404': { $ref: '#/components/responses/NotFound' }
 
@@ -369,7 +369,7 @@ paths:
           description: Claimed — now `assigned` to this driver.
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/Delivery' }
+              schema: { $ref: '#/components/schemas/DriverDelivery' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '404': { $ref: '#/components/responses/NotFound' }
         '409': { $ref: '#/components/responses/Conflict' }
@@ -391,7 +391,7 @@ paths:
           description: Now `picked_up`.
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/Delivery' }
+              schema: { $ref: '#/components/schemas/DriverDelivery' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
@@ -414,7 +414,7 @@ paths:
           description: Now `in_transit`.
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/Delivery' }
+              schema: { $ref: '#/components/schemas/DriverDelivery' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
@@ -445,7 +445,7 @@ paths:
           description: Now `delivered`.
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/Delivery' }
+              schema: { $ref: '#/components/schemas/DriverDelivery' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
@@ -468,7 +468,7 @@ paths:
           description: Now `failed`; the driver is freed.
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/Delivery' }
+              schema: { $ref: '#/components/schemas/DriverDelivery' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
@@ -654,6 +654,19 @@ components:
               type: string
               format: date-time
               description: When this offer lapses; claim before then or it's withdrawn.
+
+    DriverDelivery:
+      description: >-
+        A delivery as seen by its **assigned driver** — the public Delivery plus the
+        contacts needed to coordinate the run. Returned only on the driver's own
+        endpoints after claiming; contacts never appear in tenant, offer, or webhook
+        payloads.
+      allOf:
+        - $ref: '#/components/schemas/Delivery'
+        - type: object
+          properties:
+            pickup_contact: { $ref: '#/components/schemas/Contact' }
+            dropoff_contact: { $ref: '#/components/schemas/Contact' }
 
     ProofOfDelivery:
       type: object

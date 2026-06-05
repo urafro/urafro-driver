@@ -1,6 +1,7 @@
-import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
-import type { Delivery } from '../lib/api';
+import { ActivityIndicator, Linking, Pressable, StyleSheet, Text, View } from 'react-native';
+import type { DriverDelivery } from '../lib/api';
 import { money, placeLabel } from '../lib/format';
+import { mapsUrl, telUrl } from '../lib/links';
 
 export type LifecycleAction = 'picked_up' | 'in_transit' | 'delivered' | 'failed';
 
@@ -25,28 +26,63 @@ const STATUS_LABEL: Record<string, string> = {
   failed: 'Failed',
 };
 
-// The driver's current job: where to go, and the next step(s) in the delivery.
+// The driver's current job: who/where to head to next (with one-tap Navigate +
+// Call), the other stop for context, and the next lifecycle step(s).
 export default function ActiveJob({
   job,
   onAction,
   busy,
 }: {
-  job: Delivery;
+  job: DriverDelivery;
   onAction: (to: LifecycleAction) => void;
   busy: boolean;
 }) {
   const status = job.status ?? 'assigned';
   const actions = ACTIONS[status] ?? [];
 
+  // Before pickup the driver heads to the merchant; after, to the customer.
+  const goingToPickup = status === 'assigned';
+  const target = goingToPickup
+    ? { label: 'merchant', geo: job.pickup, contact: job.pickup_contact }
+    : { label: 'customer', geo: job.dropoff, contact: job.dropoff_contact };
+
+  const navigate = () => {
+    if (target.geo?.lat != null && target.geo?.lng != null) {
+      void Linking.openURL(mapsUrl(target.geo.lat, target.geo.lng));
+    }
+  };
+  const call = () => {
+    if (target.contact?.phone) void Linking.openURL(telUrl(target.contact.phone));
+  };
+
   return (
     <View style={styles.container}>
       <Text style={styles.badge}>{STATUS_LABEL[status] ?? status}</Text>
 
-      <Text style={styles.heading}>Deliver to</Text>
-      <Text style={styles.place}>{placeLabel(job.dropoff)}</Text>
+      <Text style={styles.heading}>Head to the {target.label}</Text>
+      <Text style={styles.place}>{placeLabel(target.geo)}</Text>
+      {target.contact?.name ? (
+        <Text style={styles.contact}>
+          {target.contact.name}
+          {target.contact.phone ? ` · ${target.contact.phone}` : ''}
+        </Text>
+      ) : null}
 
-      <Text style={styles.heading}>Pickup</Text>
-      <Text style={styles.place}>{placeLabel(job.pickup)}</Text>
+      <View style={styles.coord}>
+        {target.geo?.lat != null ? (
+          <Pressable style={styles.coordBtn} onPress={navigate}>
+            <Text style={styles.coordText}>🧭  Navigate</Text>
+          </Pressable>
+        ) : null}
+        {target.contact?.phone ? (
+          <Pressable style={styles.coordBtn} onPress={call}>
+            <Text style={styles.coordText}>📞  Call {target.label}</Text>
+          </Pressable>
+        ) : null}
+      </View>
+
+      <Text style={styles.heading2}>{goingToPickup ? 'Then deliver to' : 'Picked up from'}</Text>
+      <Text style={styles.place2}>{placeLabel(goingToPickup ? job.dropoff : job.pickup)}</Text>
 
       <View style={styles.metaRow}>
         <Text style={styles.meta}>Fee {money(job.fee_minor)}</Text>
@@ -89,7 +125,19 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   heading: { color: '#64748b', fontSize: 13, marginTop: 18, textTransform: 'uppercase' },
-  place: { color: '#fff', fontSize: 18, marginTop: 4 },
+  place: { color: '#fff', fontSize: 19, marginTop: 4 },
+  contact: { color: '#cbd5e1', fontSize: 14, marginTop: 4 },
+  coord: { flexDirection: 'row', gap: 10, marginTop: 14 },
+  coordBtn: {
+    flex: 1,
+    backgroundColor: '#334155',
+    borderRadius: 10,
+    paddingVertical: 12,
+    alignItems: 'center',
+  },
+  coordText: { color: '#fff', fontSize: 15, fontWeight: '600' },
+  heading2: { color: '#64748b', fontSize: 12, marginTop: 20, textTransform: 'uppercase' },
+  place2: { color: '#94a3b8', fontSize: 15, marginTop: 4 },
   metaRow: { flexDirection: 'row', gap: 16, marginTop: 18 },
   meta: { color: '#22d3ee', fontSize: 15, fontWeight: '600' },
   collect: { color: '#fbbf24', fontSize: 15, fontWeight: '600' },
