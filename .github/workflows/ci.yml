@@ -19,6 +19,8 @@ jobs:
         run: npm ci
       - name: Typecheck
         run: npm run typecheck
+      - name: Unit tests
+        run: npm test
       # NOTE: a "contract types in sync" check was tried here but openapi-typescript's
       # floating sub-deps make `npx` output non-reproducible across machines (and the
       # TS6 peer conflict blocks pinning it as a locked devDep). The committed types
