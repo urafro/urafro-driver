@@ -1,0 +1,26 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - name: Install (strict, lockfile-faithful)
+        run: npm ci
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Contract types are in sync with the vendored spec
+        run: |
+          npx --yes openapi-typescript@7.13.0 contract/v1.yaml -o src/types/api.gen.ts
+          git diff --exit-status src/types/api.gen.ts \
+            || (echo "::error::src/types/api.gen.ts is stale — run 'npm run gen:types' and commit" && exit 1)

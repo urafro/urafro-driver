@@ -1,0 +1,720 @@
+openapi: 3.1.0
+info:
+  title: urAfro Next API
+  version: "1.0.0-draft"
+  description: >
+    Crowdsourced last-mile delivery platform. A monetised delivery API.
+
+    STATUS: DRAFT — contract under design (ADR-001). This file is the source of
+    truth for the `/v1` surface during design; the NestJS implementation is
+    validated against it. urafro is tenant #1 and calls the exact same API as
+    any other merchant or courier org — there is no private backdoor.
+  license:
+    name: UNLICENSED (proprietary)
+
+servers:
+  - url: https://sandbox.api.example/v1
+    description: Sandbox (test tenants, no real money/drivers)
+  - url: https://api.example/v1
+    description: Production
+
+security:
+  - ApiKeyAuth: []
+
+tags:
+  - name: Deliveries
+    description: Create and track delivery jobs.
+  - name: Webhooks
+    description: Register endpoints and receive signed delivery events.
+  - name: Driver
+    description: Supply-side — drivers go online, claim offered jobs, and run the lifecycle. Authenticated with a driver bearer token (not a tenant API key).
+
+paths:
+  /deliveries:
+    post:
+      tags: [Deliveries]
+      summary: Create a delivery request
+      description: >
+        Ingests a delivery (ADR-001 §4 step 1). Idempotent via `Idempotency-Key`.
+        Returns 202 with the created delivery in `pending`; matching happens
+        asynchronously and progress is delivered via webhooks.
+      operationId: createDelivery
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/DeliveryRequest' }
+      responses:
+        '202':
+          description: Accepted — delivery created in `pending`.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Delivery' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+    get:
+      tags: [Deliveries]
+      summary: List deliveries (tenant-scoped)
+      operationId: listDeliveries
+      parameters:
+        - name: status
+          in: query
+          schema: { $ref: '#/components/schemas/DeliveryStatus' }
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 100, default: 25 }
+      responses:
+        '200':
+          description: A page of deliveries belonging to the calling tenant.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/Delivery' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /deliveries/{id}:
+    get:
+      tags: [Deliveries]
+      summary: Get a delivery by id
+      operationId: getDelivery
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: The delivery.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Delivery' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /deliveries/{id}/cancel:
+    post:
+      tags: [Deliveries]
+      summary: Cancel a delivery
+      description: Allowed while `pending`/`assigned`; rejected once `picked_up`.
+      operationId: cancelDelivery
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Cancelled.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Delivery' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /webhook-endpoints:
+    post:
+      tags: [Webhooks]
+      summary: Register a webhook endpoint
+      description: >
+        Register a URL to receive delivery.* events. The signing `secret` is
+        returned ONCE — store it; every event carries an
+        `X-Delivery-Signature: sha256=<hmac-hex>` header over the raw JSON body.
+      operationId: createWebhookEndpoint
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [url]
+              properties:
+                url: { type: string, format: uri }
+      responses:
+        '201':
+          description: Created — `secret` is shown only here.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/WebhookEndpointWithSecret' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+    get:
+      tags: [Webhooks]
+      summary: List webhook endpoints (no secrets)
+      operationId: listWebhookEndpoints
+      responses:
+        '200':
+          description: This tenant's endpoints.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/WebhookEndpoint' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /webhook-endpoints/{id}:
+    delete:
+      tags: [Webhooks]
+      summary: Delete a webhook endpoint
+      operationId: deleteWebhookEndpoint
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '204': { description: Deleted. }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  # ── Driver (supply side) ────────────────────────────────────────────────────
+  # Onboarding (request/verify OTP) is unauthenticated; everything else is
+  # authenticated with DriverBearerAuth (overrides the global ApiKeyAuth).
+  /driver/auth/request-otp:
+    post:
+      tags: [Driver]
+      summary: Request a login OTP (SMS)
+      description: >
+        Sends a 6-digit code to the phone via SMS. Unauthenticated (the driver has
+        no token yet). Always 202 with a uniform body — never reveals whether the
+        phone is known or in cooldown. Rate-limited per phone.
+      operationId: driverRequestOtp
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [phone]
+              properties:
+                phone: { type: string, description: 'E.164, e.g. +263771234567' }
+      responses:
+        '202':
+          description: If eligible, an OTP was sent.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string, example: otp_sent }
+        '400': { $ref: '#/components/responses/BadRequest' }
+
+  /driver/auth/verify-otp:
+    post:
+      tags: [Driver]
+      summary: Verify an OTP → driver bearer token
+      description: >
+        Verifies the code and returns a driver bearer token (creating the driver on
+        first login). The token then authenticates every other `/v1/driver/*` call.
+      operationId: driverVerifyOtp
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [phone, code]
+              properties:
+                phone: { type: string, description: 'E.164.' }
+                code: { type: string, description: 'The 6-digit code.' }
+      responses:
+        '200':
+          description: Verified — bearer token issued.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  token: { type: string, description: 'Driver bearer token — store securely; shown once.' }
+                  driver_id: { type: string, format: uuid }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /driver/online:
+    post:
+      tags: [Driver]
+      summary: Go online (available for offers)
+      description: >
+        Marks the authenticated driver available; optionally sets current location
+        so they're immediately eligible for nearby offers. Supply both lat and lng,
+        or neither.
+      operationId: driverGoOnline
+      security:
+        - DriverBearerAuth: []
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                lat: { type: number, format: double, minimum: -90, maximum: 90 }
+                lng: { type: number, format: double, minimum: -180, maximum: 180 }
+      responses:
+        '200':
+          description: Now available.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DriverState' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /driver/offline:
+    post:
+      tags: [Driver]
+      summary: Go offline
+      operationId: driverGoOffline
+      security:
+        - DriverBearerAuth: []
+      responses:
+        '200':
+          description: Now offline.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DriverState' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /driver/location:
+    post:
+      tags: [Driver]
+      summary: Push a live location ping
+      operationId: driverUpdateLocation
+      security:
+        - DriverBearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [lat, lng]
+              properties:
+                lat: { type: number, format: double, minimum: -90, maximum: 90 }
+                lng: { type: number, format: double, minimum: -180, maximum: 180 }
+      responses:
+        '204': { description: Recorded. }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /driver/offers:
+    get:
+      tags: [Driver]
+      summary: List the driver's live job offers
+      description: >
+        Offered, unexpired jobs whose delivery is still pending, soonest-expiring
+        first. Each item is a Delivery plus `offer_expires_at`.
+      operationId: driverListOffers
+      security:
+        - DriverBearerAuth: []
+      responses:
+        '200':
+          description: The driver's claimable offers.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/Offer' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /driver/deliveries/{id}:
+    get:
+      tags: [Driver]
+      summary: Get the driver's assigned job
+      operationId: driverGetDelivery
+      security:
+        - DriverBearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: The delivery — only if assigned to this driver.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Delivery' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /driver/deliveries/{id}/claim:
+    post:
+      tags: [Driver]
+      summary: Claim an offered job
+      description: Atomic — exactly one driver wins a contested offer; losers get 409.
+      operationId: driverClaimDelivery
+      security:
+        - DriverBearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Claimed — now `assigned` to this driver.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Delivery' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /driver/deliveries/{id}/picked_up:
+    post:
+      tags: [Driver]
+      summary: Mark the job picked up
+      operationId: driverMarkPickedUp
+      security:
+        - DriverBearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Now `picked_up`.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Delivery' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /driver/deliveries/{id}/in_transit:
+    post:
+      tags: [Driver]
+      summary: Mark the job in transit
+      operationId: driverMarkInTransit
+      security:
+        - DriverBearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Now `in_transit`.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Delivery' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /driver/deliveries/{id}/delivered:
+    post:
+      tags: [Driver]
+      summary: Mark the job delivered (+ proof of delivery)
+      description: >
+        Completes the delivery: records proof-of-delivery, accrues the driver
+        earning, meters the billable `delivery.completed`, and frees the driver.
+      operationId: driverMarkDelivered
+      security:
+        - DriverBearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ProofOfDelivery' }
+      responses:
+        '200':
+          description: Now `delivered`.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Delivery' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /driver/deliveries/{id}/failed:
+    post:
+      tags: [Driver]
+      summary: Mark the job failed
+      operationId: driverMarkFailed
+      security:
+        - DriverBearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Now `failed`; the driver is freed.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Delivery' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+# OpenAPI 3.1 webhooks — events the platform POSTs to a tenant's registered URL.
+# All are HMAC-signed (X-Delivery-Signature); tenants verify with their secret.
+webhooks:
+  deliveryEvent:
+    post:
+      summary: Delivery lifecycle event
+      operationId: onDeliveryEvent
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/WebhookEvent' }
+      responses:
+        '2XX':
+          description: Acknowledged. Non-2xx (or timeout) triggers signed retries with backoff.
+
+components:
+  securitySchemes:
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-Api-Key
+      description: Per-tenant API key (hashed + peppered at rest). Resolves the tenant + scopes.
+    DriverBearerAuth:
+      type: http
+      scheme: bearer
+      description: >
+        Driver bearer token (hashed + peppered at rest), issued at provisioning or
+        after OTP onboarding. Authenticates `/v1/driver/*`. Distinct from the
+        tenant X-Api-Key — drivers are supply, not tenants.
+
+  parameters:
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: false
+      schema: { type: string, maxLength: 128 }
+      description: Replaying the same key returns the original delivery instead of creating a duplicate.
+
+  schemas:
+    WebhookEndpoint:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        url: { type: string, format: uri }
+        created_at: { type: string, format: date-time }
+    WebhookEndpointWithSecret:
+      allOf:
+        - $ref: '#/components/schemas/WebhookEndpoint'
+        - type: object
+          properties:
+            secret:
+              type: string
+              description: Shown once at creation. Verify the X-Delivery-Signature with it.
+
+    # ── KEYSTONE (ADR-001 §2/§3) ──────────────────────────────────────────────
+    # Built for informal addressing: a GPS pin is authoritative, free text is a
+    # fallback, and `source` records how the pin was obtained. urafro (and every
+    # tenant) must produce THIS shape — see ADR-001 for the urafro punch-list.
+    GeoLocation:
+      type: object
+      required: [lat, lng, source]
+      properties:
+        lat: { type: number, format: double, minimum: -90, maximum: 90 }
+        lng: { type: number, format: double, minimum: -180, maximum: 180 }
+        source:
+          type: string
+          enum: [whatsapp_share, map_pin, text_only]
+          description: How the pin was captured. `text_only` = no reliable pin (degraded).
+        landmark:
+          type: string
+          maxLength: 280
+          description: Human directions — "blue gate opposite the borehole". Critical in informal areas.
+        address_text:
+          type: string
+          maxLength: 280
+          description: Optional free-text address (legacy / fallback).
+        shared_at:
+          type: string
+          format: date-time
+          description: When the pin was captured (staleness matters for moving customers).
+
+    Contact:
+      type: object
+      required: [name, phone]
+      properties:
+        name: { type: string, maxLength: 120 }
+        phone:
+          type: string
+          description: E.164 (e.g. +263...). Used for driver↔customer coordination.
+
+    Package:
+      type: object
+      properties:
+        description: { type: string, maxLength: 280 }
+        size:
+          type: string
+          enum: [envelope, small, medium, large]
+          default: small
+        value_minor:
+          type: integer
+          description: Declared value in minor currency units (cents). Optional.
+
+    DeliveryRequest:
+      type: object
+      required: [pickup, pickup_contact, dropoff, dropoff_contact]
+      properties:
+        external_ref:
+          type: string
+          maxLength: 120
+          description: The tenant's own order id (e.g. urafro order code) for correlation.
+        pickup: { $ref: '#/components/schemas/GeoLocation' }
+        pickup_contact: { $ref: '#/components/schemas/Contact' }
+        dropoff: { $ref: '#/components/schemas/GeoLocation' }
+        dropoff_contact: { $ref: '#/components/schemas/Contact' }
+        package: { $ref: '#/components/schemas/Package' }
+        notes: { type: string, maxLength: 500 }
+        collect_minor:
+          type: integer
+          minimum: 0
+          description: >-
+            Cash-on-delivery amount in minor units (cents) the driver collects from
+            the recipient on the merchant's behalf. Distinct from the platform
+            delivery fee (`fee_minor`). Omit for prepaid orders.
+
+    DeliveryStatus:
+      type: string
+      enum: [pending, assigned, picked_up, in_transit, delivered, failed, unassigned, cancelled]
+
+    Driver:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        phone: { type: string }
+        # A driver is either in the open crowdsourced pool or belongs to a
+        # courier-org tenant (ADR-001 §2 supply model).
+        courier_org_id: { type: [string, "null"], format: uuid }
+
+    Delivery:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        tenant_id: { type: string, format: uuid }
+        external_ref: { type: string }
+        status: { $ref: '#/components/schemas/DeliveryStatus' }
+        pickup: { $ref: '#/components/schemas/GeoLocation' }
+        dropoff: { $ref: '#/components/schemas/GeoLocation' }
+        driver:
+          oneOf:
+            - { $ref: '#/components/schemas/Driver' }
+            - { type: "null" }
+        fee_minor:
+          type: [integer, "null"]
+          description: >-
+            Platform delivery fee in minor units, quoted at creation from the
+            pickup→dropoff distance (base + per-km, clamped). The driver earns a
+            configured share of this on completion; the platform keeps the rest.
+        collect_minor:
+          type: [integer, "null"]
+          description: Cash-on-delivery amount (minor units); null = prepaid / nothing to collect.
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+
+    DriverState:
+      type: object
+      properties:
+        driver_id: { type: string, format: uuid }
+        status:
+          type: string
+          enum: [available, offline, busy]
+
+    Offer:
+      allOf:
+        - $ref: '#/components/schemas/Delivery'
+        - type: object
+          properties:
+            offer_expires_at:
+              type: string
+              format: date-time
+              description: When this offer lapses; claim before then or it's withdrawn.
+
+    ProofOfDelivery:
+      type: object
+      properties:
+        method:
+          type: string
+          enum: [photo, signature, otp, manual]
+          default: manual
+          description: How delivery was proven. Capture UX (photo / at-door OTP) is a later phase.
+        note: { type: string, maxLength: 500 }
+
+    WebhookEvent:
+      type: object
+      required: [id, type, created_at, data]
+      properties:
+        id: { type: string, format: uuid }
+        type:
+          type: string
+          enum:
+            - delivery.created
+            - delivery.assigned
+            - delivery.picked_up
+            - delivery.in_transit
+            - delivery.completed
+            - delivery.failed
+            - delivery.unassigned
+            - delivery.cancelled
+        created_at: { type: string, format: date-time }
+        data:
+          type: object
+          properties:
+            delivery: { $ref: '#/components/schemas/Delivery' }
+
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code: { type: string }
+            message: { type: string }
+            details: { type: object, additionalProperties: true }
+
+  responses:
+    BadRequest:
+      description: Malformed request.
+      content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+    Unauthorized:
+      description: Missing/invalid API key.
+      content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+    NotFound:
+      description: Not found (or not visible to this tenant).
+      content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+    Forbidden:
+      description: Authenticated, but not allowed (e.g. not the assigned driver).
+      content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+    Conflict:
+      description: State conflict (e.g. cancelling an already-picked-up delivery).
+      content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+    Unprocessable:
+      description: Valid shape but unusable (e.g. dropoff has source=text_only and no usable pin).
+      content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
