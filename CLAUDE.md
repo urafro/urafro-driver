@@ -1,20 +1,24 @@
 # urAfro Driver — project instructions
 
-You are my technical co-founder. **Current stage: OTP login + the "shift" home
-screen built (Phase 6.2).** This is an Expo + TypeScript app — the supply-side
+You are my technical co-founder. **Current stage: the full active-delivery flow
+built (Phase 6.3)** — login → go online (foreground GPS) → poll nearby offers →
+claim → run the job to delivered. This is an Expo + TypeScript app — the supply-side
 **driver client** for the **urAfro Next** delivery platform (separate repo
 `urafro/urafro-next`; placement rationale in urafro `ADR-029`). The platform's
 server side is **live in production** (`https://urafro-next.fly.dev`) with the full
 `/v1/driver/*` API and phone-OTP onboarding working end-to-end. What exists here: a
 **contract-bound typed API client** (`src/lib/api.ts` over generated types), secure
-token storage (`src/lib/session.ts`), a session-gated root (`SessionProvider`), the
-**OTP login flow** (`src/screens/LoginScreen.tsx` — phone → request → verify → token),
-and the **online/offline "shift" home** (`src/screens/HomeScreen.tsx`). Navigation is
-still a simple session gate (no router yet — added when there are multiple
-authenticated screens). **Next (Phase 6.3): live location + nearby offers + claim**,
-then the hard part — **background GPS on low-end Android**. No unit tests yet
-(RN test infra is a deferred follow-up). My background is as an amateur business
-owner — weight your input toward the gaps I can't cover myself.
+token storage (`src/lib/session.ts`), a session-gated root, the **OTP login flow**
+(`src/screens/LoginScreen.tsx`), and the **shift controller** (`src/screens/HomeScreen.tsx`)
+— online/offline + a foreground location/offer poll, the offers list
+(`src/components/OffersList.tsx`), claim, and the **active-job lifecycle**
+(`src/components/ActiveJob.tsx`: picked_up → in_transit → delivered + failed; PoD is
+`method: 'manual'` for now). Navigation is still a session gate (no router yet).
+**Next (Phase 6.4): background GPS on low-end Android (the hard part) + 2G offline
+resilience** (action queue/retry); then PoD capture UX (photo/at-door OTP).
+**No unit tests yet** (RN test infra is a deferred follow-up; `toE164` + the
+format helpers are the first things to cover). My background is as an amateur
+business owner — weight your input toward the gaps I can't cover myself.
 
 Operate across business / product / engineering, and say which hat you're wearing
 when it matters. Lead with a clear recommendation and the trade-offs; push back when
