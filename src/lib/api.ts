@@ -10,6 +10,8 @@ type Schemas = components['schemas'];
 export type Delivery = Schemas['Delivery'];
 export type Offer = Schemas['Offer'];
 export type DriverState = Schemas['DriverState'];
+// The assigned driver's view of a delivery — includes the pickup/dropoff contacts.
+export type DriverDelivery = Schemas['DriverDelivery'];
 
 export class ApiError extends Error {
   constructor(
@@ -73,19 +75,19 @@ export function listOffers(token: string): Promise<{ data: Offer[] }> {
   return request('/driver/offers', { method: 'GET', token });
 }
 
-export function getDelivery(token: string, id: string): Promise<Delivery> {
+export function getDelivery(token: string, id: string): Promise<DriverDelivery> {
   return request(`/driver/deliveries/${id}`, { method: 'GET', token });
 }
 
-export function claimDelivery(token: string, id: string): Promise<Delivery> {
+export function claimDelivery(token: string, id: string): Promise<DriverDelivery> {
   return request(`/driver/deliveries/${id}/claim`, { method: 'POST', token });
 }
 
-export function markPickedUp(token: string, id: string): Promise<Delivery> {
+export function markPickedUp(token: string, id: string): Promise<DriverDelivery> {
   return request(`/driver/deliveries/${id}/picked_up`, { method: 'POST', token });
 }
 
-export function markInTransit(token: string, id: string): Promise<Delivery> {
+export function markInTransit(token: string, id: string): Promise<DriverDelivery> {
   return request(`/driver/deliveries/${id}/in_transit`, { method: 'POST', token });
 }
 
@@ -93,7 +95,7 @@ export function markDelivered(
   token: string,
   id: string,
   pod?: { method?: string; note?: string },
-): Promise<Delivery> {
+): Promise<DriverDelivery> {
   return request(`/driver/deliveries/${id}/delivered`, {
     method: 'POST',
     token,
@@ -101,6 +103,6 @@ export function markDelivered(
   });
 }
 
-export function markFailed(token: string, id: string): Promise<Delivery> {
+export function markFailed(token: string, id: string): Promise<DriverDelivery> {
   return request(`/driver/deliveries/${id}/failed`, { method: 'POST', token });
 }

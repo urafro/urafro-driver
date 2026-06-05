@@ -11,7 +11,7 @@ import {
   markInTransit,
   markPickedUp,
   updateLocation,
-  type Delivery,
+  type DriverDelivery,
   type Offer,
 } from '../lib/api';
 import { getCurrentLocation } from '../lib/location';
@@ -40,7 +40,7 @@ export default function HomeScreen() {
 
   const [online, setOnline] = useState(false);
   const [offers, setOffers] = useState<Offer[]>([]);
-  const [job, setJob] = useState<Delivery | null>(null);
+  const [job, setJob] = useState<DriverDelivery | null>(null);
   const [busy, setBusy] = useState(false);
   const [locating, setLocating] = useState(false);
   const [claimingId, setClaimingId] = useState<string | null>(null);
@@ -48,7 +48,7 @@ export default function HomeScreen() {
   const [error, setError] = useState<string | null>(null);
 
   // Latest job, readable from inside the (token-scoped) flush interval.
-  const jobRef = useRef<Delivery | null>(null);
+  const jobRef = useRef<DriverDelivery | null>(null);
   jobRef.current = job;
 
   // While online and free, refresh location + offers on an interval.
@@ -178,7 +178,7 @@ export default function HomeScreen() {
       setBusy(true);
       setError(null);
       try {
-        let updated: Delivery;
+        let updated: DriverDelivery;
         if (to === 'picked_up') updated = await markPickedUp(token, id);
         else if (to === 'in_transit') updated = await markInTransit(token, id);
         else if (to === 'delivered') updated = await markDelivered(token, id, { method: 'manual' });

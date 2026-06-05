@@ -445,6 +445,11 @@ export interface components {
              */
             offer_expires_at?: string;
         };
+        /** @description A delivery as seen by its **assigned driver** — the public Delivery plus the contacts needed to coordinate the run. Returned only on the driver's own endpoints after claiming; contacts never appear in tenant, offer, or webhook payloads. */
+        DriverDelivery: components["schemas"]["Delivery"] & {
+            pickup_contact?: components["schemas"]["Contact"];
+            dropoff_contact?: components["schemas"]["Contact"];
+        };
         ProofOfDelivery: {
             /**
              * @description How delivery was proven. Capture UX (photo / at-door OTP) is a later phase.
@@ -907,7 +912,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Delivery"];
+                    "application/json": components["schemas"]["DriverDelivery"];
                 };
             };
             401: components["responses"]["Unauthorized"];
@@ -931,7 +936,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Delivery"];
+                    "application/json": components["schemas"]["DriverDelivery"];
                 };
             };
             401: components["responses"]["Unauthorized"];
@@ -956,7 +961,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Delivery"];
+                    "application/json": components["schemas"]["DriverDelivery"];
                 };
             };
             401: components["responses"]["Unauthorized"];
@@ -982,7 +987,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Delivery"];
+                    "application/json": components["schemas"]["DriverDelivery"];
                 };
             };
             401: components["responses"]["Unauthorized"];
@@ -1012,7 +1017,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Delivery"];
+                    "application/json": components["schemas"]["DriverDelivery"];
                 };
             };
             401: components["responses"]["Unauthorized"];
@@ -1038,7 +1043,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Delivery"];
+                    "application/json": components["schemas"]["DriverDelivery"];
                 };
             };
             401: components["responses"]["Unauthorized"];
