@@ -69,4 +69,23 @@ describe('api client', () => {
     stubFetch(204);
     await expect(updateLocation('t', 1, 2)).resolves.toBeUndefined();
   });
+
+  // Regression: a bodyless POST must NOT send Content-Type: application/json, or RN's
+  // Android fetch + the server body-parser produce a 400 before the handler runs
+  // (this broke claim + every lifecycle transition on-device).
+  it('omits Content-Type on a bodyless POST (claim)', async () => {
+    const mock = stubFetch(200, { id: 'd1', status: 'assigned' });
+    await claimDelivery('tok', 'd1');
+    const init = mock.mock.calls[0][1];
+    expect(init.method).toBe('POST');
+    expect(init.body).toBeUndefined();
+    expect(headersOf(init)['Content-Type']).toBeUndefined();
+    expect(headersOf(init).Authorization).toBe('Bearer tok');
+  });
+
+  it('sets Content-Type only when there is a body (goOnline)', async () => {
+    const mock = stubFetch(200, { status: 'available' });
+    await goOnline('tok', { lat: 1, lng: 2 });
+    expect(headersOf(mock.mock.calls[0][1])['Content-Type']).toBe('application/json');
+  });
 });

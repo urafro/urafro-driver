@@ -31,7 +31,12 @@ async function request<T>(
   const res = await fetch(`${API_V1}${path}`, {
     ...rest,
     headers: {
-      'Content-Type': 'application/json',
+      // Only declare a JSON body when there actually IS one. React Native's Android
+      // fetch puts a stray NUL byte on a bodyless POST; with Content-Type:
+      // application/json the server's body-parser then rejects it with a 400
+      // ("Unexpected token … is not valid JSON") BEFORE the handler runs — which
+      // broke every bodyless POST (claim, picked_up, in_transit, failed).
+      ...(rest.body != null ? { 'Content-Type': 'application/json' } : {}),
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
       ...headers,
     },
