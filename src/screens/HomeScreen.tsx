@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import {
+  ApiError,
   claimDelivery,
   getDelivery,
   goOffline,
@@ -66,7 +67,7 @@ export default function HomeScreen() {
           if (loc && !cancelled) await updateLocation(token, loc.lat, loc.lng);
         }
         const { data } = await listOffers(token);
-        if (!cancelled) setOffers(data);
+        if (!cancelled) setOffers(data ?? []);
       } catch {
         // transient (network) — the next tick retries
       }
@@ -172,8 +173,15 @@ export default function HomeScreen() {
         const delivery = await claimDelivery(token, id);
         setJob(delivery);
         setOffers([]);
-      } catch {
-        setError('That job was just taken — try another.');
+      } catch (e) {
+        // Surface the REAL failure instead of a blanket "just taken". ApiError.message
+        // already carries the status + path + server body; network errors show their
+        // message. (Diagnostic copy — make user-friendly once the root cause is fixed.)
+        const detail =
+          e instanceof ApiError
+            ? e.message
+            : `network: ${e instanceof Error ? e.message : String(e)}`;
+        setError(`Claim failed — ${detail}`);
       } finally {
         setClaimingId(null);
       }
