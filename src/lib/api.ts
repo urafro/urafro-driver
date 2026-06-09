@@ -23,6 +23,15 @@ export class ApiError extends Error {
   }
 }
 
+// Global handler for an authenticated 401 (a revoked/expired driver token — admin
+// revoke-driver, or a stale token after a reinstall). Lets the session layer drop to
+// the login screen instead of the app wedging on Home with every action silently
+// failing. Registered by SessionProvider; null in tests/at startup.
+let onUnauthorized: (() => void) | null = null;
+export function setUnauthorizedHandler(fn: (() => void) | null): void {
+  onUnauthorized = fn;
+}
+
 async function request<T>(
   path: string,
   init: RequestInit & { token?: string } = {},
@@ -42,6 +51,10 @@ async function request<T>(
     },
   });
   if (!res.ok) {
+    // An authenticated 401 = the token is dead. Trigger a global sign-out (the call
+    // still throws below so the caller's own error handling runs too). Guarded on
+    // `token` so a pre-auth 401 (e.g. wrong OTP at login) never logs anyone out.
+    if (res.status === 401 && token) onUnauthorized?.();
     let detail = '';
     try {
       detail = await res.text();

@@ -18,6 +18,7 @@ import {
 import { getCurrentLocation, ensureForegroundPermission } from '../lib/location';
 import { startBackgroundLocation, stopBackgroundLocation } from '../lib/background-location';
 import { maybePromptBatteryExemption } from '../lib/battery';
+import { saveActiveJobId, loadActiveJobId, clearActiveJobId } from '../lib/session';
 import {
   enqueueAction,
   flushActions,
@@ -54,6 +55,51 @@ export default function HomeScreen() {
   // Latest job, readable from inside the (token-scoped) flush interval.
   const jobRef = useRef<DriverDelivery | null>(null);
   jobRef.current = job;
+
+  // Persist the active delivery id whenever it changes, so a relaunch can resume it.
+  // Skip the first run (job is null on mount) — otherwise it would wipe the stored id
+  // before the resume effect below has read it.
+  const didJobMount = useRef(false);
+  useEffect(() => {
+    if (!didJobMount.current) {
+      didJobMount.current = true;
+      return;
+    }
+    if (job?.id) void saveActiveJobId(job.id);
+    else void clearActiveJobId();
+  }, [job]);
+
+  // On launch, resume an in-flight delivery the driver was on — the OS may have killed
+  // the app mid-run (common on low-end Android). If it's already finished or no longer
+  // theirs, drop the stored id.
+  useEffect(() => {
+    if (!token) return;
+    let cancelled = false;
+    void (async () => {
+      const id = await loadActiveJobId();
+      if (cancelled || !id) return;
+      try {
+        const d = await getDelivery(token, id);
+        if (cancelled) return;
+        // Only resume a genuinely-active delivery. getDelivery returns the driver's own
+        // delivery even once it's terminal/cancelled, so whitelist the in-flight states
+        // rather than just excluding delivered/failed — otherwise a cancelled job would
+        // be restored as a live one the driver can't act on.
+        if (d.status === 'assigned' || d.status === 'picked_up' || d.status === 'in_transit') {
+          setJob(d);
+          setOnline(true);
+          setBgActive(await startBackgroundLocation());
+        } else {
+          await clearActiveJobId();
+        }
+      } catch {
+        if (!cancelled) await clearActiveJobId();
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [token]);
 
   // While online and free, refresh location + offers on an interval.
   useEffect(() => {
