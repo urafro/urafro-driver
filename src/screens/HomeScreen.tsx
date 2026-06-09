@@ -15,7 +15,7 @@ import {
   type DriverDelivery,
   type Offer,
 } from '../lib/api';
-import { getCurrentLocation } from '../lib/location';
+import { getCurrentLocation, ensureForegroundPermission } from '../lib/location';
 import { startBackgroundLocation, stopBackgroundLocation } from '../lib/background-location';
 import { maybePromptBatteryExemption } from '../lib/battery';
 import {
@@ -132,12 +132,15 @@ export default function HomeScreen() {
     setLocating(true);
     setError(null);
     try {
-      const loc = await getCurrentLocation();
-      if (!loc) {
+      // Permission is the only hard requirement to go online — a fix is not. A slow/
+      // cold GPS lock (getCurrentLocation → null) must NOT block going on shift; the
+      // background stream supplies position shortly after.
+      if (!(await ensureForegroundPermission())) {
         setError('Location permission is needed to receive offers.');
         return;
       }
-      const state = await goOnline(token, loc);
+      const loc = await getCurrentLocation();
+      const state = await goOnline(token, loc ?? undefined);
       setOnline(state.status !== 'offline');
       // Best-effort background streaming; falls back to the foreground poll if the
       // "allow all the time" permission is denied.
