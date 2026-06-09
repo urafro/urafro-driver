@@ -36,8 +36,14 @@ export default function LoginScreen() {
       await requestOtp(e164);
       setPhone(e164);
       setStep('code');
-    } catch {
-      setError('Could not send the code — check your connection and try again.');
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 429) {
+        setError('Too many attempts — wait a minute and try again.');
+      } else if (e instanceof ApiError) {
+        setError('Could not send the code — please try again.');
+      } else {
+        setError('No connection — check your signal and try again.');
+      }
     } finally {
       setBusy(false);
     }
