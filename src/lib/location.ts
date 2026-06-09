@@ -8,6 +8,14 @@ export interface Coords {
 // Foreground location only — background GPS (the hard part on low-end Android) is a
 // later phase. Requests permission on first use; returns null if denied or
 // unavailable so callers degrade gracefully (the driver just won't get offers).
+/** Request foreground location permission. Separated from getCurrentLocation so the
+ *  caller can distinguish "permission denied" (block) from "no fix yet" (proceed —
+ *  the background stream will supply a position). */
+export async function ensureForegroundPermission(): Promise<boolean> {
+  const { status } = await Location.requestForegroundPermissionsAsync();
+  return status === 'granted';
+}
+
 export async function getCurrentLocation(): Promise<Coords | null> {
   const { status } = await Location.requestForegroundPermissionsAsync();
   if (status !== 'granted') return null;

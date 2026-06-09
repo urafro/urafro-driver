@@ -15,8 +15,10 @@ import {
   type DriverDelivery,
   type Offer,
 } from '../lib/api';
-import { getCurrentLocation } from '../lib/location';
+import { getCurrentLocation, ensureForegroundPermission } from '../lib/location';
 import { startBackgroundLocation, stopBackgroundLocation } from '../lib/background-location';
+import { maybePromptBatteryExemption } from '../lib/battery';
+import { saveActiveJobId, loadActiveJobId, clearActiveJobId } from '../lib/session';
 import {
   enqueueAction,
   flushActions,
@@ -53,6 +55,51 @@ export default function HomeScreen() {
   // Latest job, readable from inside the (token-scoped) flush interval.
   const jobRef = useRef<DriverDelivery | null>(null);
   jobRef.current = job;
+
+  // Persist the active delivery id whenever it changes, so a relaunch can resume it.
+  // Skip the first run (job is null on mount) — otherwise it would wipe the stored id
+  // before the resume effect below has read it.
+  const didJobMount = useRef(false);
+  useEffect(() => {
+    if (!didJobMount.current) {
+      didJobMount.current = true;
+      return;
+    }
+    if (job?.id) void saveActiveJobId(job.id);
+    else void clearActiveJobId();
+  }, [job]);
+
+  // On launch, resume an in-flight delivery the driver was on — the OS may have killed
+  // the app mid-run (common on low-end Android). If it's already finished or no longer
+  // theirs, drop the stored id.
+  useEffect(() => {
+    if (!token) return;
+    let cancelled = false;
+    void (async () => {
+      const id = await loadActiveJobId();
+      if (cancelled || !id) return;
+      try {
+        const d = await getDelivery(token, id);
+        if (cancelled) return;
+        // Only resume a genuinely-active delivery. getDelivery returns the driver's own
+        // delivery even once it's terminal/cancelled, so whitelist the in-flight states
+        // rather than just excluding delivered/failed — otherwise a cancelled job would
+        // be restored as a live one the driver can't act on.
+        if (d.status === 'assigned' || d.status === 'picked_up' || d.status === 'in_transit') {
+          setJob(d);
+          setOnline(true);
+          setBgActive(await startBackgroundLocation());
+        } else {
+          await clearActiveJobId();
+        }
+      } catch {
+        if (!cancelled) await clearActiveJobId();
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [token]);
 
   // While online and free, refresh location + offers on an interval.
   useEffect(() => {
@@ -131,16 +178,22 @@ export default function HomeScreen() {
     setLocating(true);
     setError(null);
     try {
-      const loc = await getCurrentLocation();
-      if (!loc) {
+      // Permission is the only hard requirement to go online — a fix is not. A slow/
+      // cold GPS lock (getCurrentLocation → null) must NOT block going on shift; the
+      // background stream supplies position shortly after.
+      if (!(await ensureForegroundPermission())) {
         setError('Location permission is needed to receive offers.');
         return;
       }
-      const state = await goOnline(token, loc);
+      const loc = await getCurrentLocation();
+      const state = await goOnline(token, loc ?? undefined);
       setOnline(state.status !== 'offline');
       // Best-effort background streaming; falls back to the foreground poll if the
       // "allow all the time" permission is denied.
       setBgActive(await startBackgroundLocation());
+      // One-time nudge to exclude the app from battery optimization — OEM skins
+      // (Samsung) pause backgrounded apps and can kill the location service mid-run.
+      void maybePromptBatteryExemption();
     } catch {
       setError('Could not go online — try again.');
     } finally {
@@ -174,14 +227,17 @@ export default function HomeScreen() {
         setJob(delivery);
         setOffers([]);
       } catch (e) {
-        // Surface the REAL failure instead of a blanket "just taken". ApiError.message
-        // already carries the status + path + server body; network errors show their
-        // message. (Diagnostic copy — make user-friendly once the root cause is fixed.)
-        const detail =
-          e instanceof ApiError
-            ? e.message
-            : `network: ${e instanceof Error ? e.message : String(e)}`;
-        setError(`Claim failed — ${detail}`);
+        // Friendly copy by failure class. Keep the technical detail in the log so a
+        // future on-device issue stays visible via `adb logcat` (a diagnostic build is
+        // exactly how we caught the bodyless-POST 400).
+        console.warn('claim failed:', e instanceof ApiError ? `${e.status} ${e.message}` : e);
+        if (e instanceof ApiError && e.status === 409) {
+          setError('That job was just taken — try another.');
+        } else if (e instanceof ApiError) {
+          setError('Could not claim that job — please try again.');
+        } else {
+          setError('No connection — check your signal and try again.');
+        }
       } finally {
         setClaimingId(null);
       }

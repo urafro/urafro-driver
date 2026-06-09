@@ -7,9 +7,13 @@ import {
   claimDelivery,
   updateLocation,
   ApiError,
+  setUnauthorizedHandler,
 } from './api';
 
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => {
+  vi.unstubAllGlobals();
+  setUnauthorizedHandler(null);
+});
 
 // Stub global fetch to return a response, and capture the call args (typed params
 // so `mock.calls[0]` is a [url, init] tuple). A fresh Response per stub, since a
@@ -87,5 +91,20 @@ describe('api client', () => {
     const mock = stubFetch(200, { status: 'available' });
     await goOnline('tok', { lat: 1, lng: 2 });
     expect(headersOf(mock.mock.calls[0][1])['Content-Type']).toBe('application/json');
+  });
+
+  it('fires the unauthorized handler on an authenticated 401, not a pre-auth 401', async () => {
+    const onUnauth = vi.fn();
+    setUnauthorizedHandler(onUnauth);
+
+    // authenticated call (has token) → 401 → global sign-out fires
+    stubFetch(401, { error: 'unauthorized' });
+    await expect(claimDelivery('tok', 'd1')).rejects.toBeInstanceOf(ApiError);
+    expect(onUnauth).toHaveBeenCalledTimes(1);
+
+    // pre-auth call (no token), e.g. a wrong OTP at login → must NOT log anyone out
+    stubFetch(401, { error: 'bad code' });
+    await expect(verifyOtp('+263772749678', '000000')).rejects.toBeInstanceOf(ApiError);
+    expect(onUnauth).toHaveBeenCalledTimes(1);
   });
 });
