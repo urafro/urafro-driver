@@ -17,6 +17,7 @@ import {
 } from '../lib/api';
 import { getCurrentLocation } from '../lib/location';
 import { startBackgroundLocation, stopBackgroundLocation } from '../lib/background-location';
+import { maybePromptBatteryExemption } from '../lib/battery';
 import {
   enqueueAction,
   flushActions,
@@ -141,6 +142,9 @@ export default function HomeScreen() {
       // Best-effort background streaming; falls back to the foreground poll if the
       // "allow all the time" permission is denied.
       setBgActive(await startBackgroundLocation());
+      // One-time nudge to exclude the app from battery optimization — OEM skins
+      // (Samsung) pause backgrounded apps and can kill the location service mid-run.
+      void maybePromptBatteryExemption();
     } catch {
       setError('Could not go online — try again.');
     } finally {
@@ -174,14 +178,17 @@ export default function HomeScreen() {
         setJob(delivery);
         setOffers([]);
       } catch (e) {
-        // Surface the REAL failure instead of a blanket "just taken". ApiError.message
-        // already carries the status + path + server body; network errors show their
-        // message. (Diagnostic copy — make user-friendly once the root cause is fixed.)
-        const detail =
-          e instanceof ApiError
-            ? e.message
-            : `network: ${e instanceof Error ? e.message : String(e)}`;
-        setError(`Claim failed — ${detail}`);
+        // Friendly copy by failure class. Keep the technical detail in the log so a
+        // future on-device issue stays visible via `adb logcat` (a diagnostic build is
+        // exactly how we caught the bodyless-POST 400).
+        console.warn('claim failed:', e instanceof ApiError ? `${e.status} ${e.message}` : e);
+        if (e instanceof ApiError && e.status === 409) {
+          setError('That job was just taken — try another.');
+        } else if (e instanceof ApiError) {
+          setError('Could not claim that job — please try again.');
+        } else {
+          setError('No connection — check your signal and try again.');
+        }
       } finally {
         setClaimingId(null);
       }
