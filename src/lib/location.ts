@@ -11,9 +11,22 @@ export interface Coords {
 export async function getCurrentLocation(): Promise<Coords | null> {
   const { status } = await Location.requestForegroundPermissionsAsync();
   if (status !== 'granted') return null;
+  // Prefer the last known fix (instant) so going online isn't blocked on a cold GPS
+  // lock — which can take 10s+ indoors and made the toggle feel hung / unresponsive.
   try {
-    const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
-    return { lat: pos.coords.latitude, lng: pos.coords.longitude };
+    const known = await Location.getLastKnownPositionAsync();
+    if (known) return { lat: known.coords.latitude, lng: known.coords.longitude };
+  } catch {
+    // fall through to an active fix
+  }
+  // Active fix, but capped at 8s so the UI never stalls — the background stream
+  // refines the position right after we're online.
+  try {
+    const pos = await Promise.race([
+      Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced }),
+      new Promise<null>((resolve) => setTimeout(() => resolve(null), 8000)),
+    ]);
+    return pos ? { lat: pos.coords.latitude, lng: pos.coords.longitude } : null;
   } catch {
     return null;
   }
