@@ -330,6 +330,98 @@ paths:
                     items: { $ref: '#/components/schemas/Offer' }
         '401': { $ref: '#/components/responses/Unauthorized' }
 
+  /driver/profile:
+    get:
+      tags: [Driver]
+      summary: The driver's own profile
+      operationId: driverGetProfile
+      security:
+        - DriverBearerAuth: []
+      responses:
+        '200':
+          description: Profile.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [driver_id, name, phone, approved, status]
+                properties:
+                  driver_id: { type: string, format: uuid }
+                  name: { type: string }
+                  phone: { type: string }
+                  vehicle: { type: [string, "null"] }
+                  approved:
+                    type: boolean
+                    description: False until ops approves — the driver can log in but not go on shift.
+                  status: { type: string, enum: [available, offline, busy] }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+    patch:
+      tags: [Driver]
+      summary: Update driver-editable profile fields (name, vehicle)
+      operationId: driverUpdateProfile
+      security:
+        - DriverBearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: { type: string, minLength: 2, maxLength: 80 }
+                vehicle: { type: string, maxLength: 80 }
+      responses:
+        '204': { description: Updated. }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /driver/deliveries:
+    get:
+      tags: [Driver]
+      summary: The driver's recent job history
+      description: >
+        Newest first (≤20). Public delivery shape plus `driver_fee_minor` —
+        contacts are deliberately absent (stale customer PII on past jobs).
+      operationId: driverListDeliveries
+      security:
+        - DriverBearerAuth: []
+      responses:
+        '200':
+          description: Recent jobs.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      allOf:
+                        - $ref: '#/components/schemas/Delivery'
+                        - type: object
+                          properties:
+                            driver_fee_minor: { type: [integer, "null"] }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /driver/offers/{id}/decline:
+    post:
+      tags: [Driver]
+      summary: Decline an offer
+      description: >
+        Marks this driver's live offer declined — it is never re-offered to them.
+        Idempotent; declining a lapsed/claimed offer is a harmless no-op.
+      operationId: driverDeclineOffer
+      security:
+        - DriverBearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '204': { description: Declined (or already moot). }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
   /driver/earnings:
     get:
       tags: [Driver]
@@ -722,6 +814,14 @@ components:
             - { $ref: '#/components/schemas/FailureReason' }
             - { type: "null" }
           description: Why the driver marked it failed; null unless status is `failed`.
+        pod_pin:
+          type: [string, "null"]
+          pattern: '^\d{4}$'
+          description: >-
+            At-door proof-of-delivery PIN, generated at intake. **Tenant surfaces
+            only** (create response, GET, list) — relay it to the recipient; it is
+            never present in driver payloads or webhook bodies. The driver submits
+            it on delivered for a verified (`otp`) handover.
         created_at: { type: string, format: date-time }
         updated_at: { type: string, format: date-time }
 
@@ -786,6 +886,13 @@ components:
             What the driver actually collected on a COD job (minor units). Omit to
             book the delivery's full collect_minor; explicit 0 books nothing —
             the COD ledger records reality and reconciliation surfaces shortfalls.
+        pod_pin:
+          type: string
+          pattern: '^\d{4}$'
+          description: >-
+            The at-door PIN read out by the recipient. Optional — manual remains
+            the fallback. A match upgrades the PoD method to `otp`; a mismatch
+            rejects the completion (400), capped at 5 attempts per delivery.
 
     WebhookEvent:
       type: object
