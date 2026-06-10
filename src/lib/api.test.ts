@@ -93,6 +93,49 @@ describe('api client', () => {
     expect(headersOf(mock.mock.calls[0][1])['Content-Type']).toBe('application/json');
   });
 
+  it('markFailed sends the reason as a JSON body, and stays bodyless without one', async () => {
+    const { markFailed } = await import('./api');
+    let mock = stubFetch(200, { id: 'd1', status: 'failed' });
+    await markFailed('tok', 'd1', 'customer_unreachable');
+    let init = mock.mock.calls[0][1];
+    expect(JSON.parse(init.body as string)).toEqual({ reason: 'customer_unreachable' });
+    expect(headersOf(init)['Content-Type']).toBe('application/json');
+
+    mock = stubFetch(200, { id: 'd1', status: 'failed' });
+    await markFailed('tok', 'd1');
+    init = mock.mock.calls[0][1];
+    expect(init.body).toBeUndefined(); // the RN-Android bodyless-POST fix must hold
+    expect(headersOf(init)['Content-Type']).toBeUndefined();
+  });
+
+  it('markDelivered carries the COD amount + note', async () => {
+    const { markDelivered } = await import('./api');
+    const mock = stubFetch(200, { id: 'd1', status: 'delivered' });
+    await markDelivered('tok', 'd1', { method: 'manual', note: 'gate guard', cod_collected_minor: 7500 });
+    expect(JSON.parse(mock.mock.calls[0][1].body as string)).toEqual({
+      method: 'manual',
+      note: 'gate guard',
+      cod_collected_minor: 7500,
+    });
+  });
+
+  it('getEarnings GETs with auth; push token registers and removes', async () => {
+    const { getEarnings, registerPushToken, removePushToken } = await import('./api');
+    let mock = stubFetch(200, { payable_minor: 160, today_minor: 160, today_deliveries: 1, cod_owed_minor: 0, currency: 'USD' });
+    const e = await getEarnings('tok');
+    expect(e.payable_minor).toBe(160);
+    expect(mock.mock.calls[0][0]).toContain('/v1/driver/earnings');
+
+    mock = stubFetch(204);
+    await registerPushToken('tok', 'ExponentPushToken[x]', 'android');
+    expect(mock.mock.calls[0][1].method).toBe('POST');
+    expect(JSON.parse(mock.mock.calls[0][1].body as string)).toEqual({ token: 'ExponentPushToken[x]', platform: 'android' });
+
+    mock = stubFetch(204);
+    await removePushToken('tok', 'ExponentPushToken[x]');
+    expect(mock.mock.calls[0][1].method).toBe('DELETE');
+  });
+
   it('fires the unauthorized handler on an authenticated 401, not a pre-auth 401', async () => {
     const onUnauth = vi.fn();
     setUnauthorizedHandler(onUnauth);

@@ -214,6 +214,47 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/driver/earnings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The driver's earnings summary
+         * @description All-time accrued payable balance (credits − debits on the driver_payable ledger account) plus today's earnings, where "today" is the Africa/Harare local day. Amounts are minor units.
+         */
+        get: operations["driverEarnings"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/driver/push-token": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Register this device's push token
+         * @description Upserts an Expo push token for the authenticated driver, keyed on the token — on a shared phone the device follows whoever logged in last. Push is advisory (offer/cancel wake-ups); the offers list remains the source of truth.
+         */
+        post: operations["driverRegisterPushToken"];
+        /** Remove this device's push token (logout hygiene) */
+        delete: operations["driverRemovePushToken"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/driver/deliveries/{id}": {
         parameters: {
             query?: never;
@@ -427,11 +468,15 @@ export interface components {
             fee_minor?: number | null;
             /** @description Cash-on-delivery amount (minor units); null = prepaid / nothing to collect. */
             collect_minor?: number | null;
+            /** @description Why the driver marked it failed; null unless status is `failed`. */
+            failure_reason?: components["schemas"]["FailureReason"] | null;
             /** Format: date-time */
             created_at?: string;
             /** Format: date-time */
             updated_at?: string;
         };
+        /** @enum {string} */
+        FailureReason: "customer_unreachable" | "wrong_address" | "customer_refused" | "cash_refused" | "vehicle_problem" | "other";
         DriverState: {
             /** Format: uuid */
             driver_id?: string;
@@ -444,11 +489,15 @@ export interface components {
              * @description When this offer lapses; claim before then or it's withdrawn.
              */
             offer_expires_at?: string;
+            /** @description The DRIVER'S share of the fee in minor units — what driver-facing UIs must quote (never the full fee_minor). */
+            driver_fee_minor?: number | null;
         };
-        /** @description A delivery as seen by its **assigned driver** — the public Delivery plus the contacts needed to coordinate the run. Returned only on the driver's own endpoints after claiming; contacts never appear in tenant, offer, or webhook payloads. */
+        /** @description A delivery as seen by its **assigned driver** — the public Delivery plus the contacts needed to coordinate the run and the driver's own cut of the fee. Returned only on the driver's own endpoints after claiming; contacts never appear in tenant, offer, or webhook payloads. */
         DriverDelivery: components["schemas"]["Delivery"] & {
             pickup_contact?: components["schemas"]["Contact"];
             dropoff_contact?: components["schemas"]["Contact"];
+            /** @description The DRIVER'S share of the fee in minor units — what driver-facing UIs must quote (never the full fee_minor). */
+            driver_fee_minor?: number | null;
         };
         ProofOfDelivery: {
             /**
@@ -458,6 +507,8 @@ export interface components {
              */
             method: "photo" | "signature" | "otp" | "manual";
             note?: string;
+            /** @description What the driver actually collected on a COD job (minor units). Omit to book the delivery's full collect_minor; explicit 0 books nothing — the COD ledger records reality and reconciliation surfaces shortfalls. */
+            cod_collected_minor?: number;
         };
         WebhookEvent: {
             /** Format: uuid */
@@ -895,6 +946,88 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
         };
     };
+    driverEarnings: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Earnings summary. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        payable_minor: number;
+                        today_minor: number;
+                        today_deliveries: number;
+                        /** @description COD cash float currently in the driver's hands, owed onward. */
+                        cod_owed_minor: number;
+                        /** @example USD */
+                        currency: string;
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+        };
+    };
+    driverRegisterPushToken: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    token: string;
+                    /** @enum {string} */
+                    platform: "android" | "ios";
+                };
+            };
+        };
+        responses: {
+            /** @description Registered. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+        };
+    };
+    driverRemovePushToken: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    token: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Removed (idempotent). */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthorized"];
+        };
+    };
     driverGetDelivery: {
         parameters: {
             query?: never;
@@ -1035,7 +1168,13 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": {
+                    reason?: components["schemas"]["FailureReason"];
+                };
+            };
+        };
         responses: {
             /** @description Now `failed`; the driver is freed. */
             200: {

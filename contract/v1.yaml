@@ -330,6 +330,80 @@ paths:
                     items: { $ref: '#/components/schemas/Offer' }
         '401': { $ref: '#/components/responses/Unauthorized' }
 
+  /driver/earnings:
+    get:
+      tags: [Driver]
+      summary: The driver's earnings summary
+      description: >
+        All-time accrued payable balance (credits − debits on the driver_payable
+        ledger account) plus today's earnings, where "today" is the Africa/Harare
+        local day. Amounts are minor units.
+      operationId: driverEarnings
+      security:
+        - DriverBearerAuth: []
+      responses:
+        '200':
+          description: Earnings summary.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [payable_minor, today_minor, today_deliveries, cod_owed_minor, currency]
+                properties:
+                  payable_minor: { type: integer }
+                  today_minor: { type: integer }
+                  today_deliveries: { type: integer }
+                  cod_owed_minor:
+                    type: integer
+                    description: COD cash float currently in the driver's hands, owed onward.
+                  currency: { type: string, example: USD }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /driver/push-token:
+    post:
+      tags: [Driver]
+      summary: Register this device's push token
+      description: >
+        Upserts an Expo push token for the authenticated driver, keyed on the
+        token — on a shared phone the device follows whoever logged in last.
+        Push is advisory (offer/cancel wake-ups); the offers list remains the
+        source of truth.
+      operationId: driverRegisterPushToken
+      security:
+        - DriverBearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [token, platform]
+              properties:
+                token: { type: string, maxLength: 200 }
+                platform: { type: string, enum: [android, ios] }
+      responses:
+        '204': { description: Registered. }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+    delete:
+      tags: [Driver]
+      summary: Remove this device's push token (logout hygiene)
+      operationId: driverRemovePushToken
+      security:
+        - DriverBearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [token]
+              properties:
+                token: { type: string, maxLength: 200 }
+      responses:
+        '204': { description: Removed (idempotent). }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
   /driver/deliveries/{id}:
     get:
       tags: [Driver]
@@ -463,6 +537,15 @@ paths:
           in: path
           required: true
           schema: { type: string, format: uuid }
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                reason:
+                  $ref: '#/components/schemas/FailureReason'
       responses:
         '200':
           description: Now `failed`; the driver is freed.
@@ -634,8 +717,17 @@ components:
         collect_minor:
           type: [integer, "null"]
           description: Cash-on-delivery amount (minor units); null = prepaid / nothing to collect.
+        failure_reason:
+          oneOf:
+            - { $ref: '#/components/schemas/FailureReason' }
+            - { type: "null" }
+          description: Why the driver marked it failed; null unless status is `failed`.
         created_at: { type: string, format: date-time }
         updated_at: { type: string, format: date-time }
+
+    FailureReason:
+      type: string
+      enum: [customer_unreachable, wrong_address, customer_refused, cash_refused, vehicle_problem, other]
 
     DriverState:
       type: object
@@ -654,19 +746,29 @@ components:
               type: string
               format: date-time
               description: When this offer lapses; claim before then or it's withdrawn.
+            driver_fee_minor:
+              type: [integer, "null"]
+              description: >-
+                The DRIVER'S share of the fee in minor units — what driver-facing
+                UIs must quote (never the full fee_minor).
 
     DriverDelivery:
       description: >-
         A delivery as seen by its **assigned driver** — the public Delivery plus the
-        contacts needed to coordinate the run. Returned only on the driver's own
-        endpoints after claiming; contacts never appear in tenant, offer, or webhook
-        payloads.
+        contacts needed to coordinate the run and the driver's own cut of the fee.
+        Returned only on the driver's own endpoints after claiming; contacts never
+        appear in tenant, offer, or webhook payloads.
       allOf:
         - $ref: '#/components/schemas/Delivery'
         - type: object
           properties:
             pickup_contact: { $ref: '#/components/schemas/Contact' }
             dropoff_contact: { $ref: '#/components/schemas/Contact' }
+            driver_fee_minor:
+              type: [integer, "null"]
+              description: >-
+                The DRIVER'S share of the fee in minor units — what driver-facing
+                UIs must quote (never the full fee_minor).
 
     ProofOfDelivery:
       type: object
@@ -677,6 +779,13 @@ components:
           default: manual
           description: How delivery was proven. Capture UX (photo / at-door OTP) is a later phase.
         note: { type: string, maxLength: 500 }
+        cod_collected_minor:
+          type: integer
+          minimum: 0
+          description: >-
+            What the driver actually collected on a COD job (minor units). Omit to
+            book the delivery's full collect_minor; explicit 0 books nothing —
+            the COD ledger records reality and reconciliation surfaces shortfalls.
 
     WebhookEvent:
       type: object

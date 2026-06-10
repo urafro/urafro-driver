@@ -36,7 +36,9 @@ export default function OffersList({
             <Text style={styles.dropoff}>→ {placeLabel(offer.dropoff)}</Text>
             <Text style={styles.pickup}>Pickup · {placeLabel(offer.pickup)}</Text>
             <View style={styles.metaRow}>
-              <Text style={styles.fee}>Fee {money(offer.fee_minor)}</Text>
+              {/* The driver's cut (ADR-002 A.3) — never quote more than they earn.
+                  fee_minor fallback only covers a stale server payload. */}
+              <Text style={styles.fee}>Earn {money(offer.driver_fee_minor ?? offer.fee_minor)}</Text>
               {offer.collect_minor ? (
                 <Text style={styles.cod}>Collect {money(offer.collect_minor)}</Text>
               ) : null}
