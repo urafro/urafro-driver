@@ -112,7 +112,9 @@ export function markInTransit(token: string, id: string): Promise<DriverDelivery
 export function markDelivered(
   token: string,
   id: string,
-  pod?: { method?: string; note?: string; cod_collected_minor?: number },
+  // pod_pin = the at-door code the customer reads out; a match upgrades the PoD
+  // method to 'otp' server-side (overriding `method`), a mismatch rejects (400).
+  pod?: { method?: string; note?: string; cod_collected_minor?: number; pod_pin?: string },
 ): Promise<DriverDelivery> {
   return request(`/driver/deliveries/${id}/delivered`, {
     method: 'POST',
