@@ -1,5 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Linking, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import {
+  ActivityIndicator,
+  AppState,
+  Linking,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
 import {
   ApiError,
   claimDelivery,
@@ -76,33 +85,41 @@ export default function HomeScreen() {
     if (token) void registerForPush(token);
   }, [token]);
 
-  // Reconcile the shift with SERVER truth on launch, and HEAL it. Two real-world
-  // failure modes this fixes: (1) the UI used to boot to "Offline" even when the
-  // server still had the driver available — closing the app LOOKED like going off
-  // shift; (2) a swiped-away app can kill the GPS foreground service while the
-  // shift is still live server-side — restarting the stream here keeps the
-  // heartbeat flowing so the ghost-supply sweep doesn't take them off shift.
+  // Reconcile the shift with SERVER truth, and HEAL it. Fixes, in order found
+  // on-device: (1) the UI booted to "Offline" even when the server had the driver
+  // available; (2) a swiped-away app killed the GPS stream while the shift stayed
+  // live — restarting it keeps the heartbeat flowing; (3) the inverse lie: a
+  // MINIMIZED app whose heartbeat died gets swept off shift server-side, but on
+  // resume the stale UI still said "Online" with un-claimable offers (the
+  // confusing 409). Truth now syncs on every foreground return, both directions.
+  const reconcileShift = useCallback(async () => {
+    const p = await getProfile(token);
+    const onShift = p.status === 'available' || p.status === 'busy';
+    setOnline(onShift);
+    if (onShift) {
+      const alreadyStreaming = await isBackgroundActive();
+      setBgActive(alreadyStreaming || (await startBackgroundLocation()));
+      // An immediate liveness ping: resuming IS proof of life — refresh
+      // lastSeenAt instantly so a near-stale shift survives the reopen.
+      const loc = await getCurrentLocation();
+      if (loc) await updateLocation(token, loc.lat, loc.lng);
+    } else {
+      setBgActive(false);
+    }
+  }, [token]);
+
   useEffect(() => {
     if (!token) return;
-    let cancelled = false;
-    void (async () => {
-      try {
-        const p = await getProfile(token);
-        if (cancelled) return;
-        if (p.status === 'available' || p.status === 'busy') {
-          setOnline(true);
-          const alreadyStreaming = await isBackgroundActive();
-          if (cancelled) return;
-          setBgActive(alreadyStreaming || (await startBackgroundLocation()));
-        }
-      } catch {
-        // non-critical — the driver can always toggle manually
+    void reconcileShift().catch(() => {
+      // non-critical — the driver can always toggle manually
+    });
+    const sub = AppState.addEventListener('change', (state) => {
+      if (state === 'active') {
+        void reconcileShift().catch(() => {});
       }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [token]);
+    });
+    return () => sub.remove();
+  }, [token, reconcileShift]);
 
   // Persist the active delivery SNAPSHOT whenever it changes, so a relaunch renders
   // it instantly even in a dead zone. Skip the first run (job is null on mount) —
@@ -209,12 +226,13 @@ export default function HomeScreen() {
     let cancelled = false;
     async function tick() {
       try {
-        // When the background stream is running it reports location; only the
-        // foreground-only fallback (bg permission denied) pings location here.
-        if (!bgActive) {
-          const loc = await getCurrentLocation();
-          if (loc && !cancelled) await updateLocation(token, loc.lat, loc.lng);
-        }
+        // ALWAYS ping location from the foreground poll — the background stream
+        // does NOT tick while stationary (Samsung suppresses same-position fixes
+        // at the system level), so without this a driver staring at the open app
+        // could go heartbeat-stale and be swept off shift. Cheap: last-known
+        // fix first, and a duplicate ping while moving is harmless.
+        const loc = await getCurrentLocation();
+        if (loc && !cancelled) await updateLocation(token, loc.lat, loc.lng);
         const { data } = await listOffers(token);
         if (cancelled) return;
         const fresh = data ?? [];
@@ -350,7 +368,17 @@ export default function HomeScreen() {
         // exactly how we caught the bodyless-POST 400).
         console.warn('claim failed:', e instanceof ApiError ? `${e.status} ${e.message}` : e);
         if (e instanceof ApiError && e.status === 409) {
-          setError('That job was just taken — try another.');
+          // The server distinguishes three 409s — so should the driver. The
+          // "not available" case means the sweep took them off shift while the
+          // app was backgrounded: say so, and resync the toggle to the truth.
+          if (e.message.includes('not available')) {
+            setError("You're off shift — go online again to receive and claim jobs.");
+            void reconcileShift().catch(() => {});
+          } else if (e.message.includes('no active offer')) {
+            setError('That offer expired — the next one will pop up here.');
+          } else {
+            setError('That job was just taken — try another.');
+          }
         } else if (e instanceof ApiError) {
           setError('Could not claim that job — please try again.');
         } else {
@@ -360,7 +388,7 @@ export default function HomeScreen() {
         setClaimingId(null);
       }
     },
-    [token],
+    [token, reconcileShift],
   );
 
   const act = useCallback(
