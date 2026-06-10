@@ -112,7 +112,7 @@ export function markInTransit(token: string, id: string): Promise<DriverDelivery
 export function markDelivered(
   token: string,
   id: string,
-  pod?: { method?: string; note?: string },
+  pod?: { method?: string; note?: string; cod_collected_minor?: number },
 ): Promise<DriverDelivery> {
   return request(`/driver/deliveries/${id}/delivered`, {
     method: 'POST',
@@ -121,6 +121,52 @@ export function markDelivered(
   });
 }
 
-export function markFailed(token: string, id: string): Promise<DriverDelivery> {
-  return request(`/driver/deliveries/${id}/failed`, { method: 'POST', token });
+export type FailureReason =
+  | 'customer_unreachable'
+  | 'wrong_address'
+  | 'customer_refused'
+  | 'cash_refused'
+  | 'vehicle_problem'
+  | 'other';
+
+export function markFailed(token: string, id: string, reason?: FailureReason): Promise<DriverDelivery> {
+  return request(`/driver/deliveries/${id}/failed`, {
+    method: 'POST',
+    token,
+    // No body when no reason — keeps the bodyless-POST path (and older servers) valid.
+    ...(reason ? { body: JSON.stringify({ reason }) } : {}),
+  });
+}
+
+// ── Earnings + push (ADR-002 A.1/A.4) ────────────────────────────────────────
+export interface Earnings {
+  payable_minor: number;
+  today_minor: number;
+  today_deliveries: number;
+  cod_owed_minor: number;
+  currency: string;
+}
+
+export function getEarnings(token: string): Promise<Earnings> {
+  return request('/driver/earnings', { method: 'GET', token });
+}
+
+export function registerPushToken(
+  token: string,
+  pushToken: string,
+  platform: 'android' | 'ios',
+): Promise<void> {
+  return request('/driver/push-token', {
+    method: 'POST',
+    token,
+    body: JSON.stringify({ token: pushToken, platform }),
+  });
+}
+
+export function removePushToken(token: string, pushToken: string): Promise<void> {
+  return request('/driver/push-token', {
+    method: 'DELETE',
+    token,
+    body: JSON.stringify({ token: pushToken }),
+  });
 }

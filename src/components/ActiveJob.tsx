@@ -1,11 +1,19 @@
-import { ActivityIndicator, Linking, Pressable, StyleSheet, Text, View } from 'react-native';
-import type { DriverDelivery } from '../lib/api';
+import { useState } from 'react';
+import { ActivityIndicator, Linking, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import type { DriverDelivery, FailureReason } from '../lib/api';
 import { money, placeLabel } from '../lib/format';
 import { mapsUrl, telUrl } from '../lib/links';
 
 export type LifecycleAction = 'picked_up' | 'in_transit' | 'delivered' | 'failed';
+export interface ActionExtra {
+  reason?: FailureReason;
+  codCollectedMinor?: number;
+  note?: string;
+}
 
 // The actions available from each status (mirrors the platform state machine).
+// "Can't complete" exists in EVERY live state — a driver stuck after pickup
+// (unreachable customer, refused cash) must always have an exit (ADR-002 A.2).
 const ACTIONS: Record<string, { label: string; to: LifecycleAction; danger?: boolean }[]> = {
   assigned: [
     { label: "I've picked up", to: 'picked_up' },
@@ -14,9 +22,22 @@ const ACTIONS: Record<string, { label: string; to: LifecycleAction; danger?: boo
   picked_up: [
     { label: 'On my way', to: 'in_transit' },
     { label: 'Delivered', to: 'delivered' },
+    { label: "Can't complete", to: 'failed', danger: true },
   ],
-  in_transit: [{ label: 'Delivered', to: 'delivered' }],
+  in_transit: [
+    { label: 'Delivered', to: 'delivered' },
+    { label: "Can't complete", to: 'failed', danger: true },
+  ],
 };
+
+const FAILURE_REASONS: { value: FailureReason; label: string }[] = [
+  { value: 'customer_unreachable', label: 'Customer unreachable' },
+  { value: 'wrong_address', label: 'Wrong address' },
+  { value: 'customer_refused', label: 'Customer refused the order' },
+  { value: 'cash_refused', label: "Couldn't collect the cash" },
+  { value: 'vehicle_problem', label: 'Vehicle problem' },
+  { value: 'other', label: 'Something else' },
+];
 
 const STATUS_LABEL: Record<string, string> = {
   assigned: 'Assigned',
@@ -34,11 +55,41 @@ export default function ActiveJob({
   busy,
 }: {
   job: DriverDelivery;
-  onAction: (to: LifecycleAction) => void;
+  onAction: (to: LifecycleAction, extra?: ActionExtra) => void;
   busy: boolean;
 }) {
   const status = job.status ?? 'assigned';
   const actions = ACTIONS[status] ?? [];
+
+  // Two-step confirms: "Can't complete" needs a reason; "Delivered" captures the
+  // PoD note + (on COD jobs) the cash actually collected.
+  const [panel, setPanel] = useState<'fail' | 'deliver' | null>(null);
+  const [note, setNote] = useState('');
+  const [codInput, setCodInput] = useState('');
+
+  const codDue = job.collect_minor ?? 0;
+  const startAction = (to: LifecycleAction) => {
+    if (to === 'failed') {
+      setPanel('fail');
+    } else if (to === 'delivered') {
+      setCodInput(codDue > 0 ? (codDue / 100).toFixed(2) : '');
+      setPanel('deliver');
+    } else {
+      onAction(to);
+    }
+  };
+  const confirmDelivered = () => {
+    setPanel(null);
+    const extra: ActionExtra = {};
+    if (note.trim()) extra.note = note.trim().slice(0, 500);
+    if (codDue > 0) {
+      // Parse dollars → minor units; an unparseable edit falls back to the full
+      // amount due (the server's own default) rather than silently booking 0.
+      const parsed = Math.round(Number.parseFloat(codInput.replace(',', '.')) * 100);
+      extra.codCollectedMinor = Number.isFinite(parsed) && parsed >= 0 ? parsed : codDue;
+    }
+    onAction('delivered', extra);
+  };
 
   // Before pickup the driver heads to the merchant; after, to the customer.
   const goingToPickup = status === 'assigned';
@@ -85,28 +136,84 @@ export default function ActiveJob({
       <Text style={styles.place2}>{placeLabel(goingToPickup ? job.dropoff : job.pickup)}</Text>
 
       <View style={styles.metaRow}>
-        <Text style={styles.meta}>Fee {money(job.fee_minor)}</Text>
+        {/* The driver's CUT, never the platform fee — quoting money they don't
+            earn is a trust breach (ADR-002 A.3). */}
+        <Text style={styles.meta}>You earn {money(job.driver_fee_minor ?? null)}</Text>
         {job.collect_minor ? (
           <Text style={styles.collect}>Collect {money(job.collect_minor)} cash</Text>
         ) : null}
       </View>
 
-      <View style={styles.actions}>
-        {actions.map((a) => (
-          <Pressable
-            key={a.to}
-            style={[styles.btn, a.danger ? styles.danger : styles.primary, busy && styles.busy]}
-            onPress={() => onAction(a.to)}
-            disabled={busy}
-          >
-            {busy ? (
-              <ActivityIndicator color={a.danger ? '#fca5a5' : '#0f172a'} />
-            ) : (
-              <Text style={[styles.btnText, a.danger && styles.dangerText]}>{a.label}</Text>
-            )}
+      {panel === 'fail' ? (
+        <View style={styles.panel}>
+          <Text style={styles.panelTitle}>What went wrong?</Text>
+          {FAILURE_REASONS.map((r) => (
+            <Pressable
+              key={r.value}
+              style={styles.reasonBtn}
+              disabled={busy}
+              onPress={() => {
+                setPanel(null);
+                onAction('failed', { reason: r.value });
+              }}
+            >
+              <Text style={styles.reasonText}>{r.label}</Text>
+            </Pressable>
+          ))}
+          <Pressable style={styles.panelCancel} onPress={() => setPanel(null)}>
+            <Text style={styles.panelCancelText}>Back</Text>
           </Pressable>
-        ))}
-      </View>
+        </View>
+      ) : panel === 'deliver' ? (
+        <View style={styles.panel}>
+          <Text style={styles.panelTitle}>Confirm delivery</Text>
+          {codDue > 0 ? (
+            <>
+              <Text style={styles.fieldLabel}>Cash collected (due {money(codDue)})</Text>
+              <TextInput
+                style={styles.input}
+                value={codInput}
+                onChangeText={setCodInput}
+                keyboardType="decimal-pad"
+                placeholder={(codDue / 100).toFixed(2)}
+                placeholderTextColor="#475569"
+              />
+            </>
+          ) : null}
+          <Text style={styles.fieldLabel}>Received by / note (optional)</Text>
+          <TextInput
+            style={styles.input}
+            value={note}
+            onChangeText={setNote}
+            placeholder="e.g. Left with Tariro at the gate"
+            placeholderTextColor="#475569"
+            maxLength={500}
+          />
+          <Pressable style={[styles.btn, styles.primary, busy && styles.busy]} disabled={busy} onPress={confirmDelivered}>
+            {busy ? <ActivityIndicator color="#0f172a" /> : <Text style={styles.btnText}>Confirm delivered</Text>}
+          </Pressable>
+          <Pressable style={styles.panelCancel} onPress={() => setPanel(null)}>
+            <Text style={styles.panelCancelText}>Back</Text>
+          </Pressable>
+        </View>
+      ) : (
+        <View style={styles.actions}>
+          {actions.map((a) => (
+            <Pressable
+              key={a.to}
+              style={[styles.btn, a.danger ? styles.danger : styles.primary, busy && styles.busy]}
+              onPress={() => startAction(a.to)}
+              disabled={busy}
+            >
+              {busy ? (
+                <ActivityIndicator color={a.danger ? '#fca5a5' : '#0f172a'} />
+              ) : (
+                <Text style={[styles.btnText, a.danger && styles.dangerText]}>{a.label}</Text>
+              )}
+            </Pressable>
+          ))}
+        </View>
+      )}
     </View>
   );
 }
@@ -142,6 +249,23 @@ const styles = StyleSheet.create({
   meta: { color: '#22d3ee', fontSize: 15, fontWeight: '600' },
   collect: { color: '#fbbf24', fontSize: 15, fontWeight: '600' },
   actions: { gap: 10, marginTop: 24 },
+  panel: { marginTop: 24, gap: 10 },
+  panelTitle: { color: '#fff', fontSize: 16, fontWeight: '700' },
+  reasonBtn: { backgroundColor: '#334155', borderRadius: 10, paddingVertical: 13, paddingHorizontal: 14 },
+  reasonText: { color: '#fff', fontSize: 15 },
+  panelCancel: { alignItems: 'center', paddingVertical: 10 },
+  panelCancelText: { color: '#64748b', fontSize: 14 },
+  fieldLabel: { color: '#94a3b8', fontSize: 13, marginTop: 4 },
+  input: {
+    backgroundColor: '#0f172a',
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#334155',
+    color: '#fff',
+    fontSize: 16,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
   btn: { borderRadius: 10, paddingVertical: 15, alignItems: 'center' },
   primary: { backgroundColor: '#22c55e' },
   danger: { backgroundColor: 'transparent', borderWidth: 1, borderColor: '#7f1d1d' },

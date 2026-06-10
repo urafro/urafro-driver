@@ -13,6 +13,11 @@ export interface QueuedAction {
   deliveryId: string;
   action: QueuedActionType;
   createdAt: number;
+  /** Action payload (ADR-002 A.2/A.5): failure reason / COD amount / PoD note ride
+   *  the queue so an offline tap loses none of its substance on replay. */
+  reason?: string;
+  codCollectedMinor?: number;
+  note?: string;
 }
 
 const KEY = 'pending_actions';

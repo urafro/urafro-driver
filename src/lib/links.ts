@@ -11,3 +11,8 @@ export function telUrl(phone: string): string {
 export function mapsUrl(lat: number, lng: number): string {
   return `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}`;
 }
+
+// WhatsApp deep link — WhatsApp IS the support/coordination channel in this market.
+export function waUrl(phone: string): string {
+  return `https://wa.me/${phone.replace(/[^\d]/g, '')}`;
+}
