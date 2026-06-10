@@ -1,7 +1,9 @@
 import * as Location from 'expo-location';
 import * as TaskManager from 'expo-task-manager';
-import { updateLocation } from './api';
-import { loadSession } from './session';
+import { listOffers, updateLocation } from './api';
+import { loadSession, loadActiveJob } from './session';
+import { maybeNotifyNewOffers } from './notifications';
+import { money } from './format';
 
 // Background location for a driver on shift. expo-location delivers fixes (in the
 // foreground AND background) to this TaskManager task, which posts them to the
@@ -15,6 +17,11 @@ export const LOCATION_TASK = 'urafro-driver-location';
 
 // Registered at module load (imported by HomeScreen, which the app entry imports),
 // so the task exists before the OS ever delivers a background fix.
+// Offers are only checked every so often from the task — a fix can arrive every
+// 15s and the check costs a network round-trip.
+const OFFERS_CHECK_MIN_MS = 20_000;
+let lastOffersCheckMs = 0;
+
 TaskManager.defineTask(LOCATION_TASK, async ({ data, error }) => {
   if (error || !data) return;
   const { locations } = data as { locations: Location.LocationObject[] };
@@ -26,6 +33,23 @@ TaskManager.defineTask(LOCATION_TASK, async ({ data, error }) => {
     await updateLocation(session.token, last.coords.latitude, last.coords.longitude);
   } catch {
     // dropped — the next fix supersedes it (location is fire-and-forget by design)
+  }
+
+  // Screen-locked offer alerts (the no-Firebase path): RN pauses JS timers when
+  // the app is backgrounded, so the HomeScreen poll can't notify a pocketed
+  // phone — but THIS task is the proven screen-locked execution path. Honest
+  // limit: stationary devices get fixes throttled on some OEMs, so this is
+  // reliable while moving and best-effort while parked; true Doze-proof delivery
+  // is the remote-push path (Firebase step). Skipped mid-job (no offers then).
+  const now = Date.now();
+  if (now - lastOffersCheckMs < OFFERS_CHECK_MIN_MS) return;
+  lastOffersCheckMs = now;
+  try {
+    if (await loadActiveJob()) return; // on a job — server returns no offers anyway
+    const { data: offers } = await listOffers(session.token);
+    await maybeNotifyNewOffers(offers ?? [], money);
+  } catch {
+    // advisory — never let an offers/notification failure break location reporting
   }
 });
 

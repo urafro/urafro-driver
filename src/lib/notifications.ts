@@ -76,3 +76,34 @@ export async function notifyNewOffer(body: string): Promise<void> {
     // notifications are advisory — never let them break the shift loop
   }
 }
+
+// ── Shared new-offer detection ────────────────────────────────────────────────
+// ONE seen-set serving BOTH callers — the foreground offers poll and the headless
+// background-location task (RN pauses JS timers when backgrounded, so the
+// foreground poll alone never notifies a pocketed phone; the location task is the
+// proven screen-locked execution path). Module state lives exactly as long as the
+// process — the same lifetime either caller has. A re-offered (expired→refreshed)
+// job re-notifies by design: it's a fresh claim window.
+
+interface OfferLike {
+  id?: string;
+  driver_fee_minor?: number | null;
+  fee_minor?: number | null;
+}
+
+const seenOfferIds = new Set<string>();
+
+/** Detect genuinely-new offers, notify once for the first, remember the rest. */
+export async function maybeNotifyNewOffers(
+  offers: OfferLike[],
+  formatMoney: (minor: number | null | undefined) => string,
+): Promise<void> {
+  const firstNew = offers.find((o) => o.id && !seenOfferIds.has(o.id));
+  seenOfferIds.clear();
+  for (const o of offers) if (o.id) seenOfferIds.add(o.id);
+  if (!firstNew) return;
+  const earn = firstNew.driver_fee_minor ?? firstNew.fee_minor;
+  await notifyNewOffer(
+    `${earn != null ? `Earn ${formatMoney(earn)} · ` : ''}expires soon — open to claim.`,
+  );
+}

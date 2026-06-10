@@ -21,7 +21,7 @@ import {
 import { getCurrentLocation, ensureForegroundPermission } from '../lib/location';
 import { startBackgroundLocation, stopBackgroundLocation } from '../lib/background-location';
 import { maybePromptBatteryExemption, maybeExplainBackgroundPermission } from '../lib/battery';
-import { registerForPush, notifyNewOffer } from '../lib/notifications';
+import { registerForPush, maybeNotifyNewOffers } from '../lib/notifications';
 import { saveActiveJob, loadActiveJob, clearActiveJob } from '../lib/session';
 import { money } from '../lib/format';
 import { waUrl } from '../lib/links';
@@ -166,9 +166,11 @@ export default function HomeScreen() {
   }, [token, job]);
 
   // While online and free, refresh location + offers on an interval. Genuinely
-  // NEW offers also fire a local notification with sound — the no-Firebase path
-  // that works while the on-shift foreground service keeps the process alive.
-  const seenOfferIds = useRef<Set<string>>(new Set());
+  // NEW offers fire a local notification via the SHARED dedupe in notifications.ts
+  // — the same set the background-location task uses, so a pocketed-then-opened
+  // phone never gets double-notified. (RN pauses JS timers in the background, so
+  // THIS poll only covers the app-open case; the location task covers
+  // screen-locked, and remote push covers everything once Firebase is wired.)
   useEffect(() => {
     if (!online || job) return;
     let cancelled = false;
@@ -184,12 +186,7 @@ export default function HomeScreen() {
         if (cancelled) return;
         const fresh = data ?? [];
         setOffers(fresh);
-        const firstNew = fresh.find((o) => o.id && !seenOfferIds.current.has(o.id));
-        seenOfferIds.current = new Set(fresh.map((o) => o.id).filter((x): x is string => !!x));
-        if (firstNew) {
-          const earn = firstNew.driver_fee_minor ?? firstNew.fee_minor;
-          void notifyNewOffer(`${earn != null ? `Earn ${money(earn)} · ` : ''}expires soon — open to claim.`);
-        }
+        void maybeNotifyNewOffers(fresh, money);
       } catch {
         // transient (network) — the next tick retries
       }
