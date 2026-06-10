@@ -8,10 +8,12 @@ import { money, placeLabel, secondsUntil } from '../lib/format';
 export default function OffersList({
   offers,
   onClaim,
+  onDecline,
   claimingId,
 }: {
   offers: Offer[];
   onClaim: (id: string) => void;
+  onDecline: (id: string) => void;
   claimingId: string | null;
 }) {
   const [now, setNow] = useState(Date.now());
@@ -51,6 +53,10 @@ export default function OffersList({
             >
               <Text style={styles.acceptText}>{claiming ? 'Claiming…' : 'Accept'}</Text>
             </Pressable>
+            {/* Decline (ADR-002 B): the job is never re-offered to this driver. */}
+            <Pressable style={styles.pass} onPress={() => onDecline(id)} disabled={claimingId != null}>
+              <Text style={styles.passText}>Pass</Text>
+            </Pressable>
           </View>
         );
       })}
@@ -71,4 +77,6 @@ const styles = StyleSheet.create({
   accept: { backgroundColor: '#22c55e', borderRadius: 10, paddingVertical: 12, alignItems: 'center', marginTop: 14 },
   disabled: { opacity: 0.6 },
   acceptText: { color: '#0f172a', fontSize: 16, fontWeight: '700' },
+  pass: { alignItems: 'center', paddingVertical: 8, marginTop: 2 },
+  passText: { color: '#64748b', fontSize: 13 },
 });

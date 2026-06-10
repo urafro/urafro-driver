@@ -2,7 +2,6 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   AppState,
-  Linking,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -12,6 +11,7 @@ import {
 import {
   ApiError,
   claimDelivery,
+  declineOffer,
   getDelivery,
   getEarnings,
   getProfile,
@@ -38,8 +38,6 @@ import { maybePromptBatteryExemption, maybeExplainBackgroundPermission } from '.
 import { registerForPush, maybeNotifyNewOffers } from '../lib/notifications';
 import { saveActiveJob, loadActiveJob, clearActiveJob } from '../lib/session';
 import { money } from '../lib/format';
-import { waUrl } from '../lib/links';
-import { OPS_WHATSAPP } from '../config';
 import {
   enqueueAction,
   flushActions,
@@ -60,7 +58,7 @@ const FLUSH_MS = 12000;
 // queues the action and a background flush retries it until it lands (and then
 // reconciles the on-screen job). Location pings + offer polls degrade softly.
 export default function HomeScreen() {
-  const { session, signOut } = useSession();
+  const { session } = useSession();
   const token = session?.token ?? '';
 
   const [online, setOnline] = useState(false);
@@ -391,6 +389,21 @@ export default function HomeScreen() {
     [token, reconcileShift],
   );
 
+  // Decline (ADR-002 B): optimistic removal — the server marks it `declined` and
+  // never re-offers it to this driver. Best-effort: on a network failure the poll
+  // re-lists it (already in the seen-set, so no duplicate notification).
+  const decline = useCallback(
+    async (id: string) => {
+      setOffers((prev) => prev.filter((o) => o.id !== id));
+      try {
+        await declineOffer(token, id);
+      } catch {
+        // poll re-syncs the truth
+      }
+    },
+    [token],
+  );
+
   const act = useCallback(
     async (to: LifecycleAction, extra?: ActionExtra) => {
       const id = job?.id;
@@ -478,7 +491,9 @@ export default function HomeScreen() {
               </Text>
             )}
           </Pressable>
-          {online ? <OffersList offers={offers} onClaim={claim} claimingId={claimingId} /> : null}
+          {online ? (
+            <OffersList offers={offers} onClaim={claim} onDecline={decline} claimingId={claimingId} />
+          ) : null}
         </>
       )}
 
@@ -492,16 +507,9 @@ export default function HomeScreen() {
       ) : null}
       {error ? <Text style={styles.error}>{error}</Text> : null}
 
+      {/* Ops contact + sign-out live on the Profile tab now. */}
       <View style={styles.footer}>
         <Text style={styles.meta}>Driver {session?.driverId.slice(0, 8)}…</Text>
-        {OPS_WHATSAPP ? (
-          <Pressable onPress={() => void Linking.openURL(waUrl(OPS_WHATSAPP))}>
-            <Text style={styles.link}>Contact ops</Text>
-          </Pressable>
-        ) : null}
-        <Pressable onPress={signOut}>
-          <Text style={styles.link}>Sign out</Text>
-        </Pressable>
       </View>
     </ScrollView>
   );

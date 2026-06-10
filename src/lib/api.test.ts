@@ -136,6 +136,31 @@ describe('api client', () => {
     expect(mock.mock.calls[0][1].method).toBe('DELETE');
   });
 
+  it('declineOffer is a bodyless POST (no Content-Type — the RN-Android fix must hold)', async () => {
+    const { declineOffer } = await import('./api');
+    const mock = stubFetch(204);
+    await declineOffer('tok', 'd1');
+    const [url, init] = mock.mock.calls[0];
+    expect(url).toContain('/v1/driver/offers/d1/decline');
+    expect(init.method).toBe('POST');
+    expect(init.body).toBeUndefined();
+    expect(headersOf(init)['Content-Type']).toBeUndefined();
+  });
+
+  it('updateProfile PATCHes only the driver-editable fields; history GETs with auth', async () => {
+    const { updateProfile, listMyDeliveries } = await import('./api');
+    let mock = stubFetch(204);
+    await updateProfile('tok', { name: 'Tendai M.', vehicle: 'Honda Fit' });
+    expect(mock.mock.calls[0][1].method).toBe('PATCH');
+    expect(JSON.parse(mock.mock.calls[0][1].body as string)).toEqual({ name: 'Tendai M.', vehicle: 'Honda Fit' });
+
+    mock = stubFetch(200, { data: [{ id: 'd1', status: 'delivered', driver_fee_minor: 160 }] });
+    const h = await listMyDeliveries('tok');
+    expect(h.data[0].driver_fee_minor).toBe(160);
+    expect(mock.mock.calls[0][0]).toContain('/v1/driver/deliveries');
+    expect(headersOf(mock.mock.calls[0][1]).Authorization).toBe('Bearer tok');
+  });
+
   it('fires the unauthorized handler on an authenticated 401, not a pre-auth 401', async () => {
     const onUnauth = vi.fn();
     setUnauthorizedHandler(onUnauth);

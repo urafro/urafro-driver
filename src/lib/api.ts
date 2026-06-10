@@ -152,6 +152,25 @@ export function getProfile(token: string): Promise<DriverProfile> {
   return request('/driver/profile', { method: 'GET', token });
 }
 
+export function updateProfile(
+  token: string,
+  patch: { name?: string; vehicle?: string },
+): Promise<void> {
+  return request('/driver/profile', { method: 'PATCH', token, body: JSON.stringify(patch) });
+}
+
+// ── History + decline (ADR-002 B) ─────────────────────────────────────────────
+/** A past job: the public delivery shape + the driver's cut (NO contacts). */
+export type HistoryItem = Delivery & { driver_fee_minor?: number | null };
+
+export function listMyDeliveries(token: string): Promise<{ data: HistoryItem[] }> {
+  return request('/driver/deliveries', { method: 'GET', token });
+}
+
+export function declineOffer(token: string, id: string): Promise<void> {
+  return request(`/driver/offers/${id}/decline`, { method: 'POST', token });
+}
+
 // ── Earnings + push (ADR-002 A.1/A.4) ────────────────────────────────────────
 export interface Earnings {
   payable_minor: number;
