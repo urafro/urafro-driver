@@ -214,6 +214,64 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/driver/profile": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The driver's own profile */
+        get: operations["driverGetProfile"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Update driver-editable profile fields (name, vehicle) */
+        patch: operations["driverUpdateProfile"];
+        trace?: never;
+    };
+    "/driver/deliveries": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The driver's recent job history
+         * @description Newest first (≤20). Public delivery shape plus `driver_fee_minor` — contacts are deliberately absent (stale customer PII on past jobs).
+         */
+        get: operations["driverListDeliveries"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/driver/offers/{id}/decline": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Decline an offer
+         * @description Marks this driver's live offer declined — it is never re-offered to them. Idempotent; declining a lapsed/claimed offer is a harmless no-op.
+         */
+        post: operations["driverDeclineOffer"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/driver/earnings": {
         parameters: {
             query?: never;
@@ -470,6 +528,8 @@ export interface components {
             collect_minor?: number | null;
             /** @description Why the driver marked it failed; null unless status is `failed`. */
             failure_reason?: components["schemas"]["FailureReason"] | null;
+            /** @description At-door proof-of-delivery PIN, generated at intake. **Tenant surfaces only** (create response, GET, list) — relay it to the recipient; it is never present in driver payloads or webhook bodies. The driver submits it on delivered for a verified (`otp`) handover. */
+            pod_pin?: string | null;
             /** Format: date-time */
             created_at?: string;
             /** Format: date-time */
@@ -509,6 +569,8 @@ export interface components {
             note?: string;
             /** @description What the driver actually collected on a COD job (minor units). Omit to book the delivery's full collect_minor; explicit 0 books nothing — the COD ledger records reality and reconciliation surfaces shortfalls. */
             cod_collected_minor?: number;
+            /** @description The at-door PIN read out by the recipient. Optional — manual remains the fallback. A match upgrades the PoD method to `otp`; a mismatch rejects the completion (400), capped at 5 attempts per delivery. */
+            pod_pin?: string;
         };
         WebhookEvent: {
             /** Format: uuid */
@@ -942,6 +1004,110 @@ export interface operations {
                         data?: components["schemas"]["Offer"][];
                     };
                 };
+            };
+            401: components["responses"]["Unauthorized"];
+        };
+    };
+    driverGetProfile: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Profile. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** Format: uuid */
+                        driver_id: string;
+                        name: string;
+                        phone: string;
+                        vehicle?: string | null;
+                        /** @description False until ops approves — the driver can log in but not go on shift. */
+                        approved: boolean;
+                        /** @enum {string} */
+                        status: "available" | "offline" | "busy";
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+        };
+    };
+    driverUpdateProfile: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    name?: string;
+                    vehicle?: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Updated. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+        };
+    };
+    driverListDeliveries: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Recent jobs. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data?: (components["schemas"]["Delivery"] & {
+                            driver_fee_minor?: number | null;
+                        })[];
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+        };
+    };
+    driverDeclineOffer: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Declined (or already moot). */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             401: components["responses"]["Unauthorized"];
         };

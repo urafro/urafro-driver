@@ -5,6 +5,7 @@ import {
   claimDelivery,
   getDelivery,
   getEarnings,
+  getProfile,
   goOffline,
   goOnline,
   listOffers,
@@ -19,7 +20,11 @@ import {
   type Offer,
 } from '../lib/api';
 import { getCurrentLocation, ensureForegroundPermission } from '../lib/location';
-import { startBackgroundLocation, stopBackgroundLocation } from '../lib/background-location';
+import {
+  isBackgroundActive,
+  startBackgroundLocation,
+  stopBackgroundLocation,
+} from '../lib/background-location';
 import { maybePromptBatteryExemption, maybeExplainBackgroundPermission } from '../lib/battery';
 import { registerForPush, maybeNotifyNewOffers } from '../lib/notifications';
 import { saveActiveJob, loadActiveJob, clearActiveJob } from '../lib/session';
@@ -69,6 +74,34 @@ export default function HomeScreen() {
   // path in the offers poll still fires.
   useEffect(() => {
     if (token) void registerForPush(token);
+  }, [token]);
+
+  // Reconcile the shift with SERVER truth on launch, and HEAL it. Two real-world
+  // failure modes this fixes: (1) the UI used to boot to "Offline" even when the
+  // server still had the driver available — closing the app LOOKED like going off
+  // shift; (2) a swiped-away app can kill the GPS foreground service while the
+  // shift is still live server-side — restarting the stream here keeps the
+  // heartbeat flowing so the ghost-supply sweep doesn't take them off shift.
+  useEffect(() => {
+    if (!token) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const p = await getProfile(token);
+        if (cancelled) return;
+        if (p.status === 'available' || p.status === 'busy') {
+          setOnline(true);
+          const alreadyStreaming = await isBackgroundActive();
+          if (cancelled) return;
+          setBgActive(alreadyStreaming || (await startBackgroundLocation()));
+        }
+      } catch {
+        // non-critical — the driver can always toggle manually
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, [token]);
 
   // Persist the active delivery SNAPSHOT whenever it changes, so a relaunch renders

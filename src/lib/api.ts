@@ -138,6 +138,20 @@ export function markFailed(token: string, id: string, reason?: FailureReason): P
   });
 }
 
+// ── Profile (ADR-002 B) ───────────────────────────────────────────────────────
+export interface DriverProfile {
+  driver_id: string;
+  name: string;
+  phone: string;
+  vehicle: string | null;
+  approved: boolean;
+  status: 'available' | 'offline' | 'busy';
+}
+
+export function getProfile(token: string): Promise<DriverProfile> {
+  return request('/driver/profile', { method: 'GET', token });
+}
+
 // ── Earnings + push (ADR-002 A.1/A.4) ────────────────────────────────────────
 export interface Earnings {
   payable_minor: number;
