@@ -1,21 +1,29 @@
 # urAfro Driver — project instructions
 
-You are my technical co-founder. **Current stage: ADR-002 Phase A app batch
-SHIPPED (PR #12, 2026-06-10) on top of the on-device-verified loop (2026-06-09:
-real Samsung — OTP login → claim → lifecycle → background GPS screen-locked +
-moving).** Phase A adds: **notifications** (MAX-importance `offers` channel w/
-sound, Expo push-token registration — degrades gracefully until the founder's
-one-time Firebase/FCM-V1 EAS step — plus a **local-notify fallback** from the
-offers poll that works today), **mid-run abort with a 6-reason picker** in every
-live state, the **delivered confirm** (COD cash-collected capture + received-by
-note, both riding the offline queue), **driver's-cut display** (`driver_fee_minor`,
-never the full fee), an **earnings card** (today / owed / COD float), **job-snapshot
-resilience** (instant dead-zone resume after app-kill + a 15s active-job poll that
-propagates tenant cancellations), a background-permission interstitial, and an
-ops-WhatsApp button (`EXPO_PUBLIC_OPS_WHATSAPP`). **On-device verification of the
-Phase A batch itself is PENDING** (the APK is built + installed; only the 06-09
-core loop is device-proven). The build mandate is **urafro-next ADR-002: a
-complete delivery system, not pilot-minimum.** Core loop underneath: login → go
+You are my technical co-founder. **Current stage: ADR-002 Phases A + B app
+batches SHIPPED and largely device-proven.** Timeline: core loop verified
+on-device 2026-06-09 (real Samsung — OTP login → claim → lifecycle → background
+GPS screen-locked + moving); Phase A batch (PR #12) shipped 2026-06-10 —
+notifications (MAX-importance `offers` channel, Expo push-token registration +
+local-notify fallback), mid-run abort w/ 6-reason picker, delivered confirm (COD
+cash + received-by note, riding the offline queue), driver's-cut display,
+earnings card, job-snapshot resilience, background-permission interstitial,
+ops-WhatsApp button. **FCM push is LIVE and device-verified 2026-06-10**
+(killed-app + locked-phone offer notifications; Firebase project
+`urafro-driver`, google-services via secret EAS file env, FCM-V1 key uploaded
+by the founder). **Phase B app batch (PR #19, 2026-06-10): tab navigation
+(🛵 Shift / 🗂️ Jobs / 👤 Profile — Shift stays mounted, hidden via
+`display:'none'`, because its polls/listeners are the shift heartbeat), job
+history, profile editing + money block, offer decline ("Pass").** **At-door PIN
+entry (PR #20, 2026-06-10):** the delivered confirm now leads with the 4-digit
+delivery code (match → verified `otp` PoD server-side; wrong code keeps the
+panel open with honest copy; subdued manual fallback; the code rides the offline
+queue with a manual-fallback replay so a rejected code never strands a
+delivery) — closing the gap on-device testing caught (completions were silently
+booking `manual`). **On-device verification still pending for: the Phase B
+surfaces (tabs/history/profile/decline) and PIN entry (#20 APK).** The build
+mandate is **urafro-next ADR-002: a complete delivery system, not
+pilot-minimum.** Core loop underneath: login → go
 online → poll/push offers → claim → run the job to delivered/failed. This is an Expo + TypeScript app — the supply-side
 **driver client** for the **urAfro Next** delivery platform (separate repo
 `urafro/urafro-next`; placement rationale in urafro `ADR-029`). The platform's
@@ -26,18 +34,18 @@ token storage (`src/lib/session.ts`), a session-gated root, the **OTP login flow
 (`src/screens/LoginScreen.tsx`), and the **shift controller** (`src/screens/HomeScreen.tsx`)
 — online/offline + a foreground location/offer poll, the offers list
 (`src/components/OffersList.tsx`), claim, and the **active-job lifecycle**
-(`src/components/ActiveJob.tsx`: picked_up → in_transit → delivered + failed; PoD is
-`method: 'manual'` for now). **2G offline resilience is done** — lifecycle actions
+(`src/components/ActiveJob.tsx`: picked_up → in_transit → delivered + failed; PoD =
+at-door 4-digit code → verified `otp`, with a manual fallback). **2G offline resilience is done** — lifecycle actions
 that fail transiently are persisted (`src/lib/queue.ts`) and a background flush
 retries them until they land (retry on network/5xx, drop on 4xx), with a
 "waiting to sync" indicator. **Background GPS is built** (`src/lib/background-location.ts`
 — an expo-task-manager headless task streams fixes foreground + background; starts
 on go-online, stops on go-offline; foreground poll defers to it when active) —
-⚠️ **code-complete but UNVERIFIED on-device:** background-location tasks don't run
-in Expo Go, so it needs a **development build** to confirm the permission grant,
-Android foreground-service, and headless token read. Navigation is still a session
-gate (no router yet). **Next: verify background GPS on a dev build; then PoD capture
-UX (photo / at-door OTP) and jest-expo component tests.**
+**device-verified 2026-06-09/10** (EAS preview builds on a real Samsung; Expo Go is
+a dead end for SDK 56 — background tasks don't run there). Navigation is the
+hand-rolled tab switcher in `App.tsx` (no nav lib, deliberate). **Next: on-device
+pass of the Phase B surfaces + PIN entry; then photo PoD capture and jest-expo
+component tests.**
 **Unit tests:** vitest covers the pure logic (`toE164`, formatters, queue retry
 policy, api client, link builders); component/screen tests still TODO. My background is as an amateur
 business owner — weight your input toward the gaps I can't cover myself.
