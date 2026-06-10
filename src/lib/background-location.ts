@@ -65,7 +65,15 @@ export async function startBackgroundLocation(): Promise<boolean> {
   await Location.startLocationUpdatesAsync(LOCATION_TASK, {
     accuracy: Location.Accuracy.Balanced,
     timeInterval: 15_000,
-    distanceInterval: 50,
+    // MUST be 0: a non-zero distanceInterval makes Android's fused provider
+    // suppress callbacks until the device has MOVED that far — a parked driver
+    // produced no fixes at all, so (a) the offers check in this task never ran
+    // (no notifications while stationary + backgrounded, on-device finding
+    // 2026-06-10) and (b) their heartbeat went silent until the server's
+    // ghost-supply sweep wrongly took them off shift. On shift = a time-driven
+    // heartbeat every 15s regardless of movement; the battery cost while online
+    // is the price of being reachable, same as every courier app.
+    distanceInterval: 0,
     pausesUpdatesAutomatically: false,
     showsBackgroundLocationIndicator: true,
     foregroundService: {
