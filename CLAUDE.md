@@ -20,10 +20,17 @@ delivery code (match → verified `otp` PoD server-side; wrong code keeps the
 panel open with honest copy; subdued manual fallback; the code rides the offline
 queue with a manual-fallback replay so a rejected code never strands a
 delivery) — closing the gap on-device testing caught (completions were silently
-booking `manual`). **On-device verification still pending for: the Phase B
-surfaces (tabs/history/profile/decline) and PIN entry (#20 APK).** The build
-mandate is **urafro-next ADR-002: a complete delivery system, not
-pilot-minimum.** Core loop underneath: login → go
+booking `manual`). **ALL of Phase B + PIN entry DEVICE-VERIFIED 2026-06-10**
+(founder pass: tabs/history/profile/decline + the PIN flow — which also caught
+the offer-push-spam bug, fixed server-side in urafro-next #38: pushes follow
+rows the upsert actually wrote, never the candidate list). **Battery-saver
+banner (#22):** detect-and-resolve — `expo-battery` checks
+`isBatteryOptimizationEnabled` on go-online + every resume; an amber banner
+shows while on-shift-and-at-risk; one tap fires the direct exemption dialog
+(`expo-intent-launcher` + `REQUEST_IGNORE_BATTERY_OPTIMIZATIONS`, fine for
+sideload/EAS-internal — revisit if Play-listed); clears only when the exemption
+is real. The build mandate is **urafro-next ADR-002: a complete delivery
+system, not pilot-minimum.** Core loop underneath: login → go
 online → poll/push offers → claim → run the job to delivered/failed. This is an Expo + TypeScript app — the supply-side
 **driver client** for the **urAfro Next** delivery platform (separate repo
 `urafro/urafro-next`; placement rationale in urafro `ADR-029`). The platform's
@@ -43,9 +50,9 @@ retries them until they land (retry on network/5xx, drop on 4xx), with a
 on go-online, stops on go-offline; foreground poll defers to it when active) —
 **device-verified 2026-06-09/10** (EAS preview builds on a real Samsung; Expo Go is
 a dead end for SDK 56 — background tasks don't run there). Navigation is the
-hand-rolled tab switcher in `App.tsx` (no nav lib, deliberate). **Next: on-device
-pass of the Phase B surfaces + PIN entry; then photo PoD capture and jest-expo
-component tests.**
+hand-rolled tab switcher in `App.tsx` (no nav lib, deliberate). **Next: photo
+PoD capture, jest-expo component tests (toolchain permitting), and Phase C
+platform work (payouts, tenant pricing/invoicing).**
 **Unit tests:** vitest covers the pure logic (`toE164`, formatters, queue retry
 policy, api client, link builders); component/screen tests still TODO. My background is as an amateur
 business owner — weight your input toward the gaps I can't cover myself.

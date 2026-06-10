@@ -34,7 +34,11 @@ import {
   startBackgroundLocation,
   stopBackgroundLocation,
 } from '../lib/background-location';
-import { maybePromptBatteryExemption, maybeExplainBackgroundPermission } from '../lib/battery';
+import {
+  isBatteryOptimizationOn,
+  maybeExplainBackgroundPermission,
+  requestBatteryExemption,
+} from '../lib/battery';
 import { registerForPush, maybeNotifyNewOffers } from '../lib/notifications';
 import { saveActiveJob, loadActiveJob, clearActiveJob } from '../lib/session';
 import { money } from '../lib/format';
@@ -106,18 +110,28 @@ export default function HomeScreen() {
     }
   }, [token]);
 
+  // Battery-saver risk (ADR-001): true while the OS may freeze the app in the
+  // background. Re-checked on resume so the banner clears the moment the driver
+  // actually grants the exemption (a one-shot prompt can't know that).
+  const [batteryRisk, setBatteryRisk] = useState(false);
+  const refreshBatteryRisk = useCallback(() => {
+    void isBatteryOptimizationOn().then(setBatteryRisk).catch(() => {});
+  }, []);
+
   useEffect(() => {
     if (!token) return;
     void reconcileShift().catch(() => {
       // non-critical — the driver can always toggle manually
     });
+    refreshBatteryRisk();
     const sub = AppState.addEventListener('change', (state) => {
       if (state === 'active') {
         void reconcileShift().catch(() => {});
+        refreshBatteryRisk();
       }
     });
     return () => sub.remove();
-  }, [token, reconcileShift]);
+  }, [token, reconcileShift, refreshBatteryRisk]);
 
   // Persist the active delivery SNAPSHOT whenever it changes, so a relaunch renders
   // it instantly even in a dead zone. Skip the first run (job is null on mount) —
@@ -339,16 +353,16 @@ export default function HomeScreen() {
       // Best-effort background streaming; falls back to the foreground poll if the
       // "allow all the time" permission is denied.
       setBgActive(await startBackgroundLocation());
-      // One-time nudge to exclude the app from battery optimization — OEM skins
-      // (Samsung) pause backgrounded apps and can kill the location service mid-run.
-      void maybePromptBatteryExemption();
+      // The battery-saver banner (below) takes over from here: it shows while the
+      // OS can still freeze the app, and clears itself once the exemption is real.
+      refreshBatteryRisk();
     } catch {
       setError('Could not go online — try again.');
     } finally {
       setBusy(false);
       setLocating(false);
     }
-  }, [token]);
+  }, [token, refreshBatteryRisk]);
 
   const goOfflineNow = useCallback(async () => {
     setBusy(true);
@@ -469,6 +483,19 @@ export default function HomeScreen() {
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+      {/* Battery-saver warning (ADR-001): visible whenever the shift is live and
+          the OS can still freeze the app in the background — including mid-job,
+          where a frozen app means dead GPS + missed cancellations. Clears itself
+          on resume once the exemption is actually granted. */}
+      {online && batteryRisk ? (
+        <Pressable style={styles.batteryBanner} onPress={() => void requestBatteryExemption()}>
+          <Text style={styles.batteryTitle}>⚠️ Battery saver can interrupt your shift</Text>
+          <Text style={styles.batteryBody}>
+            Your phone may pause this app in your pocket — stopping offers and delivery tracking.
+            Tap to allow unrestricted battery use.
+          </Text>
+        </Pressable>
+      ) : null}
       {job ? (
         <>
           <Text style={styles.title}>Active delivery</Text>
@@ -560,6 +587,16 @@ const styles = StyleSheet.create({
   bg: { color: '#86efac', fontSize: 13, marginTop: 16 },
   syncing: { color: '#fbbf24', fontSize: 13, marginTop: 16 },
   error: { color: '#fca5a5', fontSize: 14, marginTop: 16 },
+  batteryBanner: {
+    backgroundColor: '#451a03',
+    borderColor: '#b45309',
+    borderWidth: 1,
+    borderRadius: 12,
+    padding: 14,
+    marginBottom: 16,
+  },
+  batteryTitle: { color: '#fbbf24', fontSize: 15, fontWeight: '700' },
+  batteryBody: { color: '#fcd34d', fontSize: 13, marginTop: 4, lineHeight: 18 },
   footer: {
     marginTop: 'auto',
     paddingTop: 32,

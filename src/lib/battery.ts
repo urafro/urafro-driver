@@ -1,8 +1,13 @@
 import { Alert, Linking, Platform } from 'react-native';
+import * as Battery from 'expo-battery';
+import * as IntentLauncher from 'expo-intent-launcher';
 import * as SecureStore from 'expo-secure-store';
 
-const SHOWN_KEY = 'battery_hint_shown';
 const BG_HINT_KEY = 'bg_perm_hint_shown';
+
+// Must match app.json android.package — changing it breaks the install lineage
+// anyway, so a constant beats pulling in expo-application for one string.
+const ANDROID_PACKAGE = 'com.urafro.driver';
 
 /**
  * One-time interstitial BEFORE the background-location permission flow: Android
@@ -29,26 +34,44 @@ export async function maybeExplainBackgroundPermission(): Promise<void> {
 }
 
 /**
- * One-time nudge (Android only) to exclude the app from battery optimization.
- * Aggressive OEM skins — notably Samsung One UI — pause backgrounded apps, which can
- * kill the location foreground service mid-delivery (the ADR-001 risk). We can't
- * reliably toggle the exemption programmatically across OEMs, so we explain it and
- * deep-link to the app's settings. Shown at most once per install (flag in SecureStore).
+ * Is the OS still allowed to pause this app in the background? Aggressive OEM
+ * skins — notably Samsung One UI — use battery optimization to freeze
+ * backgrounded apps, which can kill the location foreground service and the
+ * offer checks mid-shift (the ADR-001 risk). False on iOS and on detection
+ * failure (never nag on a guess).
  */
-export async function maybePromptBatteryExemption(): Promise<void> {
+export async function isBatteryOptimizationOn(): Promise<boolean> {
+  if (Platform.OS !== 'android') return false;
+  try {
+    return await Battery.isBatteryOptimizationEnabledAsync();
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Fire Android's direct "ignore battery optimizations?" dialog for this app
+ * (needs REQUEST_IGNORE_BATTERY_OPTIMIZATIONS in the manifest — fine for our
+ * sideloaded/EAS-internal distribution; revisit if this ever ships to Play,
+ * whose policy restricts the direct dialog). Some OEM builds block the intent —
+ * fall back to the app's settings page so the driver always lands somewhere
+ * actionable.
+ */
+export async function requestBatteryExemption(): Promise<void> {
   if (Platform.OS !== 'android') return;
   try {
-    if (await SecureStore.getItemAsync(SHOWN_KEY)) return;
-    await SecureStore.setItemAsync(SHOWN_KEY, '1');
+    await IntentLauncher.startActivityAsync(
+      'android.settings.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS',
+      { data: `package:${ANDROID_PACKAGE}` },
+    );
   } catch {
-    return; // storage unavailable — skip the nudge rather than risk re-prompting
+    Alert.alert(
+      'Open battery settings',
+      'Set urAfro Driver’s battery usage to "Unrestricted" so deliveries keep coming while your phone is in your pocket.',
+      [
+        { text: 'Not now', style: 'cancel' },
+        { text: 'Open settings', onPress: () => void Linking.openSettings() },
+      ],
+    );
   }
-  Alert.alert(
-    'Keep tracking reliable',
-    'Some phones pause apps in the background to save battery, which can stop sharing your location during a delivery. For reliable tracking, set urAfro Driver’s battery usage to "Unrestricted".',
-    [
-      { text: 'Later', style: 'cancel' },
-      { text: 'Open settings', onPress: () => void Linking.openSettings() },
-    ],
-  );
 }
