@@ -252,13 +252,27 @@ export default function HomeScreen() {
     async (a: QueuedAction): Promise<void> => {
       if (a.action === 'picked_up') await markPickedUp(token, a.deliveryId);
       else if (a.action === 'in_transit') await markInTransit(token, a.deliveryId);
-      else if (a.action === 'delivered')
-        await markDelivered(token, a.deliveryId, {
-          method: 'manual',
-          note: a.note,
-          cod_collected_minor: a.codCollectedMinor,
-        });
-      else await markFailed(token, a.deliveryId, a.reason as FailureReason | undefined);
+      else if (a.action === 'delivered') {
+        try {
+          await markDelivered(token, a.deliveryId, {
+            method: 'manual',
+            note: a.note,
+            cod_collected_minor: a.codCollectedMinor,
+            ...(a.podPin ? { pod_pin: a.podPin } : {}),
+          });
+        } catch (e) {
+          // A queued at-door code can be rejected on replay (mistyped offline, or
+          // the attempt window burned). The driver is long gone — complete it
+          // manually rather than dropping the action and leaving the job open.
+          if (a.podPin && e instanceof ApiError && e.status === 400) {
+            await markDelivered(token, a.deliveryId, {
+              method: 'manual',
+              note: a.note,
+              cod_collected_minor: a.codCollectedMinor,
+            });
+          } else throw e;
+        }
+      } else await markFailed(token, a.deliveryId, a.reason as FailureReason | undefined);
     },
     [token],
   );
@@ -417,6 +431,7 @@ export default function HomeScreen() {
         reason: extra?.reason,
         codCollectedMinor: extra?.codCollectedMinor,
         note: extra?.note,
+        podPin: extra?.podPin,
       };
       setBusy(true);
       setError(null);
@@ -429,6 +444,7 @@ export default function HomeScreen() {
             method: 'manual',
             note: extra?.note,
             cod_collected_minor: extra?.codCollectedMinor,
+            ...(extra?.podPin ? { pod_pin: extra.podPin } : {}),
           });
         else updated = await markFailed(token, id, extra?.reason);
         setJob(to === 'delivered' || to === 'failed' ? null : updated);
@@ -437,6 +453,10 @@ export default function HomeScreen() {
           const q = await enqueueAction(queued);
           setPending(q.length);
           setError('No signal — saved. It’ll sync automatically when you’re back online.');
+        } else if (extra?.podPin && e instanceof ApiError && e.status === 400) {
+          // Wrong at-door code (or attempts burned) — the deliver panel is still
+          // open with the typed code; tell the driver what actually happened.
+          setError('That code didn’t match — ask the customer to re-check their receipt. No code? Use “Complete without it”.');
         } else {
           setError('Could not update the job — try again.');
         }

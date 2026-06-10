@@ -9,6 +9,8 @@ export interface ActionExtra {
   reason?: FailureReason;
   codCollectedMinor?: number;
   note?: string;
+  /** At-door delivery code read out by the customer (verified handover). */
+  podPin?: string;
 }
 
 // The actions available from each status (mirrors the platform state machine).
@@ -62,10 +64,12 @@ export default function ActiveJob({
   const actions = ACTIONS[status] ?? [];
 
   // Two-step confirms: "Can't complete" needs a reason; "Delivered" captures the
-  // PoD note + (on COD jobs) the cash actually collected.
+  // at-door delivery code (verified handover) + PoD note + (on COD jobs) the cash
+  // actually collected.
   const [panel, setPanel] = useState<'fail' | 'deliver' | null>(null);
   const [note, setNote] = useState('');
   const [codInput, setCodInput] = useState('');
+  const [pinInput, setPinInput] = useState('');
 
   const codDue = job.collect_minor ?? 0;
   const startAction = (to: LifecycleAction) => {
@@ -73,14 +77,18 @@ export default function ActiveJob({
       setPanel('fail');
     } else if (to === 'delivered') {
       setCodInput(codDue > 0 ? (codDue / 100).toFixed(2) : '');
+      setPinInput('');
       setPanel('deliver');
     } else {
       onAction(to);
     }
   };
-  const confirmDelivered = () => {
-    setPanel(null);
+  // The deliver panel deliberately STAYS OPEN here: on success the whole card
+  // unmounts (the job clears), and on a wrong-code 400 the driver needs the form
+  // (with their typed code) still in front of them to retry.
+  const confirmDelivered = (withPin: boolean) => {
     const extra: ActionExtra = {};
+    if (withPin) extra.podPin = pinInput;
     if (note.trim()) extra.note = note.trim().slice(0, 500);
     if (codDue > 0) {
       // Parse dollars → minor units; an unparseable edit falls back to the full
@@ -90,6 +98,7 @@ export default function ActiveJob({
     }
     onAction('delivered', extra);
   };
+  const pinReady = /^\d{4}$/.test(pinInput);
 
   // Before pickup the driver heads to the merchant; after, to the customer.
   const goingToPickup = status === 'assigned';
@@ -167,6 +176,16 @@ export default function ActiveJob({
       ) : panel === 'deliver' ? (
         <View style={styles.panel}>
           <Text style={styles.panelTitle}>Confirm delivery</Text>
+          <Text style={styles.fieldLabel}>Delivery code — ask the customer for the 4-digit code on their receipt</Text>
+          <TextInput
+            style={[styles.input, styles.pinInput]}
+            value={pinInput}
+            onChangeText={(t) => setPinInput(t.replace(/\D/g, '').slice(0, 4))}
+            keyboardType="number-pad"
+            maxLength={4}
+            placeholder="••••"
+            placeholderTextColor="#475569"
+          />
           {codDue > 0 ? (
             <>
               <Text style={styles.fieldLabel}>Cash collected (due {money(codDue)})</Text>
@@ -189,8 +208,17 @@ export default function ActiveJob({
             placeholderTextColor="#475569"
             maxLength={500}
           />
-          <Pressable style={[styles.btn, styles.primary, busy && styles.busy]} disabled={busy} onPress={confirmDelivered}>
+          <Pressable
+            style={[styles.btn, styles.primary, (busy || !pinReady) && styles.busy]}
+            disabled={busy || !pinReady}
+            onPress={() => confirmDelivered(true)}
+          >
             {busy ? <ActivityIndicator color="#0f172a" /> : <Text style={styles.btnText}>Confirm delivered</Text>}
+          </Pressable>
+          {/* Manual fallback — the customer may not have the code (older receipt,
+              phone dead). Books the same completion, just unverified ('manual'). */}
+          <Pressable style={styles.panelCancel} disabled={busy} onPress={() => confirmDelivered(false)}>
+            <Text style={styles.panelCancelText}>No code? Complete without it</Text>
           </Pressable>
           <Pressable style={styles.panelCancel} onPress={() => setPanel(null)}>
             <Text style={styles.panelCancelText}>Back</Text>
@@ -256,6 +284,7 @@ const styles = StyleSheet.create({
   panelCancel: { alignItems: 'center', paddingVertical: 10 },
   panelCancelText: { color: '#64748b', fontSize: 14 },
   fieldLabel: { color: '#94a3b8', fontSize: 13, marginTop: 4 },
+  pinInput: { fontSize: 24, fontWeight: '700', letterSpacing: 12, textAlign: 'center' },
   input: {
     backgroundColor: '#0f172a',
     borderRadius: 10,

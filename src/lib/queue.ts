@@ -18,6 +18,10 @@ export interface QueuedAction {
   reason?: string;
   codCollectedMinor?: number;
   note?: string;
+  /** At-door delivery code typed in front of the customer. Rides the replay for a
+   *  verified handover; if the server rejects it then (400), the flusher completes
+   *  manually instead — see performAction in HomeScreen. */
+  podPin?: string;
 }
 
 const KEY = 'pending_actions';

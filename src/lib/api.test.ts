@@ -119,6 +119,16 @@ describe('api client', () => {
     });
   });
 
+  it('markDelivered carries the at-door pod_pin for a verified handover', async () => {
+    const { markDelivered } = await import('./api');
+    const mock = stubFetch(200, { id: 'd1', status: 'delivered' });
+    await markDelivered('tok', 'd1', { method: 'manual', pod_pin: '4217' });
+    expect(JSON.parse(mock.mock.calls[0][1].body as string)).toEqual({
+      method: 'manual',
+      pod_pin: '4217',
+    });
+  });
+
   it('getEarnings GETs with auth; push token registers and removes', async () => {
     const { getEarnings, registerPushToken, removePushToken } = await import('./api');
     let mock = stubFetch(200, { payable_minor: 160, today_minor: 160, today_deliveries: 1, cod_owed_minor: 0, currency: 'USD' });
