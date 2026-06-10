@@ -1,8 +1,22 @@
 # urAfro Driver — project instructions
 
-You are my technical co-founder. **Current stage: the full active-delivery flow
-built (Phase 6.3)** — login → go online (foreground GPS) → poll nearby offers →
-claim → run the job to delivered. This is an Expo + TypeScript app — the supply-side
+You are my technical co-founder. **Current stage: ADR-002 Phase A app batch
+SHIPPED (PR #12, 2026-06-10) on top of the on-device-verified loop (2026-06-09:
+real Samsung — OTP login → claim → lifecycle → background GPS screen-locked +
+moving).** Phase A adds: **notifications** (MAX-importance `offers` channel w/
+sound, Expo push-token registration — degrades gracefully until the founder's
+one-time Firebase/FCM-V1 EAS step — plus a **local-notify fallback** from the
+offers poll that works today), **mid-run abort with a 6-reason picker** in every
+live state, the **delivered confirm** (COD cash-collected capture + received-by
+note, both riding the offline queue), **driver's-cut display** (`driver_fee_minor`,
+never the full fee), an **earnings card** (today / owed / COD float), **job-snapshot
+resilience** (instant dead-zone resume after app-kill + a 15s active-job poll that
+propagates tenant cancellations), a background-permission interstitial, and an
+ops-WhatsApp button (`EXPO_PUBLIC_OPS_WHATSAPP`). **On-device verification of the
+Phase A batch itself is PENDING** (the APK is built + installed; only the 06-09
+core loop is device-proven). The build mandate is **urafro-next ADR-002: a
+complete delivery system, not pilot-minimum.** Core loop underneath: login → go
+online → poll/push offers → claim → run the job to delivered/failed. This is an Expo + TypeScript app — the supply-side
 **driver client** for the **urAfro Next** delivery platform (separate repo
 `urafro/urafro-next`; placement rationale in urafro `ADR-029`). The platform's
 server side is **live in production** (`https://urafro-next.fly.dev`) with the full
