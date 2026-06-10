@@ -468,9 +468,14 @@ export default function HomeScreen() {
           setPending(q.length);
           setError('No signal — saved. It’ll sync automatically when you’re back online.');
         } else if (extra?.podPin && e instanceof ApiError && e.status === 400) {
-          // Wrong at-door code (or attempts burned) — the deliver panel is still
-          // open with the typed code; tell the driver what actually happened.
-          setError('That code didn’t match — ask the customer to re-check their receipt. No code? Use “Complete without it”.');
+          // Wrong at-door code vs the burned attempt cap are different situations
+          // with different ways forward — match the server's two distinct 400s.
+          // The deliver panel stays open with the typed code either way.
+          setError(
+            e.message.includes('too many PIN attempts')
+              ? 'Too many code tries — tap “No code? Complete without it” to finish this delivery.'
+              : 'That code didn’t match — ask the customer to re-check their receipt.',
+          );
         } else {
           setError('Could not update the job — try again.');
         }
@@ -499,7 +504,11 @@ export default function HomeScreen() {
       {job ? (
         <>
           <Text style={styles.title}>Active delivery</Text>
-          <ActiveJob job={job} onAction={act} busy={busy} />
+          {/* With a job on screen every error comes from the driver's own lifecycle
+              tap, so it renders INSIDE the card next to what they touched (layer-1
+              action feedback) — not at the bottom of the scroll where the keyboard
+              hides it. */}
+          <ActiveJob job={job} onAction={act} busy={busy} actionError={error} />
         </>
       ) : (
         <>
@@ -552,7 +561,9 @@ export default function HomeScreen() {
           ⏳ {pending} action{pending > 1 ? 's' : ''} waiting to sync…
         </Text>
       ) : null}
-      {error ? <Text style={styles.error}>{error}</Text> : null}
+      {/* Shift-level errors only (go online/offline, claim) — action errors during
+          a job render inside the ActiveJob card instead. */}
+      {!job && error ? <Text style={styles.error}>{error}</Text> : null}
 
       {/* Ops contact + sign-out live on the Profile tab now. */}
       <View style={styles.footer}>

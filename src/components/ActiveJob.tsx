@@ -55,10 +55,15 @@ export default function ActiveJob({
   job,
   onAction,
   busy,
+  actionError,
 }: {
   job: DriverDelivery;
   onAction: (to: LifecycleAction, extra?: ActionExtra) => void;
   busy: boolean;
+  /** Result of the driver's last lifecycle tap (layer-1 action feedback) —
+   *  rendered adjacent to the control: under the code field in the deliver
+   *  panel, else above the action buttons. */
+  actionError?: string | null;
 }) {
   const status = job.status ?? 'assigned';
   const actions = ACTIONS[status] ?? [];
@@ -186,6 +191,9 @@ export default function ActiveJob({
             placeholder="••••"
             placeholderTextColor="#475569"
           />
+          {/* Wrong-code / cap feedback lands HERE, next to the field — not at the
+              bottom of the scroll where the keyboard hides it. */}
+          {actionError ? <Text style={styles.actionError}>{actionError}</Text> : null}
           {codDue > 0 ? (
             <>
               <Text style={styles.fieldLabel}>Cash collected (due {money(codDue)})</Text>
@@ -226,6 +234,7 @@ export default function ActiveJob({
         </View>
       ) : (
         <View style={styles.actions}>
+          {actionError ? <Text style={styles.actionError}>{actionError}</Text> : null}
           {actions.map((a) => (
             <Pressable
               key={a.to}
@@ -284,6 +293,7 @@ const styles = StyleSheet.create({
   panelCancel: { alignItems: 'center', paddingVertical: 10 },
   panelCancelText: { color: '#64748b', fontSize: 14 },
   fieldLabel: { color: '#94a3b8', fontSize: 13, marginTop: 4 },
+  actionError: { color: '#fca5a5', fontSize: 13, lineHeight: 18 },
   pinInput: { fontSize: 24, fontWeight: '700', letterSpacing: 12, textAlign: 'center' },
   input: {
     backgroundColor: '#0f172a',
