@@ -5,6 +5,7 @@ import { money } from '../lib/format';
 import { waUrl } from '../lib/links';
 import { OPS_WHATSAPP } from '../config';
 import { useSession } from '../state/session';
+import { colors } from '../theme';
 
 // Driver profile + the money summary (ADR-002 B). Name + vehicle are the only
 // driver-editable fields (phone is the OTP identity; approval is ops-owned).
@@ -81,7 +82,7 @@ export default function ProfileScreen() {
         value={name}
         onChangeText={setName}
         placeholder="e.g. Tendai M."
-        placeholderTextColor="#475569"
+        placeholderTextColor={colors.placeholder}
         maxLength={80}
       />
 
@@ -91,7 +92,7 @@ export default function ProfileScreen() {
         value={vehicle}
         onChangeText={setVehicle}
         placeholder="e.g. Honda Fit, red — or Motorbike"
-        placeholderTextColor="#475569"
+        placeholderTextColor={colors.placeholder}
         maxLength={80}
       />
 
@@ -103,15 +104,15 @@ export default function ProfileScreen() {
       {earnings ? (
         <View style={styles.moneyCard}>
           <Text style={styles.moneyTitle}>Money</Text>
-          <Row label="Owed to you (all time)" value={money(earnings.payable_minor)} color="#22d3ee" />
+          <Row label="Owed to you (all time)" value={money(earnings.payable_minor)} color={colors.money} />
           <Row
             label={`Today (${earnings.today_deliveries} deliver${earnings.today_deliveries === 1 ? 'y' : 'ies'})`}
             value={money(earnings.today_minor)}
-            color="#22d3ee"
+            color={colors.money}
           />
           {earnings.cod_owed_minor > 0 ? (
             <>
-              <Row label="Cash collected, to hand in" value={money(earnings.cod_owed_minor)} color="#fbbf24" />
+              <Row label="Cash collected, to hand in" value={money(earnings.cod_owed_minor)} color={colors.cod} />
               <Text style={styles.moneyHint}>
                 Hand COD cash to ops at the end of your shift — your earnings are paid out separately.
               </Text>
@@ -144,33 +145,33 @@ function Row({ label, value, color }: { label: string; value: string; color: str
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#0f172a' },
+  container: { flex: 1, backgroundColor: colors.bg },
   content: { padding: 24, paddingTop: 72, paddingBottom: 32 },
-  title: { color: '#fff', fontSize: 28, fontWeight: '700', marginBottom: 8 },
-  pending: { backgroundColor: '#7c2d12', borderRadius: 10, padding: 12, marginTop: 8 },
-  pendingText: { color: '#fed7aa', fontSize: 13 },
-  label: { color: '#94a3b8', fontSize: 13, marginTop: 20, marginBottom: 6 },
-  phone: { color: '#cbd5e1', fontSize: 16 },
+  title: { color: colors.textPrimary, fontSize: 28, fontWeight: '700', marginBottom: 8 },
+  pending: { backgroundColor: colors.pendingBg, borderRadius: 10, padding: 12, marginTop: 8 },
+  pendingText: { color: colors.pendingText, fontSize: 13 },
+  label: { color: colors.textMuted, fontSize: 13, marginTop: 20, marginBottom: 6 },
+  phone: { color: colors.textSecondary, fontSize: 16 },
   input: {
-    backgroundColor: '#1e293b',
+    backgroundColor: colors.inputBgRaised,
     borderRadius: 10,
     borderWidth: 1,
-    borderColor: '#334155',
-    color: '#fff',
+    borderColor: colors.border,
+    color: colors.textPrimary,
     fontSize: 16,
     paddingHorizontal: 12,
     paddingVertical: 10,
   },
-  save: { backgroundColor: '#22c55e', borderRadius: 10, paddingVertical: 14, alignItems: 'center', marginTop: 20 },
+  save: { backgroundColor: colors.btnPrimaryBg, borderRadius: 10, paddingVertical: 14, alignItems: 'center', marginTop: 20 },
   busy: { opacity: 0.6 },
-  saveText: { color: '#0f172a', fontSize: 16, fontWeight: '700' },
-  note: { color: '#94a3b8', fontSize: 13, marginTop: 10, textAlign: 'center' },
-  moneyCard: { backgroundColor: '#1e293b', borderRadius: 12, padding: 16, marginTop: 28 },
-  moneyTitle: { color: '#fff', fontSize: 16, fontWeight: '700', marginBottom: 10 },
+  saveText: { color: colors.btnPrimaryText, fontSize: 16, fontWeight: '700' },
+  note: { color: colors.textMuted, fontSize: 13, marginTop: 10, textAlign: 'center' },
+  moneyCard: { backgroundColor: colors.surface, borderRadius: 12, padding: 16, marginTop: 28 },
+  moneyTitle: { color: colors.textPrimary, fontSize: 16, fontWeight: '700', marginBottom: 10 },
   moneyRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 6 },
-  moneyLabel: { color: '#94a3b8', fontSize: 14 },
+  moneyLabel: { color: colors.textMuted, fontSize: 14 },
   moneyValue: { fontSize: 15, fontWeight: '700' },
-  moneyHint: { color: '#64748b', fontSize: 12, marginTop: 8 },
+  moneyHint: { color: colors.textFaint, fontSize: 12, marginTop: 8 },
   footer: { marginTop: 32, gap: 16, alignItems: 'center' },
-  link: { color: '#94a3b8', fontSize: 14 },
+  link: { color: colors.textMuted, fontSize: 14 },
 });

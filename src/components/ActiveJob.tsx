@@ -3,6 +3,7 @@ import { ActivityIndicator, Linking, Pressable, StyleSheet, Text, TextInput, Vie
 import type { DriverDelivery, FailureReason } from '../lib/api';
 import { money, placeLabel } from '../lib/format';
 import { mapsUrl, telUrl } from '../lib/links';
+import { colors } from '../theme';
 
 export type LifecycleAction = 'picked_up' | 'in_transit' | 'delivered' | 'failed';
 export interface ActionExtra {
@@ -189,7 +190,7 @@ export default function ActiveJob({
             keyboardType="number-pad"
             maxLength={4}
             placeholder="••••"
-            placeholderTextColor="#475569"
+            placeholderTextColor={colors.placeholder}
           />
           {/* Wrong-code / cap feedback lands HERE, next to the field — not at the
               bottom of the scroll where the keyboard hides it. */}
@@ -203,7 +204,7 @@ export default function ActiveJob({
                 onChangeText={setCodInput}
                 keyboardType="decimal-pad"
                 placeholder={(codDue / 100).toFixed(2)}
-                placeholderTextColor="#475569"
+                placeholderTextColor={colors.placeholder}
               />
             </>
           ) : null}
@@ -213,7 +214,7 @@ export default function ActiveJob({
             value={note}
             onChangeText={setNote}
             placeholder="e.g. Left with Tariro at the gate"
-            placeholderTextColor="#475569"
+            placeholderTextColor={colors.placeholder}
             maxLength={500}
           />
           <Pressable
@@ -221,7 +222,7 @@ export default function ActiveJob({
             disabled={busy || !pinReady}
             onPress={() => confirmDelivered(true)}
           >
-            {busy ? <ActivityIndicator color="#0f172a" /> : <Text style={styles.btnText}>Confirm delivered</Text>}
+            {busy ? <ActivityIndicator color={colors.btnPrimaryText} /> : <Text style={styles.btnText}>Confirm delivered</Text>}
           </Pressable>
           {/* Manual fallback — the customer may not have the code (older receipt,
               phone dead). Books the same completion, just unverified ('manual'). */}
@@ -243,7 +244,7 @@ export default function ActiveJob({
               disabled={busy}
             >
               {busy ? (
-                <ActivityIndicator color={a.danger ? '#fca5a5' : '#0f172a'} />
+                <ActivityIndicator color={a.danger ? colors.danger : colors.btnPrimaryText} />
               ) : (
                 <Text style={[styles.btnText, a.danger && styles.dangerText]}>{a.label}</Text>
               )}
@@ -256,11 +257,11 @@ export default function ActiveJob({
 }
 
 const styles = StyleSheet.create({
-  container: { backgroundColor: '#1e293b', borderRadius: 14, padding: 20 },
+  container: { backgroundColor: colors.surface, borderRadius: 14, padding: 20 },
   badge: {
     alignSelf: 'flex-start',
-    color: '#0f172a',
-    backgroundColor: '#22d3ee',
+    color: colors.badgeText,
+    backgroundColor: colors.badgeBg,
     fontSize: 13,
     fontWeight: '700',
     paddingHorizontal: 10,
@@ -268,47 +269,47 @@ const styles = StyleSheet.create({
     borderRadius: 6,
     overflow: 'hidden',
   },
-  heading: { color: '#64748b', fontSize: 13, marginTop: 18, textTransform: 'uppercase' },
-  place: { color: '#fff', fontSize: 19, marginTop: 4 },
-  contact: { color: '#cbd5e1', fontSize: 14, marginTop: 4 },
+  heading: { color: colors.textFaint, fontSize: 13, marginTop: 18, textTransform: 'uppercase' },
+  place: { color: colors.textPrimary, fontSize: 19, marginTop: 4 },
+  contact: { color: colors.textSecondary, fontSize: 14, marginTop: 4 },
   coord: { flexDirection: 'row', gap: 10, marginTop: 14 },
   coordBtn: {
     flex: 1,
-    backgroundColor: '#334155',
+    backgroundColor: colors.surfaceAlt,
     borderRadius: 10,
     paddingVertical: 12,
     alignItems: 'center',
   },
-  coordText: { color: '#fff', fontSize: 15, fontWeight: '600' },
-  heading2: { color: '#64748b', fontSize: 12, marginTop: 20, textTransform: 'uppercase' },
-  place2: { color: '#94a3b8', fontSize: 15, marginTop: 4 },
+  coordText: { color: colors.textPrimary, fontSize: 15, fontWeight: '600' },
+  heading2: { color: colors.textFaint, fontSize: 12, marginTop: 20, textTransform: 'uppercase' },
+  place2: { color: colors.textMuted, fontSize: 15, marginTop: 4 },
   metaRow: { flexDirection: 'row', gap: 16, marginTop: 18 },
-  meta: { color: '#22d3ee', fontSize: 15, fontWeight: '600' },
-  collect: { color: '#fbbf24', fontSize: 15, fontWeight: '600' },
+  meta: { color: colors.money, fontSize: 15, fontWeight: '600' },
+  collect: { color: colors.cod, fontSize: 15, fontWeight: '600' },
   actions: { gap: 10, marginTop: 24 },
   panel: { marginTop: 24, gap: 10 },
-  panelTitle: { color: '#fff', fontSize: 16, fontWeight: '700' },
-  reasonBtn: { backgroundColor: '#334155', borderRadius: 10, paddingVertical: 13, paddingHorizontal: 14 },
-  reasonText: { color: '#fff', fontSize: 15 },
+  panelTitle: { color: colors.textPrimary, fontSize: 16, fontWeight: '700' },
+  reasonBtn: { backgroundColor: colors.surfaceAlt, borderRadius: 10, paddingVertical: 13, paddingHorizontal: 14 },
+  reasonText: { color: colors.textPrimary, fontSize: 15 },
   panelCancel: { alignItems: 'center', paddingVertical: 10 },
-  panelCancelText: { color: '#64748b', fontSize: 14 },
-  fieldLabel: { color: '#94a3b8', fontSize: 13, marginTop: 4 },
-  actionError: { color: '#fca5a5', fontSize: 13, lineHeight: 18 },
+  panelCancelText: { color: colors.textFaint, fontSize: 14 },
+  fieldLabel: { color: colors.textMuted, fontSize: 13, marginTop: 4 },
+  actionError: { color: colors.danger, fontSize: 13, lineHeight: 18 },
   pinInput: { fontSize: 24, fontWeight: '700', letterSpacing: 12, textAlign: 'center' },
   input: {
-    backgroundColor: '#0f172a',
+    backgroundColor: colors.inputBg,
     borderRadius: 10,
     borderWidth: 1,
-    borderColor: '#334155',
-    color: '#fff',
+    borderColor: colors.border,
+    color: colors.textPrimary,
     fontSize: 16,
     paddingHorizontal: 12,
     paddingVertical: 10,
   },
   btn: { borderRadius: 10, paddingVertical: 15, alignItems: 'center' },
-  primary: { backgroundColor: '#22c55e' },
-  danger: { backgroundColor: 'transparent', borderWidth: 1, borderColor: '#7f1d1d' },
+  primary: { backgroundColor: colors.btnPrimaryBg },
+  danger: { backgroundColor: 'transparent', borderWidth: 1, borderColor: colors.dangerBorder },
   busy: { opacity: 0.6 },
-  btnText: { color: '#0f172a', fontSize: 16, fontWeight: '700' },
-  dangerText: { color: '#fca5a5' },
+  btnText: { color: colors.btnPrimaryText, fontSize: 16, fontWeight: '700' },
+  dangerText: { color: colors.danger },
 });

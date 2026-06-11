@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import type { Offer } from '../lib/api';
 import { money, placeLabel, secondsUntil } from '../lib/format';
+import { colors } from '../theme';
 
 // Live list of nearby job offers. Each card shows the destination (the driver's
 // main decision), pickup, fee + any cash to collect, and a live expiry countdown.
@@ -66,17 +67,17 @@ export default function OffersList({
 
 const styles = StyleSheet.create({
   list: { marginTop: 24, gap: 12 },
-  empty: { color: '#64748b', fontSize: 15, marginTop: 28, textAlign: 'center' },
-  card: { backgroundColor: '#1e293b', borderRadius: 12, padding: 16 },
-  dropoff: { color: '#fff', fontSize: 17, fontWeight: '600' },
-  pickup: { color: '#94a3b8', fontSize: 14, marginTop: 4 },
+  empty: { color: colors.textFaint, fontSize: 15, marginTop: 28, textAlign: 'center' },
+  card: { backgroundColor: colors.surface, borderRadius: 12, padding: 16 },
+  dropoff: { color: colors.textPrimary, fontSize: 17, fontWeight: '600' },
+  pickup: { color: colors.textMuted, fontSize: 14, marginTop: 4 },
   metaRow: { flexDirection: 'row', alignItems: 'center', gap: 14, marginTop: 10 },
-  fee: { color: '#22d3ee', fontSize: 15, fontWeight: '600' },
-  cod: { color: '#fbbf24', fontSize: 14 },
-  expiry: { color: '#64748b', fontSize: 13, marginLeft: 'auto' },
-  accept: { backgroundColor: '#22c55e', borderRadius: 10, paddingVertical: 12, alignItems: 'center', marginTop: 14 },
+  fee: { color: colors.money, fontSize: 15, fontWeight: '600' },
+  cod: { color: colors.cod, fontSize: 14 },
+  expiry: { color: colors.textFaint, fontSize: 13, marginLeft: 'auto' },
+  accept: { backgroundColor: colors.btnPrimaryBg, borderRadius: 10, paddingVertical: 12, alignItems: 'center', marginTop: 14 },
   disabled: { opacity: 0.6 },
-  acceptText: { color: '#0f172a', fontSize: 16, fontWeight: '700' },
+  acceptText: { color: colors.btnPrimaryText, fontSize: 16, fontWeight: '700' },
   pass: { alignItems: 'center', paddingVertical: 8, marginTop: 2 },
-  passText: { color: '#64748b', fontSize: 13 },
+  passText: { color: colors.textFaint, fontSize: 13 },
 });

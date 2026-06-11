@@ -11,6 +11,7 @@ import {
 import { ApiError, requestOtp, verifyOtp } from '../lib/api';
 import { toE164 } from '../lib/phone';
 import { useSession } from '../state/session';
+import { colors } from '../theme';
 
 // Two-step OTP login: enter phone → request code → enter the 6-digit code →
 // verify → mint a driver token and sign in. The session change re-renders the
@@ -87,7 +88,7 @@ export default function LoginScreen() {
             keyboardType="phone-pad"
             autoFocus
             placeholder="+263 77 123 4567"
-            placeholderTextColor="#475569"
+            placeholderTextColor={colors.placeholder}
           />
           <SubmitButton label="Send code" onPress={sendCode} busy={busy} />
         </>
@@ -102,7 +103,7 @@ export default function LoginScreen() {
             maxLength={6}
             autoFocus
             placeholder="000000"
-            placeholderTextColor="#475569"
+            placeholderTextColor={colors.placeholder}
           />
           <SubmitButton label="Verify" onPress={confirmCode} busy={busy} />
           <Pressable
@@ -137,18 +138,18 @@ function SubmitButton({
       onPress={onPress}
       disabled={busy}
     >
-      {busy ? <ActivityIndicator color="#0f172a" /> : <Text style={styles.buttonText}>{label}</Text>}
+      {busy ? <ActivityIndicator color={colors.btnPrimaryText} /> : <Text style={styles.buttonText}>{label}</Text>}
     </Pressable>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#0f172a', justifyContent: 'center', padding: 24 },
-  title: { color: '#fff', fontSize: 30, fontWeight: '700', marginBottom: 32 },
-  label: { color: '#cbd5e1', fontSize: 15, marginBottom: 8 },
+  container: { flex: 1, backgroundColor: colors.bg, justifyContent: 'center', padding: 24 },
+  title: { color: colors.textPrimary, fontSize: 30, fontWeight: '700', marginBottom: 32 },
+  label: { color: colors.textSecondary, fontSize: 15, marginBottom: 8 },
   input: {
-    backgroundColor: '#1e293b',
-    color: '#fff',
+    backgroundColor: colors.inputBgRaised,
+    color: colors.textPrimary,
     fontSize: 18,
     borderRadius: 10,
     paddingVertical: 14,
@@ -156,14 +157,16 @@ const styles = StyleSheet.create({
   },
   codeInput: { letterSpacing: 8, textAlign: 'center', fontSize: 24 },
   button: {
-    backgroundColor: '#22d3ee',
+    // Historically cyan (the old accent); becomes the brand primary action
+    // when the theme flips.
+    backgroundColor: colors.info,
     borderRadius: 10,
     paddingVertical: 16,
     alignItems: 'center',
     marginTop: 20,
   },
   buttonDisabled: { opacity: 0.6 },
-  buttonText: { color: '#0f172a', fontSize: 16, fontWeight: '700' },
-  link: { color: '#94a3b8', fontSize: 14, textAlign: 'center', marginTop: 18 },
-  error: { color: '#fca5a5', fontSize: 14, marginTop: 16, textAlign: 'center' },
+  buttonText: { color: colors.btnPrimaryText, fontSize: 16, fontWeight: '700' },
+  link: { color: colors.textMuted, fontSize: 14, textAlign: 'center', marginTop: 18 },
+  error: { color: colors.danger, fontSize: 14, marginTop: 16, textAlign: 'center' },
 });

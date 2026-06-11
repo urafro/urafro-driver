@@ -51,6 +51,7 @@ import {
   type QueuedAction,
 } from '../lib/queue';
 import { useSession } from '../state/session';
+import { colors } from '../theme';
 import OffersList from '../components/OffersList';
 import ActiveJob, { type LifecycleAction, type ActionExtra } from '../components/ActiveJob';
 
@@ -540,7 +541,7 @@ export default function HomeScreen() {
             disabled={busy}
           >
             {busy ? (
-              <ActivityIndicator color="#0f172a" />
+              <ActivityIndicator color={colors.btnPrimaryText} />
             ) : (
               <Text style={styles.toggleText}>
                 {locating ? 'Getting location…' : online ? 'Go offline' : 'Go online'}
@@ -574,40 +575,40 @@ export default function HomeScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#0f172a' },
+  container: { flex: 1, backgroundColor: colors.bg },
   content: { padding: 24, paddingTop: 72, flexGrow: 1 },
-  title: { color: '#fff', fontSize: 28, fontWeight: '700' },
-  status: { color: '#cbd5e1', fontSize: 18, marginTop: 20 },
+  title: { color: colors.textPrimary, fontSize: 28, fontWeight: '700' },
+  status: { color: colors.textSecondary, fontSize: 18, marginTop: 20 },
   earnCard: {
     flexDirection: 'row',
-    backgroundColor: '#1e293b',
+    backgroundColor: colors.surface,
     borderRadius: 12,
     padding: 16,
     marginTop: 16,
     gap: 18,
   },
   earnCol: { flex: 1 },
-  earnValue: { color: '#22d3ee', fontSize: 20, fontWeight: '700' },
-  earnCod: { color: '#fbbf24' },
-  earnLabel: { color: '#64748b', fontSize: 12, marginTop: 2 },
+  earnValue: { color: colors.money, fontSize: 20, fontWeight: '700' },
+  earnCod: { color: colors.cod },
+  earnLabel: { color: colors.textFaint, fontSize: 12, marginTop: 2 },
   toggle: { borderRadius: 12, paddingVertical: 18, alignItems: 'center', marginTop: 20 },
-  onBtn: { backgroundColor: '#22c55e' },
-  offBtn: { backgroundColor: '#f59e0b' },
+  onBtn: { backgroundColor: colors.btnPrimaryBg },
+  offBtn: { backgroundColor: colors.btnSecondaryBg },
   busy: { opacity: 0.6 },
-  toggleText: { color: '#0f172a', fontSize: 18, fontWeight: '700' },
-  bg: { color: '#86efac', fontSize: 13, marginTop: 16 },
-  syncing: { color: '#fbbf24', fontSize: 13, marginTop: 16 },
-  error: { color: '#fca5a5', fontSize: 14, marginTop: 16 },
+  toggleText: { color: colors.btnPrimaryText, fontSize: 18, fontWeight: '700' },
+  bg: { color: colors.successSoft, fontSize: 13, marginTop: 16 },
+  syncing: { color: colors.warning, fontSize: 13, marginTop: 16 },
+  error: { color: colors.danger, fontSize: 14, marginTop: 16 },
   batteryBanner: {
-    backgroundColor: '#451a03',
-    borderColor: '#b45309',
+    backgroundColor: colors.batteryBg,
+    borderColor: colors.batteryBorder,
     borderWidth: 1,
     borderRadius: 12,
     padding: 14,
     marginBottom: 16,
   },
-  batteryTitle: { color: '#fbbf24', fontSize: 15, fontWeight: '700' },
-  batteryBody: { color: '#fcd34d', fontSize: 13, marginTop: 4, lineHeight: 18 },
+  batteryTitle: { color: colors.batteryTitle, fontSize: 15, fontWeight: '700' },
+  batteryBody: { color: colors.batteryBody, fontSize: 13, marginTop: 4, lineHeight: 18 },
   footer: {
     marginTop: 'auto',
     paddingTop: 32,
@@ -615,6 +616,6 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
   },
-  meta: { color: '#64748b', fontSize: 13 },
-  link: { color: '#94a3b8', fontSize: 14 },
+  meta: { color: colors.textFaint, fontSize: 13 },
+  link: { color: colors.textMuted, fontSize: 14 },
 });

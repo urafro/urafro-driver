@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { StatusBar } from 'expo-status-bar';
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 import { SessionProvider, useSession } from './src/state/session';
+import { colors } from './src/theme';
 import LoginScreen from './src/screens/LoginScreen';
 import HomeScreen from './src/screens/HomeScreen';
 import HistoryScreen from './src/screens/HistoryScreen';
@@ -56,7 +57,7 @@ function Root() {
   if (loading) {
     return (
       <View style={styles.loading}>
-        <ActivityIndicator color="#fff" size="large" />
+        <ActivityIndicator color={colors.textPrimary} size="large" />
       </View>
     );
   }
@@ -73,20 +74,20 @@ export default function App() {
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: '#0f172a' },
+  root: { flex: 1, backgroundColor: colors.bg },
   screen: { flex: 1 },
   hidden: { display: 'none' },
   tabBar: {
     flexDirection: 'row',
-    backgroundColor: '#1e293b',
+    backgroundColor: colors.surface,
     borderTopWidth: 1,
-    borderTopColor: '#334155',
+    borderTopColor: colors.border,
     paddingBottom: 18,
     paddingTop: 8,
   },
   tabBtn: { flex: 1, alignItems: 'center', gap: 2 },
   tabIcon: { fontSize: 18 },
-  tabLabel: { color: '#64748b', fontSize: 12 },
-  tabActive: { color: '#22d3ee', fontWeight: '700' },
-  loading: { flex: 1, backgroundColor: '#0f172a', alignItems: 'center', justifyContent: 'center' },
+  tabLabel: { color: colors.textFaint, fontSize: 12 },
+  tabActive: { color: colors.tabActive, fontWeight: '700' },
+  loading: { flex: 1, backgroundColor: colors.bg, alignItems: 'center', justifyContent: 'center' },
 });

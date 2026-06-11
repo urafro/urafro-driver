@@ -3,17 +3,18 @@ import { RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native
 import { listMyDeliveries, type HistoryItem } from '../lib/api';
 import { money, placeLabel } from '../lib/format';
 import { useSession } from '../state/session';
+import { colors } from '../theme';
 
 // Recent jobs (ADR-002 B): what a driver actually did and earned, newest first.
 // Server-shaped: no customer contacts on past jobs (stale PII stays server-side).
 
 const STATUS_META: Record<string, { label: string; color: string }> = {
-  delivered: { label: 'Delivered', color: '#22c55e' },
-  failed: { label: 'Failed', color: '#fca5a5' },
-  cancelled: { label: 'Cancelled', color: '#94a3b8' },
-  assigned: { label: 'In progress', color: '#22d3ee' },
-  picked_up: { label: 'In progress', color: '#22d3ee' },
-  in_transit: { label: 'In progress', color: '#22d3ee' },
+  delivered: { label: 'Delivered', color: colors.success },
+  failed: { label: 'Failed', color: colors.danger },
+  cancelled: { label: 'Cancelled', color: colors.textMuted },
+  assigned: { label: 'In progress', color: colors.info },
+  picked_up: { label: 'In progress', color: colors.info },
+  in_transit: { label: 'In progress', color: colors.info },
 };
 
 const REASON_LABEL: Record<string, string> = {
@@ -57,7 +58,7 @@ export default function HistoryScreen() {
     <ScrollView
       style={styles.container}
       contentContainerStyle={styles.content}
-      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#fff" />}
+      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.textPrimary} />}
     >
       <Text style={styles.title}>Your jobs</Text>
       {items == null ? (
@@ -66,7 +67,7 @@ export default function HistoryScreen() {
         <Text style={styles.empty}>No jobs yet — they'll show up here after your first run.</Text>
       ) : (
         items.map((d) => {
-          const meta = STATUS_META[d.status ?? ''] ?? { label: d.status ?? '?', color: '#94a3b8' };
+          const meta = STATUS_META[d.status ?? ''] ?? { label: d.status ?? '?', color: colors.textMuted };
           return (
             <View key={d.id} style={styles.card}>
               <View style={styles.row}>
@@ -96,17 +97,17 @@ export default function HistoryScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#0f172a' },
+  container: { flex: 1, backgroundColor: colors.bg },
   content: { padding: 24, paddingTop: 72, paddingBottom: 32 },
-  title: { color: '#fff', fontSize: 28, fontWeight: '700', marginBottom: 16 },
-  empty: { color: '#64748b', fontSize: 15, marginTop: 24, textAlign: 'center' },
-  card: { backgroundColor: '#1e293b', borderRadius: 12, padding: 16, marginBottom: 12 },
+  title: { color: colors.textPrimary, fontSize: 28, fontWeight: '700', marginBottom: 16 },
+  empty: { color: colors.textFaint, fontSize: 15, marginTop: 24, textAlign: 'center' },
+  card: { backgroundColor: colors.surface, borderRadius: 12, padding: 16, marginBottom: 12 },
   row: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   status: { fontSize: 13, fontWeight: '700', textTransform: 'uppercase' },
-  date: { color: '#64748b', fontSize: 12 },
-  dropoff: { color: '#fff', fontSize: 16, marginTop: 8 },
-  earn: { color: '#22d3ee', fontSize: 14, fontWeight: '600', marginTop: 8 },
-  reason: { color: '#fca5a5', fontSize: 13, marginTop: 8 },
-  cod: { color: '#fbbf24', fontSize: 13, marginTop: 8 },
-  error: { color: '#fca5a5', fontSize: 14, marginTop: 16, textAlign: 'center' },
+  date: { color: colors.textFaint, fontSize: 12 },
+  dropoff: { color: colors.textPrimary, fontSize: 16, marginTop: 8 },
+  earn: { color: colors.money, fontSize: 14, fontWeight: '600', marginTop: 8 },
+  reason: { color: colors.danger, fontSize: 13, marginTop: 8 },
+  cod: { color: colors.cod, fontSize: 13, marginTop: 8 },
+  error: { color: colors.danger, fontSize: 14, marginTop: 16, textAlign: 'center' },
 });
