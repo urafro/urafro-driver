@@ -11,7 +11,7 @@ import {
 import { ApiError, requestOtp, verifyOtp } from '../lib/api';
 import { toE164 } from '../lib/phone';
 import { useSession } from '../state/session';
-import { colors } from '../theme';
+import { colors, PILL } from '../theme';
 
 // Two-step OTP login: enter phone → request code → enter the 6-digit code →
 // verify → mint a driver token and sign in. The session change re-renders the
@@ -152,15 +152,16 @@ const styles = StyleSheet.create({
     color: colors.textPrimary,
     fontSize: 18,
     borderRadius: 10,
+    borderWidth: 1,
+    borderColor: colors.border,
     paddingVertical: 14,
     paddingHorizontal: 16,
   },
   codeInput: { letterSpacing: 8, textAlign: 'center', fontSize: 24 },
   button: {
-    // Historically cyan (the old accent); becomes the brand primary action
-    // when the theme flips.
-    backgroundColor: colors.info,
-    borderRadius: 10,
+    // Brand V1: the gold pill CTA (black text — never white on gold).
+    backgroundColor: colors.btnPrimaryBg,
+    borderRadius: PILL,
     paddingVertical: 16,
     alignItems: 'center',
     marginTop: 20,

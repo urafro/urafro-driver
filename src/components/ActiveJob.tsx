@@ -3,7 +3,7 @@ import { ActivityIndicator, Linking, Pressable, StyleSheet, Text, TextInput, Vie
 import type { DriverDelivery, FailureReason } from '../lib/api';
 import { money, placeLabel } from '../lib/format';
 import { mapsUrl, telUrl } from '../lib/links';
-import { colors } from '../theme';
+import { colors, shadow, PILL } from '../theme';
 
 export type LifecycleAction = 'picked_up' | 'in_transit' | 'delivered' | 'failed';
 export interface ActionExtra {
@@ -257,7 +257,7 @@ export default function ActiveJob({
 }
 
 const styles = StyleSheet.create({
-  container: { backgroundColor: colors.surface, borderRadius: 14, padding: 20 },
+  container: { backgroundColor: colors.surface, borderRadius: 14, padding: 20, ...shadow.card },
   badge: {
     alignSelf: 'flex-start',
     color: colors.badgeText,
@@ -266,7 +266,7 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     paddingHorizontal: 10,
     paddingVertical: 4,
-    borderRadius: 6,
+    borderRadius: PILL,
     overflow: 'hidden',
   },
   heading: { color: colors.textFaint, fontSize: 13, marginTop: 18, textTransform: 'uppercase' },
@@ -306,7 +306,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 10,
   },
-  btn: { borderRadius: 10, paddingVertical: 15, alignItems: 'center' },
+  btn: { borderRadius: PILL, paddingVertical: 15, alignItems: 'center' },
   primary: { backgroundColor: colors.btnPrimaryBg },
   danger: { backgroundColor: 'transparent', borderWidth: 1, borderColor: colors.dangerBorder },
   busy: { opacity: 0.6 },

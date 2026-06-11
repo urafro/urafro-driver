@@ -51,7 +51,7 @@ import {
   type QueuedAction,
 } from '../lib/queue';
 import { useSession } from '../state/session';
-import { colors } from '../theme';
+import { colors, shadow, PILL } from '../theme';
 import OffersList from '../components/OffersList';
 import ActiveJob, { type LifecycleAction, type ActionExtra } from '../components/ActiveJob';
 
@@ -586,12 +586,13 @@ const styles = StyleSheet.create({
     padding: 16,
     marginTop: 16,
     gap: 18,
+    ...shadow.card,
   },
   earnCol: { flex: 1 },
   earnValue: { color: colors.money, fontSize: 20, fontWeight: '700' },
   earnCod: { color: colors.cod },
   earnLabel: { color: colors.textFaint, fontSize: 12, marginTop: 2 },
-  toggle: { borderRadius: 12, paddingVertical: 18, alignItems: 'center', marginTop: 20 },
+  toggle: { borderRadius: PILL, paddingVertical: 18, alignItems: 'center', marginTop: 20 },
   onBtn: { backgroundColor: colors.btnPrimaryBg },
   offBtn: { backgroundColor: colors.btnSecondaryBg },
   busy: { opacity: 0.6 },

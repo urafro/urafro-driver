@@ -3,7 +3,7 @@ import { RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native
 import { listMyDeliveries, type HistoryItem } from '../lib/api';
 import { money, placeLabel } from '../lib/format';
 import { useSession } from '../state/session';
-import { colors } from '../theme';
+import { colors, shadow } from '../theme';
 
 // Recent jobs (ADR-002 B): what a driver actually did and earned, newest first.
 // Server-shaped: no customer contacts on past jobs (stale PII stays server-side).
@@ -101,7 +101,7 @@ const styles = StyleSheet.create({
   content: { padding: 24, paddingTop: 72, paddingBottom: 32 },
   title: { color: colors.textPrimary, fontSize: 28, fontWeight: '700', marginBottom: 16 },
   empty: { color: colors.textFaint, fontSize: 15, marginTop: 24, textAlign: 'center' },
-  card: { backgroundColor: colors.surface, borderRadius: 12, padding: 16, marginBottom: 12 },
+  card: { backgroundColor: colors.surface, borderRadius: 12, padding: 16, marginBottom: 12, ...shadow.card },
   row: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   status: { fontSize: 13, fontWeight: '700', textTransform: 'uppercase' },
   date: { color: colors.textFaint, fontSize: 12 },

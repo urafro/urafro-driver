@@ -5,7 +5,7 @@ import { money } from '../lib/format';
 import { waUrl } from '../lib/links';
 import { OPS_WHATSAPP } from '../config';
 import { useSession } from '../state/session';
-import { colors } from '../theme';
+import { colors, shadow, PILL } from '../theme';
 
 // Driver profile + the money summary (ADR-002 B). Name + vehicle are the only
 // driver-editable fields (phone is the OTP identity; approval is ops-owned).
@@ -162,11 +162,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 10,
   },
-  save: { backgroundColor: colors.btnPrimaryBg, borderRadius: 10, paddingVertical: 14, alignItems: 'center', marginTop: 20 },
+  save: { backgroundColor: colors.btnPrimaryBg, borderRadius: PILL, paddingVertical: 14, alignItems: 'center', marginTop: 20 },
   busy: { opacity: 0.6 },
   saveText: { color: colors.btnPrimaryText, fontSize: 16, fontWeight: '700' },
   note: { color: colors.textMuted, fontSize: 13, marginTop: 10, textAlign: 'center' },
-  moneyCard: { backgroundColor: colors.surface, borderRadius: 12, padding: 16, marginTop: 28 },
+  moneyCard: { backgroundColor: colors.surface, borderRadius: 12, padding: 16, marginTop: 28, ...shadow.card },
   moneyTitle: { color: colors.textPrimary, fontSize: 16, fontWeight: '700', marginBottom: 10 },
   moneyRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 6 },
   moneyLabel: { color: colors.textMuted, fontSize: 14 },

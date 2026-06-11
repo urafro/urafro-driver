@@ -68,7 +68,7 @@ export default function App() {
   return (
     <SessionProvider>
       <Root />
-      <StatusBar style="light" />
+      <StatusBar style="dark" />
     </SessionProvider>
   );
 }
