@@ -169,6 +169,40 @@ export function getVehicle(token: string): Promise<{ data: DriverVehicle | null 
   return request('/driver/vehicles', { method: 'GET', token });
 }
 
+// ── Verification documents (ADR-003 P1) ───────────────────────────────────────
+export type DriverRequirement = Schemas['DriverRequirement'];
+export type PresignedUpload = Schemas['PresignedUpload'];
+export type FileRequirementType =
+  | 'identity_id'
+  | 'profile_photo'
+  | 'drivers_licence'
+  | 'vehicle_registration';
+
+export function getDocuments(token: string): Promise<{ data: DriverRequirement[] }> {
+  return request('/driver/documents', { method: 'GET', token });
+}
+
+/** Begin a document submission — returns a presigned PUT URL (503 if storage off). */
+export function getUploadUrl(token: string, type: FileRequirementType): Promise<PresignedUpload> {
+  return request(`/driver/documents/${type}/upload-url`, { method: 'POST', token });
+}
+
+export function confirmDocument(token: string, documentId: string): Promise<void> {
+  return request('/driver/documents/confirm', {
+    method: 'POST',
+    token,
+    body: JSON.stringify({ document_id: documentId }),
+  });
+}
+
+export function acceptTerms(token: string, version: string): Promise<void> {
+  return request('/driver/documents/terms', {
+    method: 'POST',
+    token,
+    body: JSON.stringify({ version }),
+  });
+}
+
 /** Upsert the driver's active vehicle (one active per driver, server-enforced). */
 export function putVehicle(
   token: string,

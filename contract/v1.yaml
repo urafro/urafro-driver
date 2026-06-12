@@ -427,6 +427,94 @@ paths:
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
 
+  /driver/documents:
+    get:
+      tags: [Driver]
+      summary: Per-requirement verification status
+      operationId: driverListDocuments
+      security:
+        - DriverBearerAuth: []
+      responses:
+        '200':
+          description: One entry per requirement type.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/DriverRequirement' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /driver/documents/{type}/upload-url:
+    post:
+      tags: [Driver]
+      summary: Begin a document submission (presigned upload)
+      description: >
+        Returns a short-lived presigned PUT URL; the client uploads the file
+        bytes to object storage directly, then calls /driver/documents/confirm.
+        503 if storage is not configured.
+      operationId: driverDocumentUploadUrl
+      security:
+        - DriverBearerAuth: []
+      parameters:
+        - name: type
+          in: path
+          required: true
+          schema: { type: string, enum: [identity_id, profile_photo, drivers_licence, vehicle_registration] }
+      responses:
+        '201':
+          description: Presigned upload.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PresignedUpload' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '503': { description: Document storage is not configured. }
+
+  /driver/documents/confirm:
+    post:
+      tags: [Driver]
+      summary: Confirm a document upload completed
+      operationId: driverConfirmDocument
+      security:
+        - DriverBearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [document_id]
+              properties:
+                document_id: { type: string, format: uuid }
+      responses:
+        '204': { description: Confirmed. }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /driver/documents/terms:
+    post:
+      tags: [Driver]
+      summary: Accept the current terms (attestation)
+      operationId: driverAcceptTerms
+      security:
+        - DriverBearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [version]
+              properties:
+                version: { type: string, maxLength: 40 }
+      responses:
+        '204': { description: Accepted. }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
   /driver/deliveries:
     get:
       tags: [Driver]
@@ -940,16 +1028,20 @@ components:
 
     DriverProfile:
       type: object
-      description: The driver's own composed profile (ADR-003 P0).
-      required: [driver_id, name, phone, approved, status, preferred_language, member_since, capabilities, stats]
+      description: The driver's own composed profile (ADR-003 P0/P1).
+      required: [driver_id, name, phone, verification_status, kyc_tier, status, preferred_language, member_since, capabilities, stats]
       properties:
         driver_id: { type: string, format: uuid }
         name: { type: string }
         display_name: { type: [string, "null"] }
         phone: { type: string }
-        approved:
-          type: boolean
-          description: False until ops approves — the driver can log in but not go on shift.
+        verification_status:
+          type: string
+          enum: [unverified, in_review, verified, suspended, banned]
+          description: The verification state machine (ADR-003 P1); only `verified` can go on shift.
+        kyc_tier:
+          type: integer
+          description: 0 none · 1 identity verified · 2 identity + licence (gates payouts/high-value COD).
         status: { type: string, enum: [available, offline, busy] }
         preferred_language: { type: string, enum: [en, sn, nd] }
         emergency_contact:
@@ -967,6 +1059,35 @@ components:
             - { type: "null" }
         vehicle_label: { type: [string, "null"] }
         stats: { $ref: '#/components/schemas/DriverStats' }
+
+    DriverRequirement:
+      type: object
+      description: Per-requirement verification status for the driver's own view (ADR-003 P1; no file URLs — KYC PII stays ops-only).
+      required: [type, status]
+      properties:
+        type:
+          type: string
+          enum: [identity_id, profile_photo, drivers_licence, vehicle_registration, terms]
+        status:
+          type: string
+          enum: [not_submitted, pending_review, approved, rejected, expired]
+        uploaded_at: { type: [string, "null"], format: date-time }
+        review_reason: { type: [string, "null"] }
+
+    PresignedUpload:
+      type: object
+      description: A short-lived URL to PUT a document's bytes directly to object storage (ADR-003 P1).
+      required: [document_id, storage_key, upload]
+      properties:
+        document_id: { type: string, format: uuid }
+        storage_key: { type: string }
+        upload:
+          type: object
+          required: [url, method, expires_in]
+          properties:
+            url: { type: string }
+            method: { type: string, enum: [PUT] }
+            expires_in: { type: integer }
 
     Offer:
       allOf:

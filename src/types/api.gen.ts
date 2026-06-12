@@ -259,6 +259,77 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/driver/documents": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Per-requirement verification status */
+        get: operations["driverListDocuments"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/driver/documents/{type}/upload-url": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Begin a document submission (presigned upload)
+         * @description Returns a short-lived presigned PUT URL; the client uploads the file bytes to object storage directly, then calls /driver/documents/confirm. 503 if storage is not configured.
+         */
+        post: operations["driverDocumentUploadUrl"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/driver/documents/confirm": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Confirm a document upload completed */
+        post: operations["driverConfirmDocument"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/driver/documents/terms": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Accept the current terms (attestation) */
+        post: operations["driverAcceptTerms"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/driver/deliveries": {
         parameters: {
             query?: never;
@@ -603,15 +674,20 @@ export interface components {
             acceptance_rate: number | null;
             rating_avg: number | null;
         };
-        /** @description The driver's own composed profile (ADR-003 P0). */
+        /** @description The driver's own composed profile (ADR-003 P0/P1). */
         DriverProfile: {
             /** Format: uuid */
             driver_id: string;
             name: string;
             display_name?: string | null;
             phone: string;
-            /** @description False until ops approves — the driver can log in but not go on shift. */
-            approved: boolean;
+            /**
+             * @description The verification state machine (ADR-003 P1); only `verified` can go on shift.
+             * @enum {string}
+             */
+            verification_status: "unverified" | "in_review" | "verified" | "suspended" | "banned";
+            /** @description 0 none · 1 identity verified · 2 identity + licence (gates payouts/high-value COD). */
+            kyc_tier: number;
             /** @enum {string} */
             status: "available" | "offline" | "busy";
             /** @enum {string} */
@@ -626,6 +702,28 @@ export interface components {
             vehicle?: components["schemas"]["DriverVehicle"] | null;
             vehicle_label?: string | null;
             stats: components["schemas"]["DriverStats"];
+        };
+        /** @description Per-requirement verification status for the driver's own view (ADR-003 P1; no file URLs — KYC PII stays ops-only). */
+        DriverRequirement: {
+            /** @enum {string} */
+            type: "identity_id" | "profile_photo" | "drivers_licence" | "vehicle_registration" | "terms";
+            /** @enum {string} */
+            status: "not_submitted" | "pending_review" | "approved" | "rejected" | "expired";
+            /** Format: date-time */
+            uploaded_at?: string | null;
+            review_reason?: string | null;
+        };
+        /** @description A short-lived URL to PUT a document's bytes directly to object storage (ADR-003 P1). */
+        PresignedUpload: {
+            /** Format: uuid */
+            document_id: string;
+            storage_key: string;
+            upload: {
+                url: string;
+                /** @enum {string} */
+                method: "PUT";
+                expires_in: number;
+            };
         };
         Offer: components["schemas"]["Delivery"] & {
             /**
@@ -1201,6 +1299,112 @@ export interface operations {
                 };
             };
             400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+        };
+    };
+    driverListDocuments: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description One entry per requirement type. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["DriverRequirement"][];
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+        };
+    };
+    driverDocumentUploadUrl: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                type: "identity_id" | "profile_photo" | "drivers_licence" | "vehicle_registration";
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Presigned upload. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PresignedUpload"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            /** @description Document storage is not configured. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    driverConfirmDocument: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** Format: uuid */
+                    document_id: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Confirmed. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    driverAcceptTerms: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    version: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Accepted. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
             401: components["responses"]["Unauthorized"];
         };
     };

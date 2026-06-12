@@ -12,6 +12,7 @@ import {
 } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { updateProfile, putVehicle, type DriverProfile, type VehicleType } from '../lib/api';
+import VerificationCard from '../components/VerificationCard';
 import { ensureForegroundPermission } from '../lib/location';
 import { waUrl } from '../lib/links';
 import { OPS_WHATSAPP } from '../config';
@@ -52,6 +53,25 @@ export default function Onboarding({
   const [vDetail, setVDetail] = useState(profile.vehicle?.make ?? '');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Verification-status-aware copy for the waiting step.
+  const vs = profile.verification_status;
+  const blocked = vs === 'suspended' || vs === 'banned';
+  const firstName = name.trim() ? `, ${name.trim().split(' ')[0]}` : '';
+  const waitingTitle = blocked
+    ? vs === 'banned'
+      ? 'Account blocked'
+      : 'Account on hold'
+    : vs === 'in_review'
+      ? "You're in review"
+      : 'Finish getting verified';
+  const waitingLead = blocked
+    ? vs === 'banned'
+      ? 'Your account has been blocked. Contact urAfro ops if you think this is a mistake.'
+      : 'Your account is on hold. Message urAfro ops to sort it out.'
+    : vs === 'in_review'
+      ? `Thanks${firstName} — the urAfro team is checking your documents, usually within a day. You'll go on shift the moment you're cleared.`
+      : `Almost there${firstName} — add the items below and the urAfro team will verify you, usually within a day.`;
 
   // On the waiting step, re-check approval whenever the app returns to the
   // foreground — so a driver cleared while the app was backgrounded lands straight
@@ -193,22 +213,20 @@ export default function Onboarding({
           <PrimaryButton label="Save & continue" onPress={() => void saveDetails()} busy={busy} />
         </View>
       ) : (
-        // waiting / approval gate
+        // waiting / verification gate — status-aware
         <View style={styles.section}>
           <View style={styles.reviewBadge}>
-            <Feather name="clock" size={36} strokeWidth={1.5} color={colors.warning} />
+            <Feather
+              name={blocked ? 'slash' : 'clock'}
+              size={36}
+              strokeWidth={1.5}
+              color={blocked ? colors.danger : colors.warning}
+            />
           </View>
-          <Text style={styles.title}>You&apos;re in review</Text>
-          <Text style={styles.lead}>
-            Thanks{name.trim() ? `, ${name.trim().split(' ')[0]}` : ''} — the urAfro team is checking your account, usually
-            within a day. You&apos;ll be able to go on shift the moment you&apos;re cleared.
-          </Text>
+          <Text style={styles.title}>{waitingTitle}</Text>
+          <Text style={styles.lead}>{waitingLead}</Text>
 
-          <View style={styles.card}>
-            <CheckRow done label="Phone number verified" />
-            <CheckRow done label="Name & vehicle added" />
-            <CheckRow label="Ops review" sub="In progress — we’ll notify you" />
-          </View>
+          {blocked ? null : <VerificationCard token={token} onChange={onReload} />}
 
           <Pressable style={styles.editRow} onPress={() => setStep('profile')} hitSlop={8}>
             <Feather name="edit-2" size={16} strokeWidth={1.5} color={colors.textMuted} />
@@ -268,23 +286,6 @@ function PermCard({ icon, title, body }: { icon: keyof typeof Feather.glyphMap; 
         <Text style={styles.permTitle}>{title}</Text>
       </View>
       <Text style={styles.permBody}>{body}</Text>
-    </View>
-  );
-}
-
-function CheckRow({ done, label, sub }: { done?: boolean; label: string; sub?: string }) {
-  return (
-    <View style={styles.checkRow}>
-      <Feather
-        name={done ? 'check-circle' : 'clock'}
-        size={20}
-        strokeWidth={1.5}
-        color={done ? colors.success : colors.textFaint}
-      />
-      <View style={styles.checkTextWrap}>
-        <Text style={styles.checkLabel}>{label}</Text>
-        {sub ? <Text style={styles.checkSub}>{sub}</Text> : null}
-      </View>
     </View>
   );
 }
