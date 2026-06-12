@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { StatusBar } from 'expo-status-bar';
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Feather } from '@expo/vector-icons';
 import { SessionProvider, useSession } from './src/state/session';
 import { ActiveJobProvider, useActiveJob } from './src/state/activeJob';
 import { colors } from './src/theme';
@@ -12,11 +13,13 @@ import ProfileScreen from './src/screens/ProfileScreen';
 
 type Tab = 'shift' | 'earnings' | 'history' | 'profile';
 
-const TABS: { key: Tab; label: string; icon: string }[] = [
-  { key: 'shift', label: 'Shift', icon: '🛵' },
-  { key: 'earnings', label: 'Earnings', icon: '💰' },
-  { key: 'history', label: 'Jobs', icon: '🗂️' },
-  { key: 'profile', label: 'Profile', icon: '👤' },
+// Clean Feather line icons (the set lucide derives from) — replaces the bulky
+// coloured emoji; they tint with the active/inactive tab colour.
+const TABS: { key: Tab; label: string; icon: keyof typeof Feather.glyphMap }[] = [
+  { key: 'shift', label: 'Shift', icon: 'truck' },
+  { key: 'earnings', label: 'Earnings', icon: 'dollar-sign' },
+  { key: 'history', label: 'Jobs', icon: 'clock' },
+  { key: 'profile', label: 'Profile', icon: 'user' },
 ];
 
 // Hand-rolled tabs (no nav lib — three screens don't earn a dependency on 2G
@@ -52,16 +55,21 @@ function Tabs() {
           wandered off could lose the thread of an in-flight delivery. */}
       {tab !== 'shift' && active ? (
         <Pressable style={styles.jobChip} onPress={() => setTab('shift')}>
+          <Feather name="truck" size={18} color={colors.badgeText} />
           <Text style={styles.jobChipText} numberOfLines={1}>
-            🛵  On a delivery · {active.label}
+            On a delivery · {active.label}
           </Text>
-          <Text style={styles.jobChipArrow}>›</Text>
+          <Feather name="chevron-right" size={20} color={colors.badgeText} />
         </Pressable>
       ) : null}
       <View style={styles.tabBar}>
         {TABS.map((t) => (
           <Pressable key={t.key} style={styles.tabBtn} onPress={() => setTab(t.key)}>
-            <Text style={styles.tabIcon}>{t.icon}</Text>
+            <Feather
+              name={t.icon}
+              size={22}
+              color={tab === t.key ? colors.tabActive : colors.textFaint}
+            />
             <Text style={[styles.tabLabel, tab === t.key && styles.tabActive]}>{t.label}</Text>
           </Pressable>
         ))}
@@ -107,8 +115,7 @@ const styles = StyleSheet.create({
     paddingBottom: 18,
     paddingTop: 8,
   },
-  tabBtn: { flex: 1, alignItems: 'center', gap: 2 },
-  tabIcon: { fontSize: 18 },
+  tabBtn: { flex: 1, alignItems: 'center', gap: 3 },
   tabLabel: { color: colors.textFaint, fontSize: 12 },
   tabActive: { color: colors.tabActive, fontWeight: '700' },
   jobChip: {
@@ -120,6 +127,5 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
   },
   jobChipText: { flex: 1, color: colors.badgeText, fontSize: 14, fontWeight: '700' },
-  jobChipArrow: { color: colors.badgeText, fontSize: 20, fontWeight: '700' },
   loading: { flex: 1, backgroundColor: colors.bg, alignItems: 'center', justifyContent: 'center' },
 });
