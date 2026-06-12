@@ -140,25 +140,49 @@ export function markFailed(token: string, id: string, reason?: FailureReason): P
   });
 }
 
-// ── Profile (ADR-002 B) ───────────────────────────────────────────────────────
-export interface DriverProfile {
-  driver_id: string;
-  name: string;
-  phone: string;
-  vehicle: string | null;
-  approved: boolean;
-  status: 'available' | 'offline' | 'busy';
-}
+// ── Profile + vehicle (ADR-003 P0) ────────────────────────────────────────────
+// Types come straight from the regenerated contract so the client can't drift.
+export type DriverProfile = Schemas['DriverProfile'];
+export type DriverVehicle = Schemas['DriverVehicle'];
+export type VehicleType = DriverVehicle['type'];
 
 export function getProfile(token: string): Promise<DriverProfile> {
   return request('/driver/profile', { method: 'GET', token });
 }
 
+/** Driver-editable profile fields (name/display name/language/emergency contact);
+ *  the structured vehicle is set via putVehicle. */
 export function updateProfile(
   token: string,
-  patch: { name?: string; vehicle?: string },
+  patch: {
+    name?: string;
+    display_name?: string;
+    preferred_language?: string;
+    emergency_contact_name?: string;
+    emergency_contact_phone?: string;
+  },
 ): Promise<void> {
   return request('/driver/profile', { method: 'PATCH', token, body: JSON.stringify(patch) });
+}
+
+export function getVehicle(token: string): Promise<{ data: DriverVehicle | null }> {
+  return request('/driver/vehicles', { method: 'GET', token });
+}
+
+/** Upsert the driver's active vehicle (one active per driver, server-enforced). */
+export function putVehicle(
+  token: string,
+  vehicle: {
+    type: VehicleType;
+    make?: string;
+    model?: string;
+    colour?: string;
+    plate?: string;
+    year?: number;
+    capacity_kg?: number;
+  },
+): Promise<DriverVehicle> {
+  return request('/driver/vehicles', { method: 'PUT', token, body: JSON.stringify(vehicle) });
 }
 
 // ── History + decline (ADR-002 B) ─────────────────────────────────────────────

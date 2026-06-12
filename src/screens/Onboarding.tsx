@@ -11,7 +11,7 @@ import {
   View,
 } from 'react-native';
 import { Feather } from '@expo/vector-icons';
-import { updateProfile, type DriverProfile } from '../lib/api';
+import { updateProfile, putVehicle, type DriverProfile, type VehicleType } from '../lib/api';
 import { ensureForegroundPermission } from '../lib/location';
 import { waUrl } from '../lib/links';
 import { OPS_WHATSAPP } from '../config';
@@ -19,6 +19,14 @@ import { useSession } from '../state/session';
 import { colors, shadow, PILL } from '../theme';
 
 type Step = 'welcome' | 'permissions' | 'profile' | 'waiting';
+
+const VEHICLE_TYPES: { id: VehicleType; label: string }[] = [
+  { id: 'motorbike', label: 'Motorbike' },
+  { id: 'car', label: 'Car' },
+  { id: 'van', label: 'Van' },
+  { id: 'bicycle', label: 'Bicycle' },
+  { id: 'foot', label: 'On foot' },
+];
 
 // First-run onboarding for a new / not-yet-approved driver. Sign-up itself is the
 // OTP login (find-or-create); this is everything after: set expectations, explain
@@ -40,7 +48,8 @@ export default function Onboarding({
   const { signOut } = useSession();
   const [step, setStep] = useState<Step>(profile.name?.trim() ? 'waiting' : 'welcome');
   const [name, setName] = useState(profile.name ?? '');
-  const [vehicle, setVehicle] = useState(profile.vehicle ?? '');
+  const [vType, setVType] = useState<VehicleType>(profile.vehicle?.type ?? 'motorbike');
+  const [vDetail, setVDetail] = useState(profile.vehicle?.make ?? '');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -78,7 +87,11 @@ export default function Onboarding({
     setBusy(true);
     setError(null);
     try {
-      await updateProfile(token, { name: name.trim(), vehicle: vehicle.trim() });
+      await updateProfile(token, { name: name.trim() });
+      await putVehicle(
+        token,
+        vType === 'foot' ? { type: vType } : { type: vType, make: vDetail.trim() || undefined },
+      );
       setStep('waiting');
       onReload();
     } catch {
@@ -86,7 +99,7 @@ export default function Onboarding({
     } finally {
       setBusy(false);
     }
-  }, [token, name, vehicle, onReload]);
+  }, [token, name, vType, vDetail, onReload]);
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
@@ -154,14 +167,27 @@ export default function Onboarding({
               autoFocus
             />
             <Text style={[styles.label, styles.labelGap]}>Vehicle</Text>
-            <TextInput
-              style={styles.input}
-              value={vehicle}
-              onChangeText={setVehicle}
-              placeholder="e.g. Honda Fit, red — or Motorbike"
-              placeholderTextColor={colors.placeholder}
-              maxLength={80}
-            />
+            <View style={styles.chips}>
+              {VEHICLE_TYPES.map((v) => (
+                <Pressable
+                  key={v.id}
+                  style={[styles.chip, vType === v.id && styles.chipActive]}
+                  onPress={() => setVType(v.id)}
+                >
+                  <Text style={[styles.chipText, vType === v.id && styles.chipTextActive]}>{v.label}</Text>
+                </Pressable>
+              ))}
+            </View>
+            {vType !== 'foot' ? (
+              <TextInput
+                style={[styles.input, styles.detailGap]}
+                value={vDetail}
+                onChangeText={setVDetail}
+                placeholder="Make & model — e.g. Honda Fit (optional)"
+                placeholderTextColor={colors.placeholder}
+                maxLength={60}
+              />
+            ) : null}
           </View>
           {error ? <Text style={styles.error}>{error}</Text> : null}
           <PrimaryButton label="Save & continue" onPress={() => void saveDetails()} busy={busy} />
@@ -319,6 +345,19 @@ const styles = StyleSheet.create({
 
   label: { color: colors.textPrimary, fontSize: 14, fontWeight: '700' },
   labelGap: { marginTop: 16 },
+  chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 8 },
+  chip: {
+    borderRadius: PILL,
+    borderWidth: 1,
+    borderColor: colors.border,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    backgroundColor: colors.surface,
+  },
+  chipActive: { backgroundColor: colors.tabActive, borderColor: colors.tabActive },
+  chipText: { color: colors.textMuted, fontSize: 14, fontWeight: '700' },
+  chipTextActive: { color: colors.surface },
+  detailGap: { marginTop: 8 },
   input: {
     minHeight: 48,
     backgroundColor: colors.inputBg,

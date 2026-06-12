@@ -1,20 +1,37 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Linking, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { Feather } from '@expo/vector-icons';
-import { getEarnings, getProfile, updateProfile, type Earnings } from '../lib/api';
+import {
+  getEarnings,
+  getProfile,
+  putVehicle,
+  updateProfile,
+  type DriverProfile,
+  type Earnings,
+  type VehicleType,
+} from '../lib/api';
 import { money } from '../lib/format';
 import { waUrl } from '../lib/links';
 import { OPS_WHATSAPP } from '../config';
 import { useSession } from '../state/session';
 import { colors, shadow, PILL } from '../theme';
 
-// Driver profile + the money summary (ADR-002 B). Name + vehicle are the only
-// driver-editable fields (phone is the OTP identity; approval is ops-owned).
-// Language + rating are visual previews only — NOT wired to any backend.
-const LANGUAGES: { id: string; label: string; active?: boolean; soon?: boolean }[] = [
-  { id: 'en', label: 'English', active: true },
-  { id: 'sn', label: 'chiShona', soon: true },
-  { id: 'nd', label: 'isiNdebele', soon: true },
+// Driver profile (ADR-003 P0). Identity + REAL derived stats (no fake rating) +
+// structured vehicle + language preference + emergency contact. Phone is the OTP
+// identity; approval/stats are system-owned. Two saves: "details" (name, display
+// name, language, emergency → PATCH /driver/profile) and "vehicle" (structured →
+// PUT /driver/vehicles).
+const LANGUAGES: { id: 'en' | 'sn' | 'nd'; label: string }[] = [
+  { id: 'en', label: 'English' },
+  { id: 'sn', label: 'chiShona' },
+  { id: 'nd', label: 'isiNdebele' },
+];
+const VEHICLE_TYPES: { id: VehicleType; label: string }[] = [
+  { id: 'motorbike', label: 'Motorbike' },
+  { id: 'car', label: 'Car' },
+  { id: 'van', label: 'Van' },
+  { id: 'bicycle', label: 'Bicycle' },
+  { id: 'foot', label: 'On foot' },
 ];
 
 function initials(name: string): string {
@@ -29,13 +46,41 @@ export default function ProfileScreen() {
   const { session, signOut } = useSession();
   const token = session?.token ?? '';
 
-  const [name, setName] = useState('');
-  const [vehicle, setVehicle] = useState('');
-  const [phone, setPhone] = useState('');
-  const [approved, setApproved] = useState(true);
+  const [profile, setProfile] = useState<DriverProfile | null>(null);
   const [earnings, setEarnings] = useState<Earnings | null>(null);
-  const [busy, setBusy] = useState(false);
+
+  // Editable details
+  const [name, setName] = useState('');
+  const [displayName, setDisplayName] = useState('');
+  const [language, setLanguage] = useState<'en' | 'sn' | 'nd'>('en');
+  const [ecName, setEcName] = useState('');
+  const [ecPhone, setEcPhone] = useState('');
+  // Editable vehicle
+  const [vType, setVType] = useState<VehicleType>('car');
+  const [vMake, setVMake] = useState('');
+  const [vModel, setVModel] = useState('');
+  const [vColour, setVColour] = useState('');
+  const [vPlate, setVPlate] = useState('');
+
+  const [savingDetails, setSavingDetails] = useState(false);
+  const [savingVehicle, setSavingVehicle] = useState(false);
   const [note, setNote] = useState<string | null>(null);
+
+  const hydrate = useCallback((p: DriverProfile) => {
+    setProfile(p);
+    setName(p.name ?? '');
+    setDisplayName(p.display_name ?? '');
+    setLanguage(p.preferred_language);
+    setEcName(p.emergency_contact?.name ?? '');
+    setEcPhone(p.emergency_contact?.phone ?? '');
+    if (p.vehicle) {
+      setVType(p.vehicle.type);
+      setVMake(p.vehicle.make ?? '');
+      setVModel(p.vehicle.model ?? '');
+      setVColour(p.vehicle.colour ?? '');
+      setVPlate(p.vehicle.plate ?? '');
+    }
+  }, []);
 
   useEffect(() => {
     if (!token) return;
@@ -43,11 +88,7 @@ export default function ProfileScreen() {
     void (async () => {
       try {
         const p = await getProfile(token);
-        if (cancelled) return;
-        setName(p.name);
-        setVehicle(p.vehicle ?? '');
-        setPhone(p.phone);
-        setApproved(p.approved);
+        if (!cancelled) hydrate(p);
       } catch {
         if (!cancelled) setNote('Could not load your profile — try again.');
       }
@@ -61,26 +102,73 @@ export default function ProfileScreen() {
     return () => {
       cancelled = true;
     };
-  }, [token]);
+  }, [token, hydrate]);
 
-  const save = useCallback(async () => {
-    setBusy(true);
+  const saveDetails = useCallback(async () => {
+    setSavingDetails(true);
     setNote(null);
     try {
-      await updateProfile(token, { name: name.trim(), vehicle: vehicle.trim() });
+      await updateProfile(token, {
+        name: name.trim(),
+        display_name: displayName.trim(),
+        preferred_language: language,
+        emergency_contact_name: ecName.trim(),
+        emergency_contact_phone: ecPhone.trim(),
+      });
+      const p = await getProfile(token);
+      hydrate(p);
       setNote('Saved.');
     } catch {
       setNote('Could not save — check your connection and try again.');
     } finally {
-      setBusy(false);
+      setSavingDetails(false);
     }
-  }, [token, name, vehicle]);
+  }, [token, name, displayName, language, ecName, ecPhone, hydrate]);
+
+  const saveVehicle = useCallback(async () => {
+    setSavingVehicle(true);
+    setNote(null);
+    try {
+      // 'foot' carries no make/model — omit them so a prior vehicle's stale detail
+      // can't leak. Blank fields go as undefined (let the server keep them null).
+      await putVehicle(
+        token,
+        vType === 'foot'
+          ? { type: vType }
+          : {
+              type: vType,
+              make: vMake.trim() || undefined,
+              model: vModel.trim() || undefined,
+              colour: vColour.trim() || undefined,
+              plate: vPlate.trim() || undefined,
+            },
+      );
+      const p = await getProfile(token);
+      hydrate(p);
+      setNote('Vehicle saved.');
+    } catch {
+      setNote('Could not save your vehicle — try again.');
+    } finally {
+      setSavingVehicle(false);
+    }
+  }, [token, vType, vMake, vModel, vColour, vPlate, hydrate]);
+
+  const stats = profile?.stats;
+  const canGoOnline = profile?.capabilities?.can_go_online ?? true;
+  const ratingLabel =
+    stats && stats.rating_count > 0 && stats.rating_avg != null
+      ? `${stats.rating_avg.toFixed(1)} rating`
+      : 'New driver';
+  const jobsLine = stats
+    ? `${stats.lifetime_jobs} deliver${stats.lifetime_jobs === 1 ? 'y' : 'ies'}` +
+      (stats.completion_rate != null ? ` · ${Math.round(stats.completion_rate * 100)}% completed` : '')
+    : '';
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
       <Text style={styles.title}>Profile</Text>
 
-      {/* Avatar + identity header. Rating is a visual preview (no backend field). */}
+      {/* Avatar + identity header — REAL stats (rating only once it exists). */}
       <View style={styles.header}>
         <View style={styles.avatar}>
           {initials(name) ? (
@@ -91,19 +179,19 @@ export default function ProfileScreen() {
         </View>
         <View style={styles.headerBody}>
           <Text style={styles.headerName} numberOfLines={1}>
-            {name || 'Your name'}
+            {displayName || name || 'Your name'}
           </Text>
           <View style={styles.ratingRow}>
-            <Feather name="star" size={14} color={colors.money} />
-            <Text style={styles.ratingText}>4.8 rating</Text>
-            <View style={styles.badge}>
-              <Text style={styles.badgeText}>PREVIEW</Text>
-            </View>
+            {stats && stats.rating_count > 0 ? (
+              <Feather name="star" size={14} color={colors.money} />
+            ) : null}
+            <Text style={styles.ratingText}>{ratingLabel}</Text>
           </View>
+          {jobsLine ? <Text style={styles.jobsText}>{jobsLine}</Text> : null}
         </View>
       </View>
 
-      {!approved ? (
+      {!canGoOnline ? (
         <View style={[styles.pending, styles.pendingRow]}>
           <Feather name="clock" size={18} color={colors.pendingText} />
           <Text style={[styles.pendingText, styles.pendingTextFlex]}>
@@ -118,72 +206,159 @@ export default function ProfileScreen() {
         <View style={styles.phoneRow}>
           <Feather name="lock" size={20} color={colors.textMuted} />
           <View style={styles.phoneBody}>
-            <Text style={styles.phoneValue}>{phone}</Text>
-            <Text style={styles.phoneHint}>Login number — can't be changed</Text>
+            <Text style={styles.phoneValue}>{profile?.phone ?? ''}</Text>
+            <Text style={styles.phoneHint}>Login number — can&apos;t be changed</Text>
           </View>
         </View>
       </View>
 
-      {/* Editable name + vehicle. */}
+      {/* Your details: name, display name, language, emergency contact. */}
       <View style={styles.card}>
-        <Text style={styles.label}>Your name</Text>
+        <Text style={styles.cardTitle}>Your details</Text>
+
+        <Text style={styles.label}>Full name</Text>
         <TextInput
           style={styles.input}
           value={name}
           onChangeText={setName}
-          placeholder="e.g. Tendai M."
+          placeholder="e.g. Tendai Moyo"
           placeholderTextColor={colors.placeholder}
           maxLength={80}
         />
 
-        <Text style={[styles.label, styles.labelSpaced]}>Vehicle</Text>
+        <Text style={[styles.label, styles.labelSpaced]}>Display name (optional)</Text>
         <TextInput
           style={styles.input}
-          value={vehicle}
-          onChangeText={setVehicle}
-          placeholder="e.g. Honda Fit, red — or Motorbike"
+          value={displayName}
+          onChangeText={setDisplayName}
+          placeholder="What customers see — e.g. Tendai"
           placeholderTextColor={colors.placeholder}
           maxLength={80}
+        />
+
+        <Text style={[styles.label, styles.labelSpaced]}>Language</Text>
+        <View style={styles.chips}>
+          {LANGUAGES.map((l) => (
+            <Pressable
+              key={l.id}
+              style={[styles.chip, language === l.id && styles.chipActive]}
+              onPress={() => setLanguage(l.id)}
+            >
+              <Text style={[styles.chipText, language === l.id && styles.chipTextActive]}>{l.label}</Text>
+            </Pressable>
+          ))}
+        </View>
+        {language !== 'en' ? (
+          <Text style={styles.hint}>App text in this language is on the way — your choice is saved.</Text>
+        ) : null}
+
+        <Text style={[styles.label, styles.labelSpaced]}>Emergency contact</Text>
+        <TextInput
+          style={styles.input}
+          value={ecName}
+          onChangeText={setEcName}
+          placeholder="Name (next of kin)"
+          placeholderTextColor={colors.placeholder}
+          maxLength={120}
+        />
+        <TextInput
+          style={[styles.input, styles.inputGap]}
+          value={ecPhone}
+          onChangeText={setEcPhone}
+          placeholder="Phone — e.g. +263 77 000 0000"
+          placeholderTextColor={colors.placeholder}
+          keyboardType="phone-pad"
+          maxLength={40}
         />
 
         <Pressable
-          style={[styles.save, busy && styles.busy]}
-          onPress={save}
-          disabled={busy || name.trim().length < 2}
+          style={[styles.save, savingDetails && styles.busy]}
+          onPress={saveDetails}
+          disabled={savingDetails || name.trim().length < 2}
         >
-          <Text style={styles.saveText}>{busy ? 'Saving…' : 'Save'}</Text>
+          <Text style={styles.saveText}>{savingDetails ? 'Saving…' : 'Save details'}</Text>
         </Pressable>
-        {note ? <Text style={styles.note}>{note}</Text> : null}
       </View>
 
-      {/* Language — English active; others are Phase D previews. */}
+      {/* Vehicle — structured. */}
       <View style={styles.card}>
-        <Text style={styles.eyebrow}>Language</Text>
-        <View style={styles.langList}>
-          {LANGUAGES.map((l, i) => (
-            <View key={l.id}>
-              {i > 0 ? <View style={styles.divider} /> : null}
-              <Pressable
-                style={styles.langRow}
-                onPress={l.soon ? () => setNote('Shona & Ndebele land with Phase D localization.') : undefined}
-                disabled={!l.soon}
-              >
-                <Text style={[styles.langLabel, l.active && styles.langLabelActive]}>{l.label}</Text>
-                {l.active ? <Feather name="check" size={18} color={colors.tabActive} /> : null}
-                {l.soon ? (
-                  <View style={styles.badge}>
-                    <Text style={styles.badgeText}>SOON</Text>
-                  </View>
-                ) : null}
-              </Pressable>
-            </View>
+        <Text style={styles.cardTitle}>Vehicle</Text>
+        <View style={styles.chips}>
+          {VEHICLE_TYPES.map((v) => (
+            <Pressable
+              key={v.id}
+              style={[styles.chip, vType === v.id && styles.chipActive]}
+              onPress={() => setVType(v.id)}
+            >
+              <Text style={[styles.chipText, vType === v.id && styles.chipTextActive]}>{v.label}</Text>
+            </Pressable>
           ))}
         </View>
+
+        {vType !== 'foot' ? (
+          <>
+            <View style={styles.row}>
+              <View style={styles.rowItem}>
+                <Text style={[styles.label, styles.labelSpaced]}>Make</Text>
+                <TextInput
+                  style={styles.input}
+                  value={vMake}
+                  onChangeText={setVMake}
+                  placeholder="Honda"
+                  placeholderTextColor={colors.placeholder}
+                  maxLength={40}
+                />
+              </View>
+              <View style={styles.rowItem}>
+                <Text style={[styles.label, styles.labelSpaced]}>Model</Text>
+                <TextInput
+                  style={styles.input}
+                  value={vModel}
+                  onChangeText={setVModel}
+                  placeholder="Fit"
+                  placeholderTextColor={colors.placeholder}
+                  maxLength={40}
+                />
+              </View>
+            </View>
+            <View style={styles.row}>
+              <View style={styles.rowItem}>
+                <Text style={[styles.label, styles.labelSpaced]}>Colour</Text>
+                <TextInput
+                  style={styles.input}
+                  value={vColour}
+                  onChangeText={setVColour}
+                  placeholder="Red"
+                  placeholderTextColor={colors.placeholder}
+                  maxLength={30}
+                />
+              </View>
+              <View style={styles.rowItem}>
+                <Text style={[styles.label, styles.labelSpaced]}>Plate</Text>
+                <TextInput
+                  style={styles.input}
+                  value={vPlate}
+                  onChangeText={setVPlate}
+                  placeholder="ABC 1234"
+                  placeholderTextColor={colors.placeholder}
+                  autoCapitalize="characters"
+                  maxLength={20}
+                />
+              </View>
+            </View>
+          </>
+        ) : null}
+
+        <Pressable style={[styles.save, savingVehicle && styles.busy]} onPress={saveVehicle} disabled={savingVehicle}>
+          <Text style={styles.saveText}>{savingVehicle ? 'Saving…' : 'Save vehicle'}</Text>
+        </Pressable>
       </View>
+
+      {note ? <Text style={styles.note}>{note}</Text> : null}
 
       {earnings ? (
         <View style={styles.card}>
-          <Text style={styles.moneyTitle}>Money</Text>
+          <Text style={styles.cardTitle}>Money</Text>
           <Row label="Owed to you (all time)" value={money(earnings.payable_minor)} color={colors.money} />
           <Row
             label={`Today (${earnings.today_deliveries} deliver${earnings.today_deliveries === 1 ? 'y' : 'ies'})`}
@@ -228,7 +403,6 @@ const styles = StyleSheet.create({
   content: { padding: 16, paddingTop: 72, paddingBottom: 32, gap: 16 },
   title: { color: colors.textPrimary, fontSize: 28, fontWeight: '700' },
 
-  // Avatar / identity header
   header: { flexDirection: 'row', alignItems: 'center', gap: 16 },
   avatar: {
     width: 56,
@@ -241,27 +415,23 @@ const styles = StyleSheet.create({
   avatarText: { color: colors.surface, fontSize: 20, fontWeight: '700' },
   headerBody: { flex: 1, minWidth: 0 },
   headerName: { color: colors.textPrimary, fontSize: 20, fontWeight: '700' },
-  ratingRow: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 6, marginTop: 4 },
+  ratingRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 4 },
   ratingText: { color: colors.textMuted, fontSize: 14 },
+  jobsText: { color: colors.textFaint, fontSize: 13, marginTop: 2 },
 
-  badge: { backgroundColor: colors.surfaceAlt, borderRadius: PILL, paddingHorizontal: 10, paddingVertical: 4 },
-  badgeText: { color: colors.textMuted, fontSize: 11, fontWeight: '700', letterSpacing: 0.5 },
-
-  // Cards
   card: { backgroundColor: colors.surface, borderRadius: 12, borderWidth: 1, borderColor: colors.border, padding: 16, ...shadow.card },
+  cardTitle: { color: colors.textPrimary, fontSize: 16, fontWeight: '700', marginBottom: 12 },
 
   pending: { backgroundColor: colors.pendingBg, borderRadius: 12, padding: 12 },
   pendingRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 8 },
   pendingText: { color: colors.pendingText, fontSize: 15 },
   pendingTextFlex: { flex: 1 },
 
-  // Phone row
   phoneRow: { flexDirection: 'row', alignItems: 'center', gap: 16 },
   phoneBody: { flex: 1 },
   phoneValue: { color: colors.textPrimary, fontSize: 16, fontWeight: '700' },
   phoneHint: { color: colors.textMuted, fontSize: 14, marginTop: 2 },
 
-  // Editable fields
   label: { color: colors.textPrimary, fontSize: 14, fontWeight: '700', marginBottom: 8 },
   labelSpaced: { marginTop: 16 },
   input: {
@@ -275,27 +445,34 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 10,
   },
-  save: { backgroundColor: colors.btnPrimaryBg, borderRadius: PILL, minHeight: 48, justifyContent: 'center', alignItems: 'center', marginTop: 16 },
+  inputGap: { marginTop: 8 },
+  row: { flexDirection: 'row', gap: 12 },
+  rowItem: { flex: 1 },
+  hint: { color: colors.textFaint, fontSize: 13, marginTop: 8 },
+
+  chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  chip: {
+    borderRadius: PILL,
+    borderWidth: 1,
+    borderColor: colors.border,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    backgroundColor: colors.surface,
+  },
+  chipActive: { backgroundColor: colors.tabActive, borderColor: colors.tabActive },
+  chipText: { color: colors.textMuted, fontSize: 14, fontWeight: '700' },
+  chipTextActive: { color: colors.surface },
+
+  save: { backgroundColor: colors.btnPrimaryBg, borderRadius: PILL, minHeight: 48, justifyContent: 'center', alignItems: 'center', marginTop: 20 },
   busy: { opacity: 0.6 },
   saveText: { color: colors.btnPrimaryText, fontSize: 16, fontWeight: '700' },
-  note: { color: colors.textMuted, fontSize: 14, marginTop: 10, textAlign: 'center' },
+  note: { color: colors.textMuted, fontSize: 14, textAlign: 'center' },
 
-  // Language list
-  eyebrow: { color: colors.tabActive, fontSize: 12, fontWeight: '700', letterSpacing: 1, marginBottom: 8 },
-  langList: {},
-  divider: { height: 1, backgroundColor: colors.surfaceAlt },
-  langRow: { flexDirection: 'row', alignItems: 'center', minHeight: 48 },
-  langLabel: { flex: 1, color: colors.textPrimary, fontSize: 16 },
-  langLabelActive: { fontWeight: '700' },
-
-  // Money block
-  moneyTitle: { color: colors.textPrimary, fontSize: 16, fontWeight: '700', marginBottom: 10 },
   moneyRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 6 },
   moneyLabel: { color: colors.textMuted, fontSize: 15 },
   moneyValue: { fontSize: 15, fontWeight: '700' },
   moneyHint: { color: colors.textFaint, fontSize: 12, marginTop: 8 },
 
-  // Action buttons
   ghostBtn: {
     minHeight: 48,
     borderRadius: PILL,

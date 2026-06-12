@@ -334,6 +334,10 @@ paths:
     get:
       tags: [Driver]
       summary: The driver's own profile
+      description: >
+        Identity + capabilities + active vehicle + derived stats in one lean
+        payload (ADR-003 P0). Heavy sub-resources (vehicle CRUD, documents,
+        payout methods) are their own endpoints.
       operationId: driverGetProfile
       security:
         - DriverBearerAuth: []
@@ -342,22 +346,15 @@ paths:
           description: Profile.
           content:
             application/json:
-              schema:
-                type: object
-                required: [driver_id, name, phone, approved, status]
-                properties:
-                  driver_id: { type: string, format: uuid }
-                  name: { type: string }
-                  phone: { type: string }
-                  vehicle: { type: [string, "null"] }
-                  approved:
-                    type: boolean
-                    description: False until ops approves — the driver can log in but not go on shift.
-                  status: { type: string, enum: [available, offline, busy] }
+              schema: { $ref: '#/components/schemas/DriverProfile' }
         '401': { $ref: '#/components/responses/Unauthorized' }
     patch:
       tags: [Driver]
-      summary: Update driver-editable profile fields (name, vehicle)
+      summary: Update driver-editable profile fields
+      description: >
+        Name, preferred display name, language preference, and emergency contact.
+        Phone is the OTP identity; approval/status are ops/system-owned; the
+        vehicle is structured (PUT /driver/vehicles). Empty strings clear a field.
       operationId: driverUpdateProfile
       security:
         - DriverBearerAuth: []
@@ -369,9 +366,64 @@ paths:
               type: object
               properties:
                 name: { type: string, minLength: 2, maxLength: 80 }
-                vehicle: { type: string, maxLength: 80 }
+                display_name: { type: string, maxLength: 80 }
+                preferred_language: { type: string, enum: [en, sn, nd] }
+                emergency_contact_name: { type: string, maxLength: 120 }
+                emergency_contact_phone: { type: string, maxLength: 40 }
       responses:
         '204': { description: Updated. }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /driver/vehicles:
+    get:
+      tags: [Driver]
+      summary: The driver's active vehicle
+      operationId: driverGetVehicle
+      security:
+        - DriverBearerAuth: []
+      responses:
+        '200':
+          description: The active vehicle (or null).
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    oneOf:
+                      - { $ref: '#/components/schemas/DriverVehicle' }
+                      - { type: "null" }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+    put:
+      tags: [Driver]
+      summary: Set the driver's active vehicle (upsert)
+      description: One active vehicle per driver; re-PUT updates it in place.
+      operationId: driverPutVehicle
+      security:
+        - DriverBearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [type]
+              properties:
+                type: { type: string, enum: [bicycle, motorbike, car, van, foot] }
+                make: { type: string, maxLength: 40 }
+                model: { type: string, maxLength: 40 }
+                colour: { type: string, maxLength: 30 }
+                plate: { type: string, maxLength: 20 }
+                year: { type: integer, minimum: 1950, maximum: 2100 }
+                capacity_kg: { type: integer, minimum: 0, maximum: 100000 }
+      responses:
+        '200':
+          description: The saved active vehicle.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DriverVehicle' }
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
 
@@ -842,6 +894,79 @@ components:
         status:
           type: string
           enum: [available, offline, busy]
+
+    # ADR-003 driver-profile schemas (P0).
+    DriverCapabilities:
+      type: object
+      description: >-
+        Computed gates the app renders affordances off — never a single flag.
+        P0 derives can_go_online from approval; later phases add payouts/COD.
+      required: [can_go_online, can_receive_payouts, can_handle_high_value_cod]
+      properties:
+        can_go_online: { type: boolean }
+        can_receive_payouts: { type: boolean }
+        can_handle_high_value_cod: { type: boolean }
+
+    DriverVehicle:
+      type: object
+      description: The driver's structured active vehicle (ADR-003 P0).
+      required: [id, type]
+      properties:
+        id: { type: string, format: uuid }
+        type: { type: string, enum: [bicycle, motorbike, car, van, foot] }
+        make: { type: [string, "null"] }
+        model: { type: [string, "null"] }
+        colour: { type: [string, "null"] }
+        plate: { type: [string, "null"] }
+        year: { type: [integer, "null"] }
+        capacity_kg: { type: [integer, "null"] }
+
+    DriverStats:
+      type: object
+      description: >-
+        Derived reputation/performance (ADR-003 P0). Rates are null until there is
+        a denominator (so UIs show "New", not a fake 0%). Ratings populate in P3.
+      required: [lifetime_jobs, completed_jobs, failed_jobs, offered_count, accepted_count, rating_count, completion_rate, acceptance_rate, rating_avg]
+      properties:
+        lifetime_jobs: { type: integer }
+        completed_jobs: { type: integer }
+        failed_jobs: { type: integer }
+        offered_count: { type: integer }
+        accepted_count: { type: integer }
+        rating_count: { type: integer }
+        completion_rate: { type: [number, "null"] }
+        acceptance_rate: { type: [number, "null"] }
+        rating_avg: { type: [number, "null"] }
+
+    DriverProfile:
+      type: object
+      description: The driver's own composed profile (ADR-003 P0).
+      required: [driver_id, name, phone, approved, status, preferred_language, member_since, capabilities, stats]
+      properties:
+        driver_id: { type: string, format: uuid }
+        name: { type: string }
+        display_name: { type: [string, "null"] }
+        phone: { type: string }
+        approved:
+          type: boolean
+          description: False until ops approves — the driver can log in but not go on shift.
+        status: { type: string, enum: [available, offline, busy] }
+        preferred_language: { type: string, enum: [en, sn, nd] }
+        emergency_contact:
+          oneOf:
+            - type: object
+              properties:
+                name: { type: [string, "null"] }
+                phone: { type: [string, "null"] }
+            - { type: "null" }
+        member_since: { type: string, format: date-time }
+        capabilities: { $ref: '#/components/schemas/DriverCapabilities' }
+        vehicle:
+          oneOf:
+            - { $ref: '#/components/schemas/DriverVehicle' }
+            - { type: "null" }
+        vehicle_label: { type: [string, "null"] }
+        stats: { $ref: '#/components/schemas/DriverStats' }
 
     Offer:
       allOf:

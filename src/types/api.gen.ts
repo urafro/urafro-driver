@@ -221,15 +221,42 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** The driver's own profile */
+        /**
+         * The driver's own profile
+         * @description Identity + capabilities + active vehicle + derived stats in one lean payload (ADR-003 P0). Heavy sub-resources (vehicle CRUD, documents, payout methods) are their own endpoints.
+         */
         get: operations["driverGetProfile"];
         put?: never;
         post?: never;
         delete?: never;
         options?: never;
         head?: never;
-        /** Update driver-editable profile fields (name, vehicle) */
+        /**
+         * Update driver-editable profile fields
+         * @description Name, preferred display name, language preference, and emergency contact. Phone is the OTP identity; approval/status are ops/system-owned; the vehicle is structured (PUT /driver/vehicles). Empty strings clear a field.
+         */
         patch: operations["driverUpdateProfile"];
+        trace?: never;
+    };
+    "/driver/vehicles": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The driver's active vehicle */
+        get: operations["driverGetVehicle"];
+        /**
+         * Set the driver's active vehicle (upsert)
+         * @description One active vehicle per driver; re-PUT updates it in place.
+         */
+        put: operations["driverPutVehicle"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/driver/deliveries": {
@@ -544,6 +571,61 @@ export interface components {
             driver_id?: string;
             /** @enum {string} */
             status?: "available" | "offline" | "busy";
+        };
+        /** @description Computed gates the app renders affordances off — never a single flag. P0 derives can_go_online from approval; later phases add payouts/COD. */
+        DriverCapabilities: {
+            can_go_online: boolean;
+            can_receive_payouts: boolean;
+            can_handle_high_value_cod: boolean;
+        };
+        /** @description The driver's structured active vehicle (ADR-003 P0). */
+        DriverVehicle: {
+            /** Format: uuid */
+            id: string;
+            /** @enum {string} */
+            type: "bicycle" | "motorbike" | "car" | "van" | "foot";
+            make?: string | null;
+            model?: string | null;
+            colour?: string | null;
+            plate?: string | null;
+            year?: number | null;
+            capacity_kg?: number | null;
+        };
+        /** @description Derived reputation/performance (ADR-003 P0). Rates are null until there is a denominator (so UIs show "New", not a fake 0%). Ratings populate in P3. */
+        DriverStats: {
+            lifetime_jobs: number;
+            completed_jobs: number;
+            failed_jobs: number;
+            offered_count: number;
+            accepted_count: number;
+            rating_count: number;
+            completion_rate: number | null;
+            acceptance_rate: number | null;
+            rating_avg: number | null;
+        };
+        /** @description The driver's own composed profile (ADR-003 P0). */
+        DriverProfile: {
+            /** Format: uuid */
+            driver_id: string;
+            name: string;
+            display_name?: string | null;
+            phone: string;
+            /** @description False until ops approves — the driver can log in but not go on shift. */
+            approved: boolean;
+            /** @enum {string} */
+            status: "available" | "offline" | "busy";
+            /** @enum {string} */
+            preferred_language: "en" | "sn" | "nd";
+            emergency_contact?: {
+                name?: string | null;
+                phone?: string | null;
+            } | null;
+            /** Format: date-time */
+            member_since: string;
+            capabilities: components["schemas"]["DriverCapabilities"];
+            vehicle?: components["schemas"]["DriverVehicle"] | null;
+            vehicle_label?: string | null;
+            stats: components["schemas"]["DriverStats"];
         };
         Offer: components["schemas"]["Delivery"] & {
             /**
@@ -1027,17 +1109,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        /** Format: uuid */
-                        driver_id: string;
-                        name: string;
-                        phone: string;
-                        vehicle?: string | null;
-                        /** @description False until ops approves — the driver can log in but not go on shift. */
-                        approved: boolean;
-                        /** @enum {string} */
-                        status: "available" | "offline" | "busy";
-                    };
+                    "application/json": components["schemas"]["DriverProfile"];
                 };
             };
             401: components["responses"]["Unauthorized"];
@@ -1054,7 +1126,11 @@ export interface operations {
             content: {
                 "application/json": {
                     name?: string;
-                    vehicle?: string;
+                    display_name?: string;
+                    /** @enum {string} */
+                    preferred_language?: "en" | "sn" | "nd";
+                    emergency_contact_name?: string;
+                    emergency_contact_phone?: string;
                 };
             };
         };
@@ -1065,6 +1141,64 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+        };
+    };
+    driverGetVehicle: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The active vehicle (or null). */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["DriverVehicle"] | null;
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+        };
+    };
+    driverPutVehicle: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @enum {string} */
+                    type: "bicycle" | "motorbike" | "car" | "van" | "foot";
+                    make?: string;
+                    model?: string;
+                    colour?: string;
+                    plate?: string;
+                    year?: number;
+                    capacity_kg?: number;
+                };
+            };
+        };
+        responses: {
+            /** @description The saved active vehicle. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DriverVehicle"];
+                };
             };
             400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
