@@ -44,6 +44,10 @@ export default function OffersList({
         // The driver's cut (ADR-002 A.3) — never quote more than they earn.
         // fee_minor fallback only covers a stale server payload.
         const payout = money(offer.driver_fee_minor ?? offer.fee_minor);
+        // Real distances from the API (straight-line, shown as approximate).
+        const pickupAway =
+          offer.pickup_distance_km != null ? ` · ~${offer.pickup_distance_km} km away` : '';
+        const tripLine = offer.trip_km != null ? `~${offer.trip_km} km trip` : '';
         return (
           <View key={id} style={styles.card}>
             {/* Header: payout big, countdown pill (amber under 60s) */}
@@ -59,7 +63,8 @@ export default function OffersList({
 
             {/* Dropoff landmark leads — the driver's main decision */}
             <Text style={styles.dropoff}>{placeLabel(offer.dropoff)}</Text>
-            <Text style={styles.pickup}>Pickup · {placeLabel(offer.pickup)}</Text>
+            <Text style={styles.pickup}>Pickup · {placeLabel(offer.pickup)}{pickupAway}</Text>
+            {tripLine ? <Text style={styles.trip}>{tripLine}</Text> : null}
 
             {offer.collect_minor ? (
               <View style={styles.codRow}>
@@ -128,6 +133,7 @@ const styles = StyleSheet.create({
 
   dropoff: { color: colors.textPrimary, fontSize: 16, fontWeight: '700', marginTop: 10, lineHeight: 22 },
   pickup: { color: colors.textMuted, fontSize: 15, marginTop: 4 },
+  trip: { color: colors.textFaint, fontSize: 14, marginTop: 2 },
 
   codRow: { marginTop: 10, flexDirection: 'row' },
   codChip: {

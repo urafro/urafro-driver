@@ -796,6 +796,12 @@ components:
         status: { $ref: '#/components/schemas/DeliveryStatus' }
         pickup: { $ref: '#/components/schemas/GeoLocation' }
         dropoff: { $ref: '#/components/schemas/GeoLocation' }
+        trip_km:
+          type: [number, "null"]
+          description: >-
+            Straight-line pickup→dropoff distance in km (1 dp) — the SAME
+            haversine the fee uses, not road distance. Driver UIs present it as
+            approximate ("~7.8 km"). Null if either coordinate is missing.
         driver:
           oneOf:
             - { $ref: '#/components/schemas/Driver' }
@@ -851,6 +857,13 @@ components:
               description: >-
                 The DRIVER'S share of the fee in minor units — what driver-facing
                 UIs must quote (never the full fee_minor).
+            pickup_distance_km:
+              type: [number, "null"]
+              description: >-
+                Straight-line distance in km (1 dp) from the driver's last known
+                location to the pickup — how far they'd travel to start the run
+                (ADR-002 Phase B "distance-to-pickup"). Straight-line, not road
+                distance. Null if the driver's position is unknown.
 
     DriverDelivery:
       description: >-

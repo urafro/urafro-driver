@@ -521,6 +521,8 @@ export interface components {
             status?: components["schemas"]["DeliveryStatus"];
             pickup?: components["schemas"]["GeoLocation"];
             dropoff?: components["schemas"]["GeoLocation"];
+            /** @description Straight-line pickup→dropoff distance in km (1 dp) — the SAME haversine the fee uses, not road distance. Driver UIs present it as approximate ("~7.8 km"). Null if either coordinate is missing. */
+            trip_km?: number | null;
             driver?: components["schemas"]["Driver"] | null;
             /** @description Platform delivery fee in minor units, quoted at creation from the pickup→dropoff distance (base + per-km, clamped). The driver earns a configured share of this on completion; the platform keeps the rest. */
             fee_minor?: number | null;
@@ -551,6 +553,8 @@ export interface components {
             offer_expires_at?: string;
             /** @description The DRIVER'S share of the fee in minor units — what driver-facing UIs must quote (never the full fee_minor). */
             driver_fee_minor?: number | null;
+            /** @description Straight-line distance in km (1 dp) from the driver's last known location to the pickup — how far they'd travel to start the run (ADR-002 Phase B "distance-to-pickup"). Straight-line, not road distance. Null if the driver's position is unknown. */
+            pickup_distance_km?: number | null;
         };
         /** @description A delivery as seen by its **assigned driver** — the public Delivery plus the contacts needed to coordinate the run and the driver's own cut of the fee. Returned only on the driver's own endpoints after claiming; contacts never appear in tenant, offer, or webhook payloads. */
         DriverDelivery: components["schemas"]["Delivery"] & {
