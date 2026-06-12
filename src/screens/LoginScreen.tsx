@@ -20,7 +20,9 @@ import { colors, PILL } from '../theme';
 export default function LoginScreen() {
   const { signIn } = useSession();
   const [step, setStep] = useState<'phone' | 'code'>('phone');
-  const [phoneInput, setPhoneInput] = useState('+263');
+  // The field holds only the LOCAL part — the +263 lives in the prefix chip, so
+  // there's no "+263 +263" duplication. toE164 prepends the country code.
+  const [phoneInput, setPhoneInput] = useState('');
   const [phone, setPhone] = useState('');
   const [code, setCode] = useState('');
   const [busy, setBusy] = useState(false);
@@ -97,7 +99,12 @@ export default function LoginScreen() {
             <TextInput
               style={[styles.input, styles.inputFlex]}
               value={phoneInput}
-              onChangeText={setPhoneInput}
+              onChangeText={(v) =>
+                // Keep the field local: drop anything but digits/spaces and strip a
+                // leading country code / trunk zero a driver might still type
+                // (263…, 0263…, 0…), so the +263 chip is never duplicated.
+                setPhoneInput(v.replace(/[^\d ]/g, '').replace(/^(0?263|0)\s*/, '').slice(0, 12))
+              }
               keyboardType="phone-pad"
               autoFocus
               placeholder="77 123 4567"
@@ -105,8 +112,8 @@ export default function LoginScreen() {
             />
           </View>
           <Text style={styles.helper}>
-            We&apos;ll text you a 6-digit code. SMS is free. 077…, 263… and +263…
-            all work.
+            We&apos;ll text you a 6-digit code — SMS is free. Just your number; we
+            add the +263.
           </Text>
           <SubmitButton label="Send code" onPress={sendCode} busy={busy} />
         </View>
