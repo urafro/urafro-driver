@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { ActivityIndicator, Linking, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import type { DriverDelivery, FailureReason } from '../lib/api';
 import { money, placeLabel } from '../lib/format';
-import { mapsUrl, telUrl } from '../lib/links';
+import { mapsUrl, telUrl, waUrl } from '../lib/links';
 import { colors, shadow, PILL } from '../theme';
 
 export type LifecycleAction = 'picked_up' | 'in_transit' | 'delivered' | 'failed';
@@ -41,6 +41,10 @@ const FAILURE_REASONS: { value: FailureReason; label: string }[] = [
   { value: 'vehicle_problem', label: 'Vehicle problem' },
   { value: 'other', label: 'Something else' },
 ];
+
+// One-tap messages for the customer on the way to the door — the driver
+// shouldn't be typing on a moped. WhatsApp is the channel in this market.
+const QUICK_REPLIES = ["I'm outside", '5 minutes away', "Can't find you — call me?"];
 
 const STATUS_LABEL: Record<string, string> = {
   assigned: 'Assigned',
@@ -120,6 +124,9 @@ export default function ActiveJob({
   const call = () => {
     if (target.contact?.phone) void Linking.openURL(telUrl(target.contact.phone));
   };
+  // Quick-replies only make sense heading to the customer (the dropoff leg) and
+  // only when we have their number.
+  const customerPhone = !goingToPickup ? target.contact?.phone : undefined;
 
   return (
     <View style={styles.container}>
@@ -146,6 +153,20 @@ export default function ActiveJob({
           </Pressable>
         ) : null}
       </View>
+
+      {customerPhone ? (
+        <View style={styles.waRow}>
+          {QUICK_REPLIES.map((m) => (
+            <Pressable
+              key={m}
+              style={styles.waChip}
+              onPress={() => void Linking.openURL(waUrl(customerPhone, m))}
+            >
+              <Text style={styles.waChipText}>💬  {m}</Text>
+            </Pressable>
+          ))}
+        </View>
+      ) : null}
 
       <Text style={styles.heading2}>{goingToPickup ? 'Then deliver to' : 'Picked up from'}</Text>
       <Text style={styles.place2}>{placeLabel(goingToPickup ? job.dropoff : job.pickup)}</Text>
@@ -281,6 +302,14 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   coordText: { color: colors.textPrimary, fontSize: 15, fontWeight: '600' },
+  waRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 10 },
+  waChip: {
+    backgroundColor: colors.surfaceAlt,
+    borderRadius: PILL,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+  },
+  waChipText: { color: colors.textPrimary, fontSize: 14, fontWeight: '600' },
   heading2: { color: colors.textFaint, fontSize: 12, marginTop: 20, textTransform: 'uppercase' },
   place2: { color: colors.textMuted, fontSize: 15, marginTop: 4 },
   metaRow: { flexDirection: 'row', gap: 16, marginTop: 18 },

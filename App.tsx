@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { StatusBar } from 'expo-status-bar';
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 import { SessionProvider, useSession } from './src/state/session';
+import { ActiveJobProvider, useActiveJob } from './src/state/activeJob';
 import { colors } from './src/theme';
 import LoginScreen from './src/screens/LoginScreen';
 import HomeScreen from './src/screens/HomeScreen';
@@ -23,6 +24,7 @@ const TABS: { key: Tab; label: string; icon: string }[] = [
 // swept off shift. History/Profile mount fresh per visit (cheap; refetch on open).
 function Tabs() {
   const [tab, setTab] = useState<Tab>('shift');
+  const { active } = useActiveJob();
   return (
     <View style={styles.root}>
       <View style={[styles.screen, tab !== 'shift' && styles.hidden]}>
@@ -37,6 +39,17 @@ function Tabs() {
         <View style={styles.screen}>
           <ProfileScreen />
         </View>
+      ) : null}
+      {/* Persistent "you're mid-delivery" beacon while browsing other tabs — the
+          active job only lives on the Shift tab, so without this a driver who
+          wandered off could lose the thread of an in-flight delivery. */}
+      {tab !== 'shift' && active ? (
+        <Pressable style={styles.jobChip} onPress={() => setTab('shift')}>
+          <Text style={styles.jobChipText} numberOfLines={1}>
+            🛵  On a delivery · {active.label}
+          </Text>
+          <Text style={styles.jobChipArrow}>›</Text>
+        </Pressable>
       ) : null}
       <View style={styles.tabBar}>
         {TABS.map((t) => (
@@ -67,8 +80,10 @@ function Root() {
 export default function App() {
   return (
     <SessionProvider>
-      <Root />
-      <StatusBar style="dark" />
+      <ActiveJobProvider>
+        <Root />
+        <StatusBar style="dark" />
+      </ActiveJobProvider>
     </SessionProvider>
   );
 }
@@ -89,5 +104,15 @@ const styles = StyleSheet.create({
   tabIcon: { fontSize: 18 },
   tabLabel: { color: colors.textFaint, fontSize: 12 },
   tabActive: { color: colors.tabActive, fontWeight: '700' },
+  jobChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: colors.badgeBg,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+  },
+  jobChipText: { flex: 1, color: colors.badgeText, fontSize: 14, fontWeight: '700' },
+  jobChipArrow: { color: colors.badgeText, fontSize: 20, fontWeight: '700' },
   loading: { flex: 1, backgroundColor: colors.bg, alignItems: 'center', justifyContent: 'center' },
 });
