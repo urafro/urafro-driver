@@ -330,6 +330,44 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/driver/payout-methods": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The driver's payout methods */
+        get: operations["driverListPayoutMethods"];
+        put?: never;
+        /**
+         * Add a payout method
+         * @description The account reference is encrypted server-side; 503 if payouts are not configured.
+         */
+        post: operations["driverAddPayoutMethod"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/driver/payout-methods/{id}/default": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Make a payout method the default */
+        post: operations["driverSetDefaultPayoutMethod"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/driver/deliveries": {
         parameters: {
             query?: never;
@@ -688,6 +726,8 @@ export interface components {
             verification_status: "unverified" | "in_review" | "verified" | "suspended" | "banned";
             /** @description 0 none · 1 identity verified · 2 identity + licence (gates payouts/high-value COD). */
             kyc_tier: number;
+            /** @description Max COD cash the driver may carry (minor units), by KYC tier (ADR-003 P2). */
+            cod_cap_minor: number;
             /** @enum {string} */
             status: "available" | "offline" | "busy";
             /** @enum {string} */
@@ -724,6 +764,20 @@ export interface components {
                 method: "PUT";
                 expires_in: number;
             };
+        };
+        /** @description A driver payout method (ADR-003 P2). The full account reference is encrypted server-side — only a masked tail is ever returned. */
+        PayoutMethod: {
+            /** Format: uuid */
+            id: string;
+            /** @enum {string} */
+            kind: "ecocash" | "bank";
+            /** @example •••• 1219 */
+            account_ref_mask: string;
+            holder_name: string;
+            bank_name?: string | null;
+            is_default: boolean;
+            /** Format: date-time */
+            verified_at?: string | null;
         };
         Offer: components["schemas"]["Delivery"] & {
             /**
@@ -1406,6 +1460,90 @@ export interface operations {
                 content?: never;
             };
             401: components["responses"]["Unauthorized"];
+        };
+    };
+    driverListPayoutMethods: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Payout methods (masked). */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["PayoutMethod"][];
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+        };
+    };
+    driverAddPayoutMethod: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @enum {string} */
+                    kind: "ecocash" | "bank";
+                    account_ref: string;
+                    holder_name: string;
+                    bank_name?: string;
+                };
+            };
+        };
+        responses: {
+            /** @description The saved method (masked). */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PayoutMethod"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            /** @description Payouts are not configured. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    driverSetDefaultPayoutMethod: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Default updated. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
         };
     };
     driverListDeliveries: {

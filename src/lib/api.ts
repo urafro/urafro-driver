@@ -203,6 +203,25 @@ export function acceptTerms(token: string, version: string): Promise<void> {
   });
 }
 
+// ── Payout methods (ADR-003 P2) ───────────────────────────────────────────────
+export type PayoutMethod = Schemas['PayoutMethod'];
+
+export function getPayoutMethods(token: string): Promise<{ data: PayoutMethod[] }> {
+  return request('/driver/payout-methods', { method: 'GET', token });
+}
+
+/** Add a payout method (account ref is encrypted server-side; 503 if payouts off). */
+export function addPayoutMethod(
+  token: string,
+  body: { kind: 'ecocash' | 'bank'; account_ref: string; holder_name: string; bank_name?: string },
+): Promise<PayoutMethod> {
+  return request('/driver/payout-methods', { method: 'POST', token, body: JSON.stringify(body) });
+}
+
+export function setDefaultPayoutMethod(token: string, id: string): Promise<void> {
+  return request(`/driver/payout-methods/${id}/default`, { method: 'POST', token });
+}
+
 /** Upsert the driver's active vehicle (one active per driver, server-enforced). */
 export function putVehicle(
   token: string,

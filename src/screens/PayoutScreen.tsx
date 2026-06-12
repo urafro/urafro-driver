@@ -6,6 +6,7 @@ import { money } from '../lib/format';
 import { waUrl } from '../lib/links';
 import { OPS_WHATSAPP } from '../config';
 import { colors, shadow, PILL } from '../theme';
+import PayoutMethods from '../components/PayoutMethods';
 
 // Cash-out screen — the prototype's Payout flow (#12), built HONEST.
 //
@@ -85,17 +86,8 @@ export default function PayoutScreen({
             <Text style={styles.muted}>Your full balance · no payout fee during the pilot</Text>
           </View>
 
-          <View style={styles.card}>
-            <View style={styles.rowHead}>
-              <Feather name="smartphone" size={18} strokeWidth={1.5} color={colors.tabActive} />
-              <Text style={styles.cardLabel}>Goes to your EcoCash</Text>
-            </View>
-            <Text style={styles.destValue}>{phone ?? 'Your login number'}</Text>
-            <Text style={styles.muted}>
-              Payouts always go to your own login number. On a different EcoCash line? Message ops
-              and they&apos;ll sort it.
-            </Text>
-          </View>
+          {/* Real payout-method management (ADR-003 P2). */}
+          <PayoutMethods token={token} />
 
           {/* The future one-tap button — shown, but visibly NOT live. */}
           <View style={styles.previewButton}>
