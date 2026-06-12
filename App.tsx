@@ -1,11 +1,13 @@
-import { useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { StatusBar } from 'expo-status-bar';
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { SessionProvider, useSession } from './src/state/session';
 import { ActiveJobProvider, useActiveJob } from './src/state/activeJob';
+import { getProfile, type DriverProfile } from './src/lib/api';
 import { colors } from './src/theme';
 import LoginScreen from './src/screens/LoginScreen';
+import Onboarding from './src/screens/Onboarding';
 import HomeScreen from './src/screens/HomeScreen';
 import EarningsScreen from './src/screens/EarningsScreen';
 import HistoryScreen from './src/screens/HistoryScreen';
@@ -78,18 +80,46 @@ function Tabs() {
   );
 }
 
-// Session-gated root: rehydrate the stored token (loading spinner), then the
-// tabbed app if signed in, else the OTP Login.
+// Session- and approval-gated root: rehydrate the token (spinner) → OTP login if
+// signed out → first-run Onboarding while not-yet-approved → the tabbed app once
+// approved. The profile fetch decides approval; a fetch failure falls through to
+// the app (the Profile banner still guards go-online) rather than trapping anyone.
 function Root() {
   const { session, loading } = useSession();
-  if (loading) {
+  // undefined = not loaded yet · null = load failed/none · DriverProfile = decide
+  const [profile, setProfile] = useState<DriverProfile | null | undefined>(undefined);
+
+  // Reset on any session change so a fresh sign-in re-decides from a clean spinner.
+  useEffect(() => {
+    setProfile(undefined);
+  }, [session]);
+
+  const loadProfile = useCallback(async () => {
+    if (!session) return;
+    try {
+      setProfile(await getProfile(session.token));
+    } catch {
+      // First-load failure → null (show the app); a re-check failure keeps prev.
+      setProfile((prev) => (prev === undefined ? null : prev));
+    }
+  }, [session]);
+
+  useEffect(() => {
+    void loadProfile();
+  }, [loadProfile]);
+
+  if (loading || (session && profile === undefined)) {
     return (
       <View style={styles.loading}>
         <ActivityIndicator color={colors.textPrimary} size="large" />
       </View>
     );
   }
-  return session ? <Tabs /> : <LoginScreen />;
+  if (!session) return <LoginScreen />;
+  if (profile && !profile.approved) {
+    return <Onboarding token={session.token} profile={profile} onReload={() => void loadProfile()} />;
+  }
+  return <Tabs />;
 }
 
 export default function App() {
