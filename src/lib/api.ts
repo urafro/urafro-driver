@@ -222,6 +222,17 @@ export function setDefaultPayoutMethod(token: string, id: string): Promise<void>
   return request(`/driver/payout-methods/${id}/default`, { method: 'POST', token });
 }
 
+// ── Availability schedule (ADR-003 P4) ────────────────────────────────────────
+export type ScheduleWindow = Schemas['ScheduleWindow'];
+
+export function getSchedule(token: string): Promise<{ data: ScheduleWindow[] }> {
+  return request('/driver/schedule', { method: 'GET', token });
+}
+
+export function setSchedule(token: string, windows: ScheduleWindow[]): Promise<void> {
+  return request('/driver/schedule', { method: 'PUT', token, body: JSON.stringify({ windows }) });
+}
+
 /** Upsert the driver's active vehicle (one active per driver, server-enforced). */
 export function putVehicle(
   token: string,

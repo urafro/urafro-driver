@@ -15,6 +15,7 @@ import { waUrl } from '../lib/links';
 import { OPS_WHATSAPP } from '../config';
 import { useSession } from '../state/session';
 import { colors, shadow, PILL } from '../theme';
+import AvailabilityCard from '../components/AvailabilityCard';
 
 // Driver profile (ADR-003 P0). Identity + REAL derived stats (no fake rating) +
 // structured vehicle + language preference + emergency contact. Phone is the OTP
@@ -188,6 +189,7 @@ export default function ProfileScreen() {
             <Text style={styles.ratingText}>{ratingLabel}</Text>
           </View>
           {jobsLine ? <Text style={styles.jobsText}>{jobsLine}</Text> : null}
+          {profile?.zone ? <Text style={styles.jobsText}>Zone · {profile.zone.name}</Text> : null}
         </View>
       </View>
 
@@ -355,6 +357,8 @@ export default function ProfileScreen() {
       </View>
 
       {note ? <Text style={styles.note}>{note}</Text> : null}
+
+      <AvailabilityCard token={token} />
 
       {earnings ? (
         <View style={styles.card}>

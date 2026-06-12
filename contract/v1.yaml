@@ -427,6 +427,50 @@ paths:
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
 
+  /driver/schedule:
+    get:
+      tags: [Driver]
+      summary: The driver's weekly availability windows
+      operationId: driverGetSchedule
+      security:
+        - DriverBearerAuth: []
+      responses:
+        '200':
+          description: Availability windows.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/ScheduleWindow' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+    put:
+      tags: [Driver]
+      summary: Replace the driver's availability schedule
+      description: Planned weekly hours (ADR-003 P4) — informational, not a hard go-online lock.
+      operationId: driverSetSchedule
+      security:
+        - DriverBearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [windows]
+              properties:
+                windows:
+                  type: array
+                  maxItems: 50
+                  items: { $ref: '#/components/schemas/ScheduleWindow' }
+      responses:
+        '204': { description: Saved. }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
   /driver/documents:
     get:
       tags: [Driver]
@@ -1179,6 +1223,15 @@ components:
                 phone: { type: [string, "null"] }
             - { type: "null" }
         member_since: { type: string, format: date-time }
+        zone:
+          description: The driver's service zone (ADR-003 P4), or null for the open pool.
+          oneOf:
+            - type: object
+              required: [id, name]
+              properties:
+                id: { type: string, format: uuid }
+                name: { type: string }
+            - { type: "null" }
         capabilities: { $ref: '#/components/schemas/DriverCapabilities' }
         vehicle:
           oneOf:
@@ -1215,6 +1268,15 @@ components:
             url: { type: string }
             method: { type: string, enum: [PUT] }
             expires_in: { type: integer }
+
+    ScheduleWindow:
+      type: object
+      description: A weekly availability window in local minutes-of-day (ADR-003 P4).
+      required: [day_of_week, start_minute, end_minute]
+      properties:
+        day_of_week: { type: integer, minimum: 0, maximum: 6, description: 0=Sun … 6=Sat }
+        start_minute: { type: integer, minimum: 0, maximum: 1439 }
+        end_minute: { type: integer, minimum: 1, maximum: 1440 }
 
     PayoutMethod:
       type: object

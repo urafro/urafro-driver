@@ -259,6 +259,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/driver/schedule": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The driver's weekly availability windows */
+        get: operations["driverGetSchedule"];
+        /**
+         * Replace the driver's availability schedule
+         * @description Planned weekly hours (ADR-003 P4) — informational, not a hard go-online lock.
+         */
+        put: operations["driverSetSchedule"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/driver/documents": {
         parameters: {
             query?: never;
@@ -778,6 +799,12 @@ export interface components {
             } | null;
             /** Format: date-time */
             member_since: string;
+            /** @description The driver's service zone (ADR-003 P4), or null for the open pool. */
+            zone?: {
+                /** Format: uuid */
+                id: string;
+                name: string;
+            } | null;
             capabilities: components["schemas"]["DriverCapabilities"];
             vehicle?: components["schemas"]["DriverVehicle"] | null;
             vehicle_label?: string | null;
@@ -804,6 +831,13 @@ export interface components {
                 method: "PUT";
                 expires_in: number;
             };
+        };
+        /** @description A weekly availability window in local minutes-of-day (ADR-003 P4). */
+        ScheduleWindow: {
+            /** @description 0=Sun … 6=Sat */
+            day_of_week: number;
+            start_minute: number;
+            end_minute: number;
         };
         /** @description A driver payout method (ADR-003 P2). The full account reference is encrypted server-side — only a masked tail is ever returned. */
         PayoutMethod: {
@@ -1391,6 +1425,55 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["DriverVehicle"];
                 };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+        };
+    };
+    driverGetSchedule: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Availability windows. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["ScheduleWindow"][];
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+        };
+    };
+    driverSetSchedule: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    windows: components["schemas"]["ScheduleWindow"][];
+                };
+            };
+        };
+        responses: {
+            /** @description Saved. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
