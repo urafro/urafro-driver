@@ -581,6 +581,35 @@ paths:
         '401': { $ref: '#/components/responses/Unauthorized' }
         '404': { $ref: '#/components/responses/NotFound' }
 
+  /deliveries/{id}/rating:
+    post:
+      tags: [Deliveries]
+      summary: Rate the driver of a completed delivery (tenant → driver)
+      description: 1–5 stars + optional comment, for the tenant's own delivered job. Feeds driver reputation. One per delivery; re-rating overwrites (ADR-003 P3).
+      operationId: rateDelivery
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [stars]
+              properties:
+                stars: { type: integer, minimum: 1, maximum: 5 }
+                comment: { type: string, maxLength: 500 }
+      responses:
+        '204': { description: Rated. }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
   /driver/deliveries:
     get:
       tags: [Driver]
@@ -720,6 +749,35 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/DriverDelivery' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /driver/deliveries/{id}/rating:
+    post:
+      tags: [Driver]
+      summary: Rate a completed delivery (driver → tenant)
+      description: 1–5 stars + optional comment, for a delivered job. One per delivery; re-rating overwrites (ADR-003 P3).
+      operationId: driverRateDelivery
+      security:
+        - DriverBearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [stars]
+              properties:
+                stars: { type: integer, minimum: 1, maximum: 5 }
+                comment: { type: string, maxLength: 500 }
+      responses:
+        '204': { description: Rated. }
+        '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '404': { $ref: '#/components/responses/NotFound' }
 

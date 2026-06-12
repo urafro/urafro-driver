@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
-import { RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
-import { listMyDeliveries, type HistoryItem } from '../lib/api';
+import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Feather } from '@expo/vector-icons';
+import { listMyDeliveries, rateDelivery, type HistoryItem } from '../lib/api';
 import { money, placeLabel } from '../lib/format';
 import { useSession } from '../state/session';
 import { colors, PILL, shadow } from '../theme';
@@ -32,6 +33,25 @@ export default function HistoryScreen() {
   const [items, setItems] = useState<HistoryItem[] | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Driver → tenant ratings given this session (the history list doesn't echo
+  // them back, so we track locally to switch the row to "rated").
+  const [rated, setRated] = useState<Record<string, number>>({});
+
+  const rate = useCallback(
+    async (deliveryId: string, stars: number) => {
+      setRated((r) => ({ ...r, [deliveryId]: stars })); // optimistic
+      try {
+        await rateDelivery(token, deliveryId, stars);
+      } catch {
+        setRated((r) => {
+          const next = { ...r };
+          delete next[deliveryId];
+          return next;
+        });
+      }
+    },
+    [token],
+  );
 
   const load = useCallback(async () => {
     try {
@@ -72,8 +92,9 @@ export default function HistoryScreen() {
       ) : (
         items.map((d) => {
           const meta = STATUS_META[d.status ?? ''] ?? { label: d.status ?? '?', color: colors.textMuted };
+          const id = d.id ?? '';
           return (
-            <View key={d.id} style={styles.card}>
+            <View key={id} style={styles.card}>
               <View style={styles.cardTop}>
                 <View style={[styles.badge, { borderColor: meta.color }]}>
                   <Text style={[styles.badgeText, { color: meta.color }]}>{meta.label}</Text>
@@ -99,6 +120,25 @@ export default function HistoryScreen() {
                   </View>
                 ) : null}
               </View>
+
+              {d.status === 'delivered' && id ? (
+                <View style={styles.rateRow}>
+                  <Text style={styles.rateLabel}>
+                    {rated[id] ? 'Thanks for rating this pickup' : 'Rate this pickup'}
+                  </Text>
+                  <View style={styles.stars}>
+                    {[1, 2, 3, 4, 5].map((n) => (
+                      <Pressable key={n} onPress={() => void rate(id, n)} disabled={!!rated[id]} hitSlop={4}>
+                        <Feather
+                          name="star"
+                          size={22}
+                          color={rated[id] && n <= rated[id] ? colors.money : colors.textFaint}
+                        />
+                      </Pressable>
+                    ))}
+                  </View>
+                </View>
+              ) : null}
             </View>
           );
         })
@@ -145,6 +185,19 @@ const styles = StyleSheet.create({
     backgroundColor: colors.batteryBg,
   },
   codBadgeText: { color: colors.cod, fontSize: 12, fontWeight: '700', letterSpacing: 0.5, textTransform: 'uppercase' },
+
+  rateRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 8,
+    marginTop: 12,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: colors.surfaceAlt,
+  },
+  rateLabel: { color: colors.textFaint, fontSize: 13, flexShrink: 1 },
+  stars: { flexDirection: 'row', gap: 4 },
 
   error: { color: colors.danger, fontSize: 14, marginTop: 16, textAlign: 'center' },
 });

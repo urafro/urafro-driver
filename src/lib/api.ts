@@ -250,6 +250,15 @@ export function declineOffer(token: string, id: string): Promise<void> {
   return request(`/driver/offers/${id}/decline`, { method: 'POST', token });
 }
 
+/** Rate a delivered job (driver → tenant/pickup), 1–5 stars (ADR-003 P3). */
+export function rateDelivery(token: string, deliveryId: string, stars: number, comment?: string): Promise<void> {
+  return request(`/driver/deliveries/${deliveryId}/rating`, {
+    method: 'POST',
+    token,
+    body: JSON.stringify(comment ? { stars, comment } : { stars }),
+  });
+}
+
 // ── Earnings + push (ADR-002 A.1/A.4) ────────────────────────────────────────
 export interface Earnings {
   payable_minor: number;
