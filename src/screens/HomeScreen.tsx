@@ -8,6 +8,7 @@ import {
   Text,
   View,
 } from 'react-native';
+import { Feather } from '@expo/vector-icons';
 import {
   ApiError,
   claimDelivery,
@@ -519,7 +520,10 @@ export default function HomeScreen() {
           on resume once the exemption is actually granted. */}
       {!completed && online && batteryRisk ? (
         <Pressable style={styles.batteryBanner} onPress={() => void requestBatteryExemption()}>
-          <Text style={styles.batteryTitle}>⚠️ Battery saver can interrupt your shift</Text>
+          <View style={styles.iconRow}>
+            <Feather name="alert-triangle" size={16} color={colors.batteryTitle} />
+            <Text style={styles.batteryTitle}>Battery saver can interrupt your shift</Text>
+          </View>
           <Text style={styles.batteryBody}>
             Your phone may pause this app in your pocket — stopping offers and delivery tracking.
             Tap to allow unrestricted battery use.
@@ -529,7 +533,7 @@ export default function HomeScreen() {
       {completed ? (
         <View style={styles.completeCard}>
           <View style={styles.completeCheck}>
-            <Text style={styles.completeCheckMark}>✓</Text>
+            <Feather name="check" size={40} color={colors.btnPrimaryText} />
           </View>
           <Text style={styles.completeTitle}>Delivered!</Text>
           <Text style={styles.completeEarnLabel}>You earned</Text>
@@ -560,8 +564,9 @@ export default function HomeScreen() {
           <ActiveJob job={job} onAction={act} busy={busy} actionError={error} />
           {/* Availability stays visible but locked mid-delivery — going offline on a
               job isn't allowed, and hiding the control read as "where did it go?". */}
-          <View style={[styles.toggle, styles.offBtn, styles.busy]}>
-            <Text style={styles.toggleText}>🔒  Go offline — after this delivery</Text>
+          <View style={[styles.toggle, styles.offBtn, styles.busy, styles.toggleRow]}>
+            <Feather name="lock" size={18} color={colors.btnPrimaryText} />
+            <Text style={styles.toggleText}>Go offline — after this delivery</Text>
           </View>
         </>
       ) : (
@@ -661,12 +666,18 @@ export default function HomeScreen() {
       )}
 
       {!completed && online && bgActive ? (
-        <Text style={styles.bg}>📍  Sharing your location in the background</Text>
+        <View style={styles.bgRow}>
+          <Feather name="map-pin" size={14} color={colors.textFaint} />
+          <Text style={styles.bg}>Sharing your location while on shift</Text>
+        </View>
       ) : null}
       {!completed && pending > 0 ? (
-        <Text style={styles.syncing}>
-          ⏳ {pending} action{pending > 1 ? 's' : ''} waiting to sync…
-        </Text>
+        <View style={styles.syncingRow}>
+          <Feather name="clock" size={16} color={colors.warning} />
+          <Text style={styles.syncing}>
+            {pending} action{pending > 1 ? 's' : ''} waiting to sync…
+          </Text>
+        </View>
       ) : null}
       {/* Shift-level errors only (go online/offline, claim) — action errors during
           a job render inside the ActiveJob card instead. */}
@@ -718,8 +729,12 @@ const styles = StyleSheet.create({
   offBtn: { backgroundColor: colors.btnSecondaryBg },
   busy: { opacity: 0.6 },
   toggleText: { color: colors.btnPrimaryText, fontSize: 18, fontWeight: '700' },
-  bg: { color: colors.successSoft, fontSize: 13, marginTop: 16 },
-  syncing: { color: colors.warning, fontSize: 13, marginTop: 16 },
+  toggleRow: { flexDirection: 'row', gap: 8 },
+  iconRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  bgRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 16 },
+  bg: { color: colors.textFaint, fontSize: 13 },
+  syncingRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 16 },
+  syncing: { color: colors.warning, fontSize: 13 },
   error: { color: colors.danger, fontSize: 14, marginTop: 16 },
   batteryBanner: {
     backgroundColor: colors.batteryBg,
@@ -751,7 +766,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     marginBottom: 8,
   },
-  completeCheckMark: { color: colors.btnPrimaryText, fontSize: 44, fontWeight: '700' },
   completeTitle: { color: colors.textPrimary, fontSize: 24, fontWeight: '700' },
   completeEarnLabel: { color: colors.textFaint, fontSize: 14, marginTop: 8 },
   completeEarn: { color: colors.money, fontSize: 32, fontWeight: '700' },

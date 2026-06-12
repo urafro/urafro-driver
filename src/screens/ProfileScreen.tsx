@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Linking, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Feather } from '@expo/vector-icons';
 import { getEarnings, getProfile, updateProfile, type Earnings } from '../lib/api';
 import { money } from '../lib/format';
 import { waUrl } from '../lib/links';
@@ -18,7 +19,7 @@ const LANGUAGES: { id: string; label: string; active?: boolean; soon?: boolean }
 
 function initials(name: string): string {
   const parts = name.trim().split(/\s+/).filter(Boolean);
-  if (parts.length === 0) return '👤';
+  if (parts.length === 0) return '';
   const first = parts[0][0] ?? '';
   const last = parts.length > 1 ? parts[parts.length - 1][0] ?? '' : '';
   return (first + last).toUpperCase();
@@ -82,14 +83,18 @@ export default function ProfileScreen() {
       {/* Avatar + identity header. Rating is a visual preview (no backend field). */}
       <View style={styles.header}>
         <View style={styles.avatar}>
-          <Text style={styles.avatarText}>{initials(name)}</Text>
+          {initials(name) ? (
+            <Text style={styles.avatarText}>{initials(name)}</Text>
+          ) : (
+            <Feather name="user" size={28} color={colors.surface} />
+          )}
         </View>
         <View style={styles.headerBody}>
           <Text style={styles.headerName} numberOfLines={1}>
             {name || 'Your name'}
           </Text>
           <View style={styles.ratingRow}>
-            <Text style={styles.star}>★</Text>
+            <Feather name="star" size={14} color={colors.money} />
             <Text style={styles.ratingText}>4.8 rating</Text>
             <View style={styles.badge}>
               <Text style={styles.badgeText}>PREVIEW</Text>
@@ -99,9 +104,10 @@ export default function ProfileScreen() {
       </View>
 
       {!approved ? (
-        <View style={styles.pending}>
-          <Text style={styles.pendingText}>
-            ⏳ Your account is awaiting approval — you can set up your profile, but shifts unlock
+        <View style={[styles.pending, styles.pendingRow]}>
+          <Feather name="clock" size={18} color={colors.pendingText} />
+          <Text style={[styles.pendingText, styles.pendingTextFlex]}>
+            Your account is awaiting approval — you can set up your profile, but shifts unlock
             once ops approves you.
           </Text>
         </View>
@@ -110,7 +116,7 @@ export default function ProfileScreen() {
       {/* Immutable phone — the login identity. */}
       <View style={styles.card}>
         <View style={styles.phoneRow}>
-          <Text style={styles.lockIcon}>🔒</Text>
+          <Feather name="lock" size={20} color={colors.textMuted} />
           <View style={styles.phoneBody}>
             <Text style={styles.phoneValue}>{phone}</Text>
             <Text style={styles.phoneHint}>Login number — can't be changed</Text>
@@ -163,7 +169,7 @@ export default function ProfileScreen() {
                 disabled={!l.soon}
               >
                 <Text style={[styles.langLabel, l.active && styles.langLabelActive]}>{l.label}</Text>
-                {l.active ? <Text style={styles.check}>✓</Text> : null}
+                {l.active ? <Feather name="check" size={18} color={colors.tabActive} /> : null}
                 {l.soon ? (
                   <View style={styles.badge}>
                     <Text style={styles.badgeText}>SOON</Text>
@@ -236,7 +242,6 @@ const styles = StyleSheet.create({
   headerBody: { flex: 1, minWidth: 0 },
   headerName: { color: colors.textPrimary, fontSize: 20, fontWeight: '700' },
   ratingRow: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 6, marginTop: 4 },
-  star: { color: colors.money, fontSize: 16 },
   ratingText: { color: colors.textMuted, fontSize: 14 },
 
   badge: { backgroundColor: colors.surfaceAlt, borderRadius: PILL, paddingHorizontal: 10, paddingVertical: 4 },
@@ -246,11 +251,12 @@ const styles = StyleSheet.create({
   card: { backgroundColor: colors.surface, borderRadius: 12, borderWidth: 1, borderColor: colors.border, padding: 16, ...shadow.card },
 
   pending: { backgroundColor: colors.pendingBg, borderRadius: 12, padding: 12 },
+  pendingRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 8 },
   pendingText: { color: colors.pendingText, fontSize: 15 },
+  pendingTextFlex: { flex: 1 },
 
   // Phone row
   phoneRow: { flexDirection: 'row', alignItems: 'center', gap: 16 },
-  lockIcon: { fontSize: 20 },
   phoneBody: { flex: 1 },
   phoneValue: { color: colors.textPrimary, fontSize: 16, fontWeight: '700' },
   phoneHint: { color: colors.textMuted, fontSize: 14, marginTop: 2 },
@@ -281,7 +287,6 @@ const styles = StyleSheet.create({
   langRow: { flexDirection: 'row', alignItems: 'center', minHeight: 48 },
   langLabel: { flex: 1, color: colors.textPrimary, fontSize: 16 },
   langLabelActive: { fontWeight: '700' },
-  check: { color: colors.tabActive, fontSize: 18, fontWeight: '700' },
 
   // Money block
   moneyTitle: { color: colors.textPrimary, fontSize: 16, fontWeight: '700', marginBottom: 10 },

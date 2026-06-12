@@ -1,3 +1,4 @@
+import { Feather } from '@expo/vector-icons';
 import { useState } from 'react';
 import { ActivityIndicator, Linking, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import type { DriverDelivery, FailureReason } from '../lib/api';
@@ -180,12 +181,18 @@ export default function ActiveJob({
         <View style={styles.actionRow}>
           {target.contact?.phone ? (
             <Pressable style={[styles.legBtn, styles.legBtnPrimary]} onPress={call}>
-              <Text style={[styles.legBtnText, styles.legBtnTextPrimary]}>📞  Call {target.label}</Text>
+              <View style={styles.legBtnInner}>
+                <Feather name="phone" size={16} color={colors.surface} />
+                <Text style={[styles.legBtnText, styles.legBtnTextPrimary]}>Call {target.label}</Text>
+              </View>
             </Pressable>
           ) : null}
           {hasGeo ? (
             <Pressable style={[styles.legBtn, styles.legBtnGhost]} onPress={navigate}>
-              <Text style={styles.legBtnText}>🧭  Navigate</Text>
+              <View style={styles.legBtnInner}>
+                <Feather name="navigation" size={16} color={colors.textPrimary} />
+                <Text style={styles.legBtnText}>Navigate</Text>
+              </View>
             </Pressable>
           ) : null}
         </View>
@@ -198,7 +205,10 @@ export default function ActiveJob({
                 style={styles.waChip}
                 onPress={() => void Linking.openURL(waUrl(customerPhone, m))}
               >
-                <Text style={styles.waChipText}>💬  {m}</Text>
+                <View style={styles.waChipInner}>
+                  <Feather name="message-circle" size={16} color={colors.textPrimary} />
+                  <Text style={styles.waChipText}>{m}</Text>
+                </View>
               </Pressable>
             ))}
           </View>
@@ -216,8 +226,9 @@ export default function ActiveJob({
               {placeLabel(target.geo)}
             </Text>
           </View>
-          <View style={styles.mapCta}>
-            <Text style={styles.mapCtaText}>🧭  Open in Google Maps</Text>
+          <View style={[styles.mapCta, styles.mapCtaInner]}>
+            <Feather name="navigation" size={16} color={colors.textPrimary} />
+            <Text style={styles.mapCtaText}>Open in Google Maps</Text>
           </View>
         </Pressable>
       ) : null}
@@ -411,6 +422,7 @@ const styles = StyleSheet.create({
   },
   legBtnPrimary: { backgroundColor: colors.tabActive },
   legBtnGhost: { borderWidth: 1, borderColor: colors.textPrimary },
+  legBtnInner: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   legBtnText: { color: colors.textPrimary, fontSize: 15, fontWeight: '700' },
   legBtnTextPrimary: { color: colors.surface },
 
@@ -424,6 +436,7 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
     paddingHorizontal: 14,
   },
+  waChipInner: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   waChipText: { color: colors.textPrimary, fontSize: 14, fontWeight: '700' },
 
   // Map affordance
@@ -485,6 +498,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     paddingVertical: 6,
   },
+  mapCtaInner: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   mapCtaText: { fontSize: 12, fontWeight: '700', color: colors.textPrimary },
 
   // Earn / collect
