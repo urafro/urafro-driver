@@ -74,8 +74,8 @@ export default function PayoutScreen({
         <View style={styles.card}>
           <Text style={styles.cardLabel}>Nothing to cash out yet</Text>
           <Text style={styles.muted}>
-            Your earnings land here after ops checks each day&apos;s deliveries. Complete a few
-            jobs and your balance will show up ready to pay out.
+            Your earnings land here after ops checks each day&apos;s deliveries. Add where you want
+            to be paid below now, so it&apos;s ready the moment your first balance lands.
           </Text>
         </View>
       ) : (
@@ -86,9 +86,6 @@ export default function PayoutScreen({
             <Text style={styles.muted}>Your full balance · no payout fee during the pilot</Text>
           </View>
 
-          {/* Real payout-method management (ADR-003 P2). */}
-          <PayoutMethods token={token} />
-
           {/* The future one-tap button — shown, but visibly NOT live. */}
           <View style={styles.previewButton}>
             <Feather name="lock" size={18} strokeWidth={1.5} color={colors.textFaint} />
@@ -97,26 +94,30 @@ export default function PayoutScreen({
           <Text style={styles.previewNote}>
             One-tap automated EcoCash cash-out isn&apos;t live yet — it arrives with Phase C.
           </Text>
-
-          <View style={styles.howCard}>
-            <Text style={styles.howTitle}>How payouts work right now</Text>
-            <Text style={styles.muted}>
-              During the pilot the urAfro team pays your balance out by hand — usually within a day
-              of you asking. Message ops to arrange yours and they&apos;ll send it to your EcoCash.
-            </Text>
-          </View>
-
-          {OPS_WHATSAPP ? (
-            <Pressable style={styles.opsButton} onPress={messageOps}>
-              <Feather name="message-circle" size={18} strokeWidth={1.5} color={colors.btnPrimaryText} />
-              <Text style={styles.opsButtonText}>Message ops to arrange a payout</Text>
-            </Pressable>
-          ) : (
-            <Text style={styles.previewNote}>
-              The urAfro team reaches out to arrange payouts during the pilot.
-            </Text>
-          )}
         </>
+      )}
+
+      {/* Payout-method management (ADR-003 P2) — ALWAYS available, so a driver can
+          set up where to be paid BEFORE their first balance, not only after. */}
+      <PayoutMethods token={token} />
+
+      <View style={styles.howCard}>
+        <Text style={styles.howTitle}>How payouts work right now</Text>
+        <Text style={styles.muted}>
+          During the pilot the urAfro team pays your balance out by hand — usually within a day of
+          you asking. Message ops to arrange yours and they&apos;ll send it to the method above.
+        </Text>
+      </View>
+
+      {OPS_WHATSAPP ? (
+        <Pressable style={styles.opsButton} onPress={messageOps}>
+          <Feather name="message-circle" size={18} strokeWidth={1.5} color={colors.btnPrimaryText} />
+          <Text style={styles.opsButtonText}>Message ops to arrange a payout</Text>
+        </Pressable>
+      ) : (
+        <Text style={styles.previewNote}>
+          The urAfro team reaches out to arrange payouts during the pilot.
+        </Text>
       )}
     </ScrollView>
   );

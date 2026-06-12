@@ -4,7 +4,7 @@ import { Feather } from '@expo/vector-icons';
 import { getEarnings, type Earnings } from '../lib/api';
 import { money } from '../lib/format';
 import { useSession } from '../state/session';
-import { colors, shadow } from '../theme';
+import { colors, shadow, PILL } from '../theme';
 import PayoutScreen from './PayoutScreen';
 
 // A dedicated earnings view (the prototype's Earnings tab). The numbers are the
@@ -84,14 +84,20 @@ export default function EarningsScreen() {
         </View>
       ) : null}
 
+      {/* Illustrative weekly chart. There is no earnings-history endpoint yet, so the
+          prior days are NOT real — to stay honest we show NO dollar figures on them
+          and badge the card SAMPLE; only the day letters + relative bars hint at the
+          shape of the real chart to come. */}
       <View style={styles.card}>
-        <Text style={styles.cardLabel}>Last 7 days</Text>
+        <View style={styles.chartHead}>
+          <Text style={styles.cardLabel}>Last 7 days</Text>
+          <View style={styles.sampleBadge}>
+            <Text style={styles.sampleBadgeText}>SAMPLE</Text>
+          </View>
+        </View>
         <View style={styles.chart}>
           {week.map(w => (
             <View key={w.d} style={styles.barCol}>
-              <Text style={[styles.barValue, w.today && styles.barValueToday]}>
-                {(w.minor / 100).toFixed(2)}
-              </Text>
               <View
                 style={[
                   styles.bar,
@@ -103,7 +109,10 @@ export default function EarningsScreen() {
             </View>
           ))}
         </View>
-        <Text style={styles.sampleNote}>Sample — your real week appears here once history lands.</Text>
+        <Text style={styles.sampleNote}>
+          An example of how your week will look — real daily earnings appear here once history
+          tracking lands.
+        </Text>
       </View>
 
       <Pressable style={styles.payoutCard} onPress={() => setShowPayout(true)}>
@@ -145,7 +154,10 @@ const styles = StyleSheet.create({
   cardValue: { color: colors.money, fontSize: 20, fontWeight: '700' },
   codCard: { backgroundColor: colors.batteryBg },
   codTitle: { color: colors.textPrimary, fontSize: 16, fontWeight: '700' },
-  chart: { flexDirection: 'row', alignItems: 'flex-end', gap: 8, height: 140, marginTop: 16 },
+  chartHead: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  sampleBadge: { backgroundColor: colors.surfaceAlt, borderRadius: PILL, paddingHorizontal: 10, paddingVertical: 3 },
+  sampleBadgeText: { color: colors.textMuted, fontSize: 11, fontWeight: '700', letterSpacing: 0.6 },
+  chart: { flexDirection: 'row', alignItems: 'flex-end', gap: 8, height: 120, marginTop: 16 },
   barCol: { flex: 1, alignItems: 'center', gap: 4 },
   barValue: { color: colors.textFaint, fontSize: 11 },
   barValueToday: { color: colors.textPrimary, fontWeight: '700' },
