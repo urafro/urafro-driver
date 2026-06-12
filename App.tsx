@@ -6,13 +6,15 @@ import { ActiveJobProvider, useActiveJob } from './src/state/activeJob';
 import { colors } from './src/theme';
 import LoginScreen from './src/screens/LoginScreen';
 import HomeScreen from './src/screens/HomeScreen';
+import EarningsScreen from './src/screens/EarningsScreen';
 import HistoryScreen from './src/screens/HistoryScreen';
 import ProfileScreen from './src/screens/ProfileScreen';
 
-type Tab = 'shift' | 'history' | 'profile';
+type Tab = 'shift' | 'earnings' | 'history' | 'profile';
 
 const TABS: { key: Tab; label: string; icon: string }[] = [
   { key: 'shift', label: 'Shift', icon: '🛵' },
+  { key: 'earnings', label: 'Earnings', icon: '💰' },
   { key: 'history', label: 'Jobs', icon: '🗂️' },
   { key: 'profile', label: 'Profile', icon: '👤' },
 ];
@@ -30,6 +32,11 @@ function Tabs() {
       <View style={[styles.screen, tab !== 'shift' && styles.hidden]}>
         <HomeScreen />
       </View>
+      {tab === 'earnings' ? (
+        <View style={styles.screen}>
+          <EarningsScreen />
+        </View>
+      ) : null}
       {tab === 'history' ? (
         <View style={styles.screen}>
           <HistoryScreen />

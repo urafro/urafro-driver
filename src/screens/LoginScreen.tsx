@@ -7,6 +7,7 @@ import {
   StyleSheet,
   Text,
   TextInput,
+  View,
 } from 'react-native';
 import { ApiError, requestOtp, verifyOtp } from '../lib/api';
 import { toE164 } from '../lib/phone';
@@ -76,25 +77,45 @@ export default function LoginScreen() {
       style={styles.container}
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
-      <Text style={styles.title}>urAfro Driver</Text>
+      <View style={styles.header}>
+        <View style={styles.brandMark}>
+          <Text style={styles.brandMarkText}>u.</Text>
+        </View>
+        <View style={styles.brandTitleGroup}>
+          <Text style={styles.title}>urAfro Driver</Text>
+          <Text style={styles.subtitle}>Deliver around Harare. Earn in USD.</Text>
+        </View>
+      </View>
 
       {step === 'phone' ? (
-        <>
+        <View style={styles.section}>
           <Text style={styles.label}>Your phone number</Text>
-          <TextInput
-            style={styles.input}
-            value={phoneInput}
-            onChangeText={setPhoneInput}
-            keyboardType="phone-pad"
-            autoFocus
-            placeholder="+263 77 123 4567"
-            placeholderTextColor={colors.placeholder}
-          />
+          <View style={styles.inputRow}>
+            <View style={styles.prefix}>
+              <Text style={styles.prefixText}>+263</Text>
+            </View>
+            <TextInput
+              style={[styles.input, styles.inputFlex]}
+              value={phoneInput}
+              onChangeText={setPhoneInput}
+              keyboardType="phone-pad"
+              autoFocus
+              placeholder="77 123 4567"
+              placeholderTextColor={colors.placeholder}
+            />
+          </View>
+          <Text style={styles.helper}>
+            We&apos;ll text you a 6-digit code. SMS is free. 077…, 263… and +263…
+            all work.
+          </Text>
           <SubmitButton label="Send code" onPress={sendCode} busy={busy} />
-        </>
+        </View>
       ) : (
-        <>
-          <Text style={styles.label}>Enter the code sent to {phone}</Text>
+        <View style={styles.section}>
+          <View>
+            <Text style={styles.stepHeading}>Enter the code</Text>
+            <Text style={styles.stepSub}>Sent by SMS to {phone}</Text>
+          </View>
           <TextInput
             style={[styles.input, styles.codeInput]}
             value={code}
@@ -105,20 +126,31 @@ export default function LoginScreen() {
             placeholder="000000"
             placeholderTextColor={colors.placeholder}
           />
+          {error ? <Text style={styles.error}>{error}</Text> : null}
           <SubmitButton label="Verify" onPress={confirmCode} busy={busy} />
-          <Pressable
-            onPress={() => {
-              setStep('phone');
-              setCode('');
-              setError(null);
-            }}
-          >
-            <Text style={styles.link}>Use a different number</Text>
-          </Pressable>
-        </>
+          <View style={styles.linkRow}>
+            <Pressable
+              onPress={() => {
+                setStep('phone');
+                setCode('');
+                setError(null);
+              }}
+              hitSlop={8}
+            >
+              <Text style={styles.link}>Edit number</Text>
+            </Pressable>
+            <Pressable onPress={sendCode} disabled={busy} hitSlop={8}>
+              <Text style={[styles.link, busy && styles.linkDisabled]}>
+                Resend code
+              </Text>
+            </Pressable>
+          </View>
+        </View>
       )}
 
-      {error ? <Text style={styles.error}>{error}</Text> : null}
+      {step === 'phone' && error ? (
+        <Text style={styles.error}>{error}</Text>
+      ) : null}
     </KeyboardAvoidingView>
   );
 }
@@ -138,36 +170,95 @@ function SubmitButton({
       onPress={onPress}
       disabled={busy}
     >
-      {busy ? <ActivityIndicator color={colors.btnPrimaryText} /> : <Text style={styles.buttonText}>{label}</Text>}
+      {busy ? (
+        <ActivityIndicator color={colors.btnPrimaryText} />
+      ) : (
+        <Text style={styles.buttonText}>{label}</Text>
+      )}
     </Pressable>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: colors.bg, justifyContent: 'center', padding: 24 },
-  title: { color: colors.textPrimary, fontSize: 30, fontWeight: '700', marginBottom: 32 },
-  label: { color: colors.textSecondary, fontSize: 15, marginBottom: 8 },
-  input: {
-    backgroundColor: colors.inputBgRaised,
-    color: colors.textPrimary,
-    fontSize: 18,
-    borderRadius: 10,
+  container: {
+    flex: 1,
+    backgroundColor: colors.bg,
+    justifyContent: 'center',
+    padding: 24,
+    gap: 24,
+  },
+  // Branded "u." header — purple mark + title + tagline.
+  header: { flexDirection: 'row', alignItems: 'center', gap: 16 },
+  brandMark: {
+    width: 48,
+    height: 48,
+    borderRadius: 12,
+    backgroundColor: colors.notificationAccent,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  brandMarkText: { color: colors.surface, fontSize: 24, fontWeight: '700' },
+  brandTitleGroup: { flex: 1 },
+  title: { color: colors.textPrimary, fontSize: 24, fontWeight: '700' },
+  subtitle: { color: colors.textMuted, fontSize: 14, marginTop: 2, lineHeight: 20 },
+
+  section: { gap: 16 },
+  label: { color: colors.textPrimary, fontSize: 14, fontWeight: '700' },
+  helper: { color: colors.textMuted, fontSize: 14, lineHeight: 20 },
+
+  inputRow: { flexDirection: 'row', gap: 8 },
+  prefix: {
+    justifyContent: 'center',
+    paddingHorizontal: 16,
+    backgroundColor: colors.surfaceAlt,
     borderWidth: 1,
     borderColor: colors.border,
-    paddingVertical: 14,
+    borderRadius: 8,
+  },
+  prefixText: { color: colors.textPrimary, fontSize: 16, fontWeight: '700' },
+
+  input: {
+    minHeight: 48,
+    backgroundColor: colors.inputBgRaised,
+    color: colors.textPrimary,
+    fontSize: 16,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: colors.border,
+    paddingVertical: 12,
     paddingHorizontal: 16,
   },
-  codeInput: { letterSpacing: 8, textAlign: 'center', fontSize: 24 },
+  inputFlex: { flex: 1, minWidth: 0 },
+  codeInput: {
+    letterSpacing: 8,
+    textAlign: 'center',
+    fontSize: 24,
+    fontWeight: '700',
+  },
+
+  stepHeading: { color: colors.textPrimary, fontSize: 20, fontWeight: '700' },
+  stepSub: { color: colors.textMuted, fontSize: 16, marginTop: 4, lineHeight: 22 },
+
   button: {
     // Brand V1: the gold pill CTA (black text — never white on gold).
     backgroundColor: colors.btnPrimaryBg,
     borderRadius: PILL,
-    paddingVertical: 16,
+    minHeight: 48,
+    paddingVertical: 14,
     alignItems: 'center',
-    marginTop: 20,
+    justifyContent: 'center',
   },
   buttonDisabled: { opacity: 0.6 },
   buttonText: { color: colors.btnPrimaryText, fontSize: 16, fontWeight: '700' },
-  link: { color: colors.textMuted, fontSize: 14, textAlign: 'center', marginTop: 18 },
-  error: { color: colors.danger, fontSize: 14, marginTop: 16, textAlign: 'center' },
+
+  linkRow: { flexDirection: 'row', gap: 16, alignItems: 'center' },
+  link: { color: colors.textMuted, fontSize: 15, textDecorationLine: 'underline' },
+  linkDisabled: { opacity: 0.5 },
+
+  error: {
+    color: colors.danger,
+    fontSize: 16,
+    fontWeight: '700',
+    lineHeight: 23,
+  },
 });

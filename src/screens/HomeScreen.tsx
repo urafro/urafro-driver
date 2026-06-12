@@ -567,7 +567,17 @@ export default function HomeScreen() {
       ) : (
         <>
           <Text style={styles.title}>Your shift</Text>
-          <Text style={styles.status}>{online ? '🟢  Online' : '⚪  Offline'}</Text>
+          <View style={styles.statusCard}>
+            <View style={styles.statusRow}>
+              <View style={[styles.statusDot, online ? styles.statusDotOn : styles.statusDotOff]} />
+              <Text style={styles.statusTitle}>{online ? "You're online" : "You're off shift"}</Text>
+            </View>
+            <Text style={styles.statusMsg}>
+              {online
+                ? 'Offers pop up below and as notifications.'
+                : 'Go online to start receiving delivery offers near you.'}
+            </Text>
+          </View>
           {earnings ? (
             <View style={styles.earnCard}>
               <View style={styles.earnCol}>
@@ -677,6 +687,19 @@ const styles = StyleSheet.create({
   content: { padding: 24, paddingTop: 72, flexGrow: 1 },
   title: { color: colors.textPrimary, fontSize: 28, fontWeight: '700' },
   status: { color: colors.textSecondary, fontSize: 18, marginTop: 20 },
+  statusCard: {
+    backgroundColor: colors.surface,
+    borderRadius: 12,
+    padding: 16,
+    marginTop: 20,
+    ...shadow.card,
+  },
+  statusRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  statusDot: { width: 12, height: 12, borderRadius: 6 },
+  statusDotOn: { backgroundColor: colors.success },
+  statusDotOff: { backgroundColor: colors.textFaint },
+  statusTitle: { color: colors.textPrimary, fontSize: 18, fontWeight: '700' },
+  statusMsg: { color: colors.textFaint, fontSize: 14, marginTop: 8, lineHeight: 20 },
   earnCard: {
     flexDirection: 'row',
     backgroundColor: colors.surface,

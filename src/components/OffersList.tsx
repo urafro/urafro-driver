@@ -4,8 +4,9 @@ import type { Offer } from '../lib/api';
 import { money, placeLabel, secondsUntil } from '../lib/format';
 import { colors, shadow, PILL } from '../theme';
 
-// Live list of nearby job offers. Each card shows the destination (the driver's
-// main decision), pickup, fee + any cash to collect, and a live expiry countdown.
+// Live list of nearby job offers. Each card leads with the driver's payout (the
+// number that decides the job), then the dropoff landmark, the pickup zone, any
+// cash to collect, and a live expiry countdown that turns amber in the last minute.
 export default function OffersList({
   offers,
   onClaim,
@@ -24,7 +25,12 @@ export default function OffersList({
   }, []);
 
   if (offers.length === 0) {
-    return <Text style={styles.empty}>No offers right now — staying online…</Text>;
+    return (
+      <View style={styles.emptyCard}>
+        <Text style={styles.emptyTitle}>You're online — offers appear here</Text>
+        <Text style={styles.emptyBody}>Stay near busy areas like the CBD or Mbare Musika.</Text>
+      </View>
+    );
   }
 
   return (
@@ -33,31 +39,53 @@ export default function OffersList({
         const id = offer.id;
         if (!id) return null;
         const expires = secondsUntil(offer.offer_expires_at, now);
+        const urgent = expires < 60;
         const claiming = claimingId === id;
+        // The driver's cut (ADR-002 A.3) — never quote more than they earn.
+        // fee_minor fallback only covers a stale server payload.
+        const payout = money(offer.driver_fee_minor ?? offer.fee_minor);
         return (
           <View key={id} style={styles.card}>
-            <Text style={styles.dropoff}>→ {placeLabel(offer.dropoff)}</Text>
-            <Text style={styles.pickup}>Pickup · {placeLabel(offer.pickup)}</Text>
-            <View style={styles.metaRow}>
-              {/* The driver's cut (ADR-002 A.3) — never quote more than they earn.
-                  fee_minor fallback only covers a stale server payload. */}
-              <Text style={styles.fee}>Earn {money(offer.driver_fee_minor ?? offer.fee_minor)}</Text>
-              {offer.collect_minor ? (
-                <Text style={styles.cod}>Collect {money(offer.collect_minor)}</Text>
-              ) : null}
-              <Text style={styles.expiry}>{expires}s</Text>
+            {/* Header: payout big, countdown pill (amber under 60s) */}
+            <View style={styles.headerRow}>
+              <View style={styles.payoutWrap}>
+                <Text style={styles.payout}>{payout}</Text>
+                <Text style={styles.payoutCaption}>you earn</Text>
+              </View>
+              <View style={[styles.timerPill, urgent && styles.timerPillUrgent]}>
+                <Text style={[styles.timerText, urgent && styles.timerTextUrgent]}>{expires}s</Text>
+              </View>
             </View>
-            <Pressable
-              style={[styles.accept, claimingId != null && styles.disabled]}
-              onPress={() => onClaim(id)}
-              disabled={claimingId != null}
-            >
-              <Text style={styles.acceptText}>{claiming ? 'Claiming…' : 'Accept'}</Text>
-            </Pressable>
-            {/* Decline (ADR-002 B): the job is never re-offered to this driver. */}
-            <Pressable style={styles.pass} onPress={() => onDecline(id)} disabled={claimingId != null}>
-              <Text style={styles.passText}>Pass</Text>
-            </Pressable>
+
+            {/* Dropoff landmark leads — the driver's main decision */}
+            <Text style={styles.dropoff}>{placeLabel(offer.dropoff)}</Text>
+            <Text style={styles.pickup}>Pickup · {placeLabel(offer.pickup)}</Text>
+
+            {offer.collect_minor ? (
+              <View style={styles.codRow}>
+                <View style={styles.codChip}>
+                  <Text style={styles.codText}>Collect {money(offer.collect_minor)} cash</Text>
+                </View>
+              </View>
+            ) : null}
+
+            <View style={styles.actions}>
+              <Pressable
+                style={[styles.accept, claimingId != null && styles.disabled]}
+                onPress={() => onClaim(id)}
+                disabled={claimingId != null}
+              >
+                <Text style={styles.acceptText}>{claiming ? 'Claiming…' : `Accept — ${payout}`}</Text>
+              </Pressable>
+              {/* Decline (ADR-002 B): the job is never re-offered to this driver. */}
+              <Pressable
+                style={[styles.pass, claimingId != null && styles.disabled]}
+                onPress={() => onDecline(id)}
+                disabled={claimingId != null}
+              >
+                <Text style={styles.passText}>Pass</Text>
+              </Pressable>
+            </View>
           </View>
         );
       })}
@@ -66,18 +94,68 @@ export default function OffersList({
 }
 
 const styles = StyleSheet.create({
-  list: { marginTop: 24, gap: 12 },
-  empty: { color: colors.textFaint, fontSize: 15, marginTop: 28, textAlign: 'center' },
+  list: { marginTop: 24, gap: 16 },
+
+  emptyCard: {
+    backgroundColor: colors.surface,
+    borderRadius: 12,
+    padding: 24,
+    marginTop: 28,
+    alignItems: 'center',
+    ...shadow.card,
+  },
+  emptyTitle: { color: colors.textPrimary, fontSize: 16, fontWeight: '700', textAlign: 'center' },
+  emptyBody: { color: colors.textFaint, fontSize: 15, marginTop: 6, textAlign: 'center' },
+
   card: { backgroundColor: colors.surface, borderRadius: 12, padding: 16, ...shadow.card },
-  dropoff: { color: colors.textPrimary, fontSize: 17, fontWeight: '600' },
-  pickup: { color: colors.textMuted, fontSize: 14, marginTop: 4 },
-  metaRow: { flexDirection: 'row', alignItems: 'center', gap: 14, marginTop: 10 },
-  fee: { color: colors.money, fontSize: 15, fontWeight: '600' },
-  cod: { color: colors.cod, fontSize: 14 },
-  expiry: { color: colors.textFaint, fontSize: 13, marginLeft: 'auto' },
-  accept: { backgroundColor: colors.btnPrimaryBg, borderRadius: PILL, paddingVertical: 12, alignItems: 'center', marginTop: 14 },
-  disabled: { opacity: 0.6 },
+
+  headerRow: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8 },
+  payoutWrap: { flexDirection: 'row', alignItems: 'baseline', gap: 6, flexShrink: 1 },
+  payout: { color: colors.textPrimary, fontSize: 24, fontWeight: '700' },
+  payoutCaption: { color: colors.textMuted, fontSize: 14 },
+
+  timerPill: {
+    borderRadius: PILL,
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    backgroundColor: colors.surfaceAlt,
+    minHeight: 32,
+    justifyContent: 'center',
+  },
+  timerPillUrgent: { backgroundColor: colors.batteryBg },
+  timerText: { color: colors.textPrimary, fontSize: 14, fontWeight: '700' },
+  timerTextUrgent: { color: colors.warning },
+
+  dropoff: { color: colors.textPrimary, fontSize: 16, fontWeight: '700', marginTop: 10, lineHeight: 22 },
+  pickup: { color: colors.textMuted, fontSize: 15, marginTop: 4 },
+
+  codRow: { marginTop: 10, flexDirection: 'row' },
+  codChip: {
+    backgroundColor: colors.batteryBg,
+    borderRadius: PILL,
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+  },
+  codText: { color: colors.cod, fontSize: 14, fontWeight: '700' },
+
+  actions: { marginTop: 16, gap: 8 },
+  accept: {
+    backgroundColor: colors.btnPrimaryBg,
+    borderRadius: PILL,
+    minHeight: 48,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 24,
+  },
   acceptText: { color: colors.btnPrimaryText, fontSize: 16, fontWeight: '700' },
-  pass: { alignItems: 'center', paddingVertical: 8, marginTop: 2 },
-  passText: { color: colors.textFaint, fontSize: 13 },
+  pass: {
+    backgroundColor: colors.surfaceAlt,
+    borderRadius: PILL,
+    minHeight: 48,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 24,
+  },
+  passText: { color: colors.textMuted, fontSize: 16, fontWeight: '700' },
+  disabled: { opacity: 0.6 },
 });
