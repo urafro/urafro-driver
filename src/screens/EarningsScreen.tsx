@@ -1,9 +1,11 @@
 import { useEffect, useState } from 'react';
-import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Feather } from '@expo/vector-icons';
 import { getEarnings, type Earnings } from '../lib/api';
 import { money } from '../lib/format';
 import { useSession } from '../state/session';
-import { colors, shadow, PILL } from '../theme';
+import { colors, shadow } from '../theme';
+import PayoutScreen from './PayoutScreen';
 
 // A dedicated earnings view (the prototype's Earnings tab). The numbers are the
 // real GET /driver/earnings; the 7-day bars are illustrative — there's no
@@ -13,6 +15,9 @@ export default function EarningsScreen() {
   const { session } = useSession();
   const token = session?.token ?? '';
   const [earnings, setEarnings] = useState<Earnings | null>(null);
+  // Cash-out lives under the Earnings tab (no nav lib — the prototype groups it
+  // here too); a local toggle swaps the dedicated Payout screen in and out.
+  const [showPayout, setShowPayout] = useState(false);
 
   useEffect(() => {
     if (!token) return;
@@ -41,6 +46,10 @@ export default function EarningsScreen() {
     { d: 'Th', minor: todayMinor, today: true },
   ];
   const max = Math.max(1, ...week.map(w => w.minor));
+
+  if (showPayout) {
+    return <PayoutScreen token={token} earnings={earnings} onBack={() => setShowPayout(false)} />;
+  }
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
@@ -97,16 +106,15 @@ export default function EarningsScreen() {
         <Text style={styles.sampleNote}>Sample — your real week appears here once history lands.</Text>
       </View>
 
-      <View style={styles.payoutCard}>
-        <Text style={styles.eyebrow}>Cash out to EcoCash</Text>
-        <Text style={styles.muted}>
-          Payouts are run by ops during the pilot — automated EcoCash disbursement arrives with
-          the next milestone.
-        </Text>
-        <View style={styles.previewPill}>
-          <Text style={styles.previewPillText}>Coming soon</Text>
+      <Pressable style={styles.payoutCard} onPress={() => setShowPayout(true)}>
+        <View style={styles.payoutText}>
+          <Text style={styles.eyebrow}>Cash out to EcoCash</Text>
+          <Text style={styles.muted}>
+            See your balance, where it&apos;s paid, and how payouts work during the pilot.
+          </Text>
         </View>
-      </View>
+        <Feather name="chevron-right" size={22} color={colors.textFaint} />
+      </Pressable>
     </ScrollView>
   );
 }
@@ -148,19 +156,14 @@ const styles = StyleSheet.create({
   barDayToday: { color: colors.tabActive, fontWeight: '700' },
   sampleNote: { color: colors.textFaint, fontSize: 12, marginTop: 12 },
   payoutCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
     backgroundColor: colors.surface,
     borderRadius: 12,
     padding: 16,
     marginTop: 16,
     ...shadow.card,
   },
-  previewPill: {
-    alignSelf: 'flex-start',
-    backgroundColor: colors.surfaceAlt,
-    borderRadius: PILL,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    marginTop: 12,
-  },
-  previewPillText: { color: colors.textMuted, fontSize: 12, fontWeight: '700' },
+  payoutText: { flex: 1 },
 });
