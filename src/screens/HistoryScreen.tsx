@@ -1,19 +1,21 @@
 import { useCallback, useEffect, useState } from 'react';
-import { RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
-import { listMyDeliveries, type HistoryItem } from '../lib/api';
+import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Feather } from '@expo/vector-icons';
+import { listMyDeliveries, rateDelivery, type HistoryItem } from '../lib/api';
 import { money, placeLabel } from '../lib/format';
 import { useSession } from '../state/session';
+import { colors, PILL, shadow } from '../theme';
 
 // Recent jobs (ADR-002 B): what a driver actually did and earned, newest first.
 // Server-shaped: no customer contacts on past jobs (stale PII stays server-side).
 
 const STATUS_META: Record<string, { label: string; color: string }> = {
-  delivered: { label: 'Delivered', color: '#22c55e' },
-  failed: { label: 'Failed', color: '#fca5a5' },
-  cancelled: { label: 'Cancelled', color: '#94a3b8' },
-  assigned: { label: 'In progress', color: '#22d3ee' },
-  picked_up: { label: 'In progress', color: '#22d3ee' },
-  in_transit: { label: 'In progress', color: '#22d3ee' },
+  delivered: { label: 'Delivered', color: colors.success },
+  failed: { label: 'Failed', color: colors.danger },
+  cancelled: { label: 'Cancelled', color: colors.textMuted },
+  assigned: { label: 'In progress', color: colors.info },
+  picked_up: { label: 'In progress', color: colors.info },
+  in_transit: { label: 'In progress', color: colors.info },
 };
 
 const REASON_LABEL: Record<string, string> = {
@@ -31,6 +33,25 @@ export default function HistoryScreen() {
   const [items, setItems] = useState<HistoryItem[] | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Driver → tenant ratings given this session (the history list doesn't echo
+  // them back, so we track locally to switch the row to "rated").
+  const [rated, setRated] = useState<Record<string, number>>({});
+
+  const rate = useCallback(
+    async (deliveryId: string, stars: number) => {
+      setRated((r) => ({ ...r, [deliveryId]: stars })); // optimistic
+      try {
+        await rateDelivery(token, deliveryId, stars);
+      } catch {
+        setRated((r) => {
+          const next = { ...r };
+          delete next[deliveryId];
+          return next;
+        });
+      }
+    },
+    [token],
+  );
 
   const load = useCallback(async () => {
     try {
@@ -57,35 +78,67 @@ export default function HistoryScreen() {
     <ScrollView
       style={styles.container}
       contentContainerStyle={styles.content}
-      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#fff" />}
+      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.textPrimary} />}
     >
-      <Text style={styles.title}>Your jobs</Text>
+      <View style={styles.header}>
+        <Text style={styles.title}>Your jobs</Text>
+        <Text style={styles.subtitle}>Last 20</Text>
+      </View>
+
       {items == null ? (
         <Text style={styles.empty}>Loading…</Text>
       ) : items.length === 0 ? (
         <Text style={styles.empty}>No jobs yet — they'll show up here after your first run.</Text>
       ) : (
         items.map((d) => {
-          const meta = STATUS_META[d.status ?? ''] ?? { label: d.status ?? '?', color: '#94a3b8' };
+          const meta = STATUS_META[d.status ?? ''] ?? { label: d.status ?? '?', color: colors.textMuted };
+          const id = d.id ?? '';
           return (
-            <View key={d.id} style={styles.card}>
-              <View style={styles.row}>
-                <Text style={[styles.status, { color: meta.color }]}>{meta.label}</Text>
+            <View key={id} style={styles.card}>
+              <View style={styles.cardTop}>
+                <View style={[styles.badge, { borderColor: meta.color }]}>
+                  <Text style={[styles.badgeText, { color: meta.color }]}>{meta.label}</Text>
+                </View>
                 <Text style={styles.date}>
                   {d.updated_at ? new Date(d.updated_at).toLocaleString() : ''}
                 </Text>
               </View>
-              <Text style={styles.dropoff}>→ {placeLabel(d.dropoff)}</Text>
-              <View style={styles.row}>
+
+              <Text style={styles.dropoff}>{placeLabel(d.dropoff)}</Text>
+
+              <View style={styles.metaRow}>
                 {d.status === 'delivered' ? (
                   <Text style={styles.earn}>Earned {money(d.driver_fee_minor)}</Text>
                 ) : d.status === 'failed' && d.failure_reason ? (
                   <Text style={styles.reason}>{REASON_LABEL[d.failure_reason] ?? d.failure_reason}</Text>
-                ) : (
-                  <View />
-                )}
-                {d.collect_minor ? <Text style={styles.cod}>COD {money(d.collect_minor)}</Text> : null}
+                ) : d.status === 'cancelled' ? (
+                  <Text style={styles.cancelledNote}>Cancelled by merchant</Text>
+                ) : null}
+                {d.collect_minor ? (
+                  <View style={styles.codBadge}>
+                    <Text style={styles.codBadgeText}>COD {money(d.collect_minor)}</Text>
+                  </View>
+                ) : null}
               </View>
+
+              {d.status === 'delivered' && id ? (
+                <View style={styles.rateRow}>
+                  <Text style={styles.rateLabel}>
+                    {rated[id] ? 'Thanks for rating this pickup' : 'Rate this pickup'}
+                  </Text>
+                  <View style={styles.stars}>
+                    {[1, 2, 3, 4, 5].map((n) => (
+                      <Pressable key={n} onPress={() => void rate(id, n)} disabled={!!rated[id]} hitSlop={4}>
+                        <Feather
+                          name="star"
+                          size={22}
+                          color={rated[id] && n <= rated[id] ? colors.money : colors.textFaint}
+                        />
+                      </Pressable>
+                    ))}
+                  </View>
+                </View>
+              ) : null}
             </View>
           );
         })
@@ -96,17 +149,55 @@ export default function HistoryScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#0f172a' },
-  content: { padding: 24, paddingTop: 72, paddingBottom: 32 },
-  title: { color: '#fff', fontSize: 28, fontWeight: '700', marginBottom: 16 },
-  empty: { color: '#64748b', fontSize: 15, marginTop: 24, textAlign: 'center' },
-  card: { backgroundColor: '#1e293b', borderRadius: 12, padding: 16, marginBottom: 12 },
-  row: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  status: { fontSize: 13, fontWeight: '700', textTransform: 'uppercase' },
-  date: { color: '#64748b', fontSize: 12 },
-  dropoff: { color: '#fff', fontSize: 16, marginTop: 8 },
-  earn: { color: '#22d3ee', fontSize: 14, fontWeight: '600', marginTop: 8 },
-  reason: { color: '#fca5a5', fontSize: 13, marginTop: 8 },
-  cod: { color: '#fbbf24', fontSize: 13, marginTop: 8 },
-  error: { color: '#fca5a5', fontSize: 14, marginTop: 16, textAlign: 'center' },
+  container: { flex: 1, backgroundColor: colors.bg },
+  content: { padding: 16, paddingTop: 72, paddingBottom: 32, gap: 8 },
+  header: { marginBottom: 8 },
+  title: { color: colors.textPrimary, fontSize: 24, fontWeight: '700' },
+  subtitle: { color: colors.textMuted, fontSize: 14, marginTop: 2 },
+  empty: { color: colors.textFaint, fontSize: 15, marginTop: 24, textAlign: 'center' },
+
+  card: { backgroundColor: colors.surface, borderRadius: 12, borderWidth: 1, borderColor: colors.border, padding: 16, ...shadow.card },
+  cardTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+
+  badge: {
+    alignSelf: 'flex-start',
+    borderWidth: 1,
+    borderRadius: PILL,
+    paddingVertical: 4,
+    paddingHorizontal: 10,
+    backgroundColor: colors.surfaceAlt,
+  },
+  badgeText: { fontSize: 12, fontWeight: '700', letterSpacing: 0.5, textTransform: 'uppercase' },
+
+  date: { color: colors.textFaint, fontSize: 12, marginLeft: 8, flexShrink: 1, textAlign: 'right' },
+
+  dropoff: { color: colors.textPrimary, fontSize: 16, fontWeight: '700', lineHeight: 22, marginTop: 8 },
+
+  metaRow: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 8, marginTop: 8 },
+  earn: { color: colors.money, fontSize: 16, fontWeight: '700' },
+  reason: { color: colors.danger, fontSize: 16, fontWeight: '700' },
+  cancelledNote: { color: colors.textMuted, fontSize: 16 },
+
+  codBadge: {
+    borderRadius: PILL,
+    paddingVertical: 4,
+    paddingHorizontal: 10,
+    backgroundColor: colors.batteryBg,
+  },
+  codBadgeText: { color: colors.cod, fontSize: 12, fontWeight: '700', letterSpacing: 0.5, textTransform: 'uppercase' },
+
+  rateRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 8,
+    marginTop: 12,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: colors.surfaceAlt,
+  },
+  rateLabel: { color: colors.textFaint, fontSize: 13, flexShrink: 1 },
+  stars: { flexDirection: 'row', gap: 4 },
+
+  error: { color: colors.danger, fontSize: 14, marginTop: 16, textAlign: 'center' },
 });

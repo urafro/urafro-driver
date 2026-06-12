@@ -8,6 +8,7 @@ import {
   Text,
   View,
 } from 'react-native';
+import { Feather } from '@expo/vector-icons';
 import {
   ApiError,
   claimDelivery,
@@ -41,7 +42,7 @@ import {
 } from '../lib/battery';
 import { registerForPush, maybeNotifyNewOffers } from '../lib/notifications';
 import { saveActiveJob, loadActiveJob, clearActiveJob } from '../lib/session';
-import { money } from '../lib/format';
+import { money, placeLabel } from '../lib/format';
 import {
   enqueueAction,
   flushActions,
@@ -51,6 +52,8 @@ import {
   type QueuedAction,
 } from '../lib/queue';
 import { useSession } from '../state/session';
+import { useActiveJob } from '../state/activeJob';
+import { colors, shadow, PILL } from '../theme';
 import OffersList from '../components/OffersList';
 import ActiveJob, { type LifecycleAction, type ActionExtra } from '../components/ActiveJob';
 
@@ -64,6 +67,7 @@ const FLUSH_MS = 12000;
 export default function HomeScreen() {
   const { session } = useSession();
   const token = session?.token ?? '';
+  const { setActive } = useActiveJob();
 
   const [online, setOnline] = useState(false);
   const [offers, setOffers] = useState<Offer[]>([]);
@@ -75,6 +79,14 @@ export default function HomeScreen() {
   const [pending, setPending] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [earnings, setEarnings] = useState<Earnings | null>(null);
+  // The payday moment: set on a confirmed delivery so the loop ends on the
+  // number, not a silent return to the offers list.
+  const [completed, setCompleted] = useState<{ earnedMinor: number | null; codMinor: number } | null>(
+    null,
+  );
+  // Go-offline asks first, showing the shift's tally — the motivating end-of-day
+  // total + a COD hand-in reminder before the driver clocks out.
+  const [confirmingOffline, setConfirmingOffline] = useState(false);
 
   // Latest job, readable from inside the (token-scoped) flush interval.
   const jobRef = useRef<DriverDelivery | null>(null);
@@ -142,9 +154,15 @@ export default function HomeScreen() {
       didJobMount.current = true;
       return;
     }
-    if (job?.id) void saveActiveJob(JSON.stringify(job));
-    else void clearActiveJob();
-  }, [job]);
+    if (job?.id) {
+      void saveActiveJob(JSON.stringify(job));
+      // Mirror to the cross-tab beacon so Jobs/Profile can show the return chip.
+      setActive({ id: job.id, label: placeLabel(job.dropoff) });
+    } else {
+      void clearActiveJob();
+      setActive(null);
+    }
+  }, [job, setActive]);
 
   // On launch, resume an in-flight delivery from the cached snapshot IMMEDIATELY —
   // the OS may have killed the app mid-run (common on low-end Android), possibly in
@@ -461,6 +479,14 @@ export default function HomeScreen() {
             ...(extra?.podPin ? { pod_pin: extra.podPin } : {}),
           });
         else updated = await markFailed(token, id, extra?.reason);
+        // A confirmed delivery earns the payday screen (the earnings effect below
+        // refetches today's running total as soon as the job clears).
+        if (to === 'delivered') {
+          setCompleted({
+            earnedMinor: job?.driver_fee_minor ?? null,
+            codMinor: extra?.codCollectedMinor ?? 0,
+          });
+        }
         setJob(to === 'delivered' || to === 'failed' ? null : updated);
       } catch (e) {
         if (shouldRetry(e)) {
@@ -492,16 +518,43 @@ export default function HomeScreen() {
           the OS can still freeze the app in the background — including mid-job,
           where a frozen app means dead GPS + missed cancellations. Clears itself
           on resume once the exemption is actually granted. */}
-      {online && batteryRisk ? (
+      {!completed && online && batteryRisk ? (
         <Pressable style={styles.batteryBanner} onPress={() => void requestBatteryExemption()}>
-          <Text style={styles.batteryTitle}>⚠️ Battery saver can interrupt your shift</Text>
+          <View style={styles.iconRow}>
+            <Feather name="alert-triangle" size={16} color={colors.batteryTitle} />
+            <Text style={styles.batteryTitle}>Battery saver can interrupt your shift</Text>
+          </View>
           <Text style={styles.batteryBody}>
             Your phone may pause this app in your pocket — stopping offers and delivery tracking.
             Tap to allow unrestricted battery use.
           </Text>
         </Pressable>
       ) : null}
-      {job ? (
+      {completed ? (
+        <View style={styles.completeCard}>
+          <View style={styles.completeCheck}>
+            <Feather name="check" size={40} color={colors.btnPrimaryText} />
+          </View>
+          <Text style={styles.completeTitle}>Delivered!</Text>
+          <Text style={styles.completeEarnLabel}>You earned</Text>
+          <Text style={styles.completeEarn}>{money(completed.earnedMinor)}</Text>
+          {earnings ? (
+            <Text style={styles.completeToday}>
+              Today: {money(earnings.today_minor)} · {earnings.today_deliveries} deliver
+              {earnings.today_deliveries === 1 ? 'y' : 'ies'}
+            </Text>
+          ) : null}
+          {completed.codMinor > 0 ? (
+            <Text style={styles.completeCod}>
+              You’re holding {money(completed.codMinor)} cash — hand it to ops at the end of your
+              shift. It’s separate from your earnings.
+            </Text>
+          ) : null}
+          <Pressable style={styles.completeBtn} onPress={() => setCompleted(null)}>
+            <Text style={styles.completeBtnText}>Back to offers</Text>
+          </Pressable>
+        </View>
+      ) : job ? (
         <>
           <Text style={styles.title}>Active delivery</Text>
           {/* With a job on screen every error comes from the driver's own lifecycle
@@ -509,11 +562,27 @@ export default function HomeScreen() {
               action feedback) — not at the bottom of the scroll where the keyboard
               hides it. */}
           <ActiveJob job={job} onAction={act} busy={busy} actionError={error} />
+          {/* Availability stays visible but locked mid-delivery — going offline on a
+              job isn't allowed, and hiding the control read as "where did it go?". */}
+          <View style={[styles.toggle, styles.offBtn, styles.busy, styles.toggleRow]}>
+            <Feather name="lock" size={18} color={colors.btnPrimaryText} />
+            <Text style={styles.toggleText}>Go offline — after this delivery</Text>
+          </View>
         </>
       ) : (
         <>
           <Text style={styles.title}>Your shift</Text>
-          <Text style={styles.status}>{online ? '🟢  Online' : '⚪  Offline'}</Text>
+          <View style={styles.statusCard}>
+            <View style={styles.statusRow}>
+              <View style={[styles.statusDot, online ? styles.statusDotOn : styles.statusDotOff]} />
+              <Text style={styles.statusTitle}>{online ? "You're online" : "You're off shift"}</Text>
+            </View>
+            <Text style={styles.statusMsg}>
+              {online
+                ? 'Offers pop up below and as notifications.'
+                : 'Go online to start receiving delivery offers near you.'}
+            </Text>
+          </View>
           {earnings ? (
             <View style={styles.earnCard}>
               <View style={styles.earnCol}>
@@ -534,80 +603,149 @@ export default function HomeScreen() {
               ) : null}
             </View>
           ) : null}
-          <Pressable
-            style={[styles.toggle, online ? styles.offBtn : styles.onBtn, busy && styles.busy]}
-            onPress={online ? goOfflineNow : goOnlineNow}
-            disabled={busy}
-          >
-            {busy ? (
-              <ActivityIndicator color="#0f172a" />
-            ) : (
-              <Text style={styles.toggleText}>
-                {locating ? 'Getting location…' : online ? 'Go offline' : 'Go online'}
+          {confirmingOffline ? (
+            <View style={styles.summaryCard}>
+              <Text style={styles.summaryTitle}>End your shift?</Text>
+              <Text style={styles.summaryBig}>{money(earnings?.today_minor ?? 0)}</Text>
+              <Text style={styles.summarySub}>
+                {earnings?.today_deliveries ?? 0} deliver
+                {(earnings?.today_deliveries ?? 0) === 1 ? 'y' : 'ies'} today
               </Text>
-            )}
-          </Pressable>
-          {online ? (
-            <OffersList offers={offers} onClaim={claim} onDecline={decline} claimingId={claimingId} />
-          ) : null}
+              {earnings && earnings.cod_owed_minor > 0 ? (
+                <Text style={styles.summaryCod}>
+                  Remember to hand in {money(earnings.cod_owed_minor)} cash to ops.
+                </Text>
+              ) : null}
+              <Pressable
+                style={[styles.toggle, styles.offBtn, busy && styles.busy]}
+                disabled={busy}
+                onPress={() => {
+                  void goOfflineNow().finally(() => setConfirmingOffline(false));
+                }}
+              >
+                {busy ? (
+                  <ActivityIndicator color={colors.btnPrimaryText} />
+                ) : (
+                  <Text style={styles.toggleText}>End shift</Text>
+                )}
+              </Pressable>
+              <Pressable
+                style={styles.stayBtn}
+                disabled={busy}
+                onPress={() => setConfirmingOffline(false)}
+              >
+                <Text style={styles.stayText}>Stay online</Text>
+              </Pressable>
+            </View>
+          ) : (
+            <>
+              <Pressable
+                style={[styles.toggle, online ? styles.offBtn : styles.onBtn, busy && styles.busy]}
+                onPress={online ? () => setConfirmingOffline(true) : goOnlineNow}
+                disabled={busy}
+              >
+                {busy ? (
+                  <ActivityIndicator color={colors.btnPrimaryText} />
+                ) : (
+                  <Text style={styles.toggleText}>
+                    {locating ? 'Getting location…' : online ? 'Go offline' : 'Go online'}
+                  </Text>
+                )}
+              </Pressable>
+              {online ? (
+                <OffersList
+                  offers={offers}
+                  onClaim={claim}
+                  onDecline={decline}
+                  claimingId={claimingId}
+                />
+              ) : null}
+            </>
+          )}
         </>
       )}
 
-      {online && bgActive ? (
-        <Text style={styles.bg}>📍  Sharing your location in the background</Text>
+      {!completed && online && bgActive ? (
+        <View style={styles.bgRow}>
+          <Feather name="map-pin" size={14} color={colors.textFaint} />
+          <Text style={styles.bg}>Sharing your location while on shift</Text>
+        </View>
       ) : null}
-      {pending > 0 ? (
-        <Text style={styles.syncing}>
-          ⏳ {pending} action{pending > 1 ? 's' : ''} waiting to sync…
-        </Text>
+      {!completed && pending > 0 ? (
+        <View style={styles.syncingRow}>
+          <Feather name="clock" size={16} color={colors.warning} />
+          <Text style={styles.syncing}>
+            {pending} action{pending > 1 ? 's' : ''} waiting to sync…
+          </Text>
+        </View>
       ) : null}
       {/* Shift-level errors only (go online/offline, claim) — action errors during
           a job render inside the ActiveJob card instead. */}
-      {!job && error ? <Text style={styles.error}>{error}</Text> : null}
+      {!completed && !job && error ? <Text style={styles.error}>{error}</Text> : null}
 
       {/* Ops contact + sign-out live on the Profile tab now. */}
-      <View style={styles.footer}>
-        <Text style={styles.meta}>Driver {session?.driverId.slice(0, 8)}…</Text>
-      </View>
+      {!completed ? (
+        <View style={styles.footer}>
+          <Text style={styles.meta}>Driver {session?.driverId.slice(0, 8)}…</Text>
+        </View>
+      ) : null}
     </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#0f172a' },
+  container: { flex: 1, backgroundColor: colors.bg },
   content: { padding: 24, paddingTop: 72, flexGrow: 1 },
-  title: { color: '#fff', fontSize: 28, fontWeight: '700' },
-  status: { color: '#cbd5e1', fontSize: 18, marginTop: 20 },
+  title: { color: colors.textPrimary, fontSize: 28, fontWeight: '700' },
+  status: { color: colors.textSecondary, fontSize: 18, marginTop: 20 },
+  statusCard: {
+    backgroundColor: colors.surface,
+    borderRadius: 12,
+    padding: 16,
+    marginTop: 20,
+    ...shadow.card,
+  },
+  statusRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  statusDot: { width: 12, height: 12, borderRadius: 6 },
+  statusDotOn: { backgroundColor: colors.success },
+  statusDotOff: { backgroundColor: colors.textFaint },
+  statusTitle: { color: colors.textPrimary, fontSize: 18, fontWeight: '700' },
+  statusMsg: { color: colors.textFaint, fontSize: 14, marginTop: 8, lineHeight: 20 },
   earnCard: {
     flexDirection: 'row',
-    backgroundColor: '#1e293b',
+    backgroundColor: colors.surface,
     borderRadius: 12,
     padding: 16,
     marginTop: 16,
     gap: 18,
+    ...shadow.card,
   },
   earnCol: { flex: 1 },
-  earnValue: { color: '#22d3ee', fontSize: 20, fontWeight: '700' },
-  earnCod: { color: '#fbbf24' },
-  earnLabel: { color: '#64748b', fontSize: 12, marginTop: 2 },
-  toggle: { borderRadius: 12, paddingVertical: 18, alignItems: 'center', marginTop: 20 },
-  onBtn: { backgroundColor: '#22c55e' },
-  offBtn: { backgroundColor: '#f59e0b' },
+  earnValue: { color: colors.money, fontSize: 20, fontWeight: '700' },
+  earnCod: { color: colors.cod },
+  earnLabel: { color: colors.textFaint, fontSize: 12, marginTop: 2 },
+  toggle: { borderRadius: PILL, paddingVertical: 18, alignItems: 'center', marginTop: 20 },
+  onBtn: { backgroundColor: colors.btnPrimaryBg },
+  offBtn: { backgroundColor: colors.btnSecondaryBg },
   busy: { opacity: 0.6 },
-  toggleText: { color: '#0f172a', fontSize: 18, fontWeight: '700' },
-  bg: { color: '#86efac', fontSize: 13, marginTop: 16 },
-  syncing: { color: '#fbbf24', fontSize: 13, marginTop: 16 },
-  error: { color: '#fca5a5', fontSize: 14, marginTop: 16 },
+  toggleText: { color: colors.btnPrimaryText, fontSize: 18, fontWeight: '700' },
+  toggleRow: { flexDirection: 'row', gap: 8 },
+  iconRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  bgRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 16 },
+  bg: { color: colors.textFaint, fontSize: 13 },
+  syncingRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 16 },
+  syncing: { color: colors.warning, fontSize: 13 },
+  error: { color: colors.danger, fontSize: 14, marginTop: 16 },
   batteryBanner: {
-    backgroundColor: '#451a03',
-    borderColor: '#b45309',
+    backgroundColor: colors.batteryBg,
+    borderColor: colors.batteryBorder,
     borderWidth: 1,
     borderRadius: 12,
     padding: 14,
     marginBottom: 16,
   },
-  batteryTitle: { color: '#fbbf24', fontSize: 15, fontWeight: '700' },
-  batteryBody: { color: '#fcd34d', fontSize: 13, marginTop: 4, lineHeight: 18 },
+  batteryTitle: { color: colors.batteryTitle, fontSize: 15, fontWeight: '700' },
+  batteryBody: { color: colors.batteryBody, fontSize: 13, marginTop: 4, lineHeight: 18 },
   footer: {
     marginTop: 'auto',
     paddingTop: 32,
@@ -615,6 +753,54 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
   },
-  meta: { color: '#64748b', fontSize: 13 },
-  link: { color: '#94a3b8', fontSize: 14 },
+  meta: { color: colors.textFaint, fontSize: 13 },
+  link: { color: colors.textMuted, fontSize: 14 },
+  // Payday moment (the loop's most motivating screen — previously silent).
+  completeCard: { alignItems: 'center', paddingTop: 24, gap: 8 },
+  completeCheck: {
+    width: 88,
+    height: 88,
+    borderRadius: 44,
+    backgroundColor: colors.btnPrimaryBg,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 8,
+  },
+  completeTitle: { color: colors.textPrimary, fontSize: 24, fontWeight: '700' },
+  completeEarnLabel: { color: colors.textFaint, fontSize: 14, marginTop: 8 },
+  completeEarn: { color: colors.money, fontSize: 32, fontWeight: '700' },
+  completeToday: { color: colors.textSecondary, fontSize: 15, marginTop: 4 },
+  completeCod: {
+    color: colors.cod,
+    fontSize: 14,
+    lineHeight: 20,
+    textAlign: 'center',
+    marginTop: 12,
+    paddingHorizontal: 8,
+  },
+  completeBtn: {
+    backgroundColor: colors.btnPrimaryBg,
+    borderRadius: PILL,
+    paddingVertical: 16,
+    paddingHorizontal: 40,
+    alignItems: 'center',
+    marginTop: 28,
+    alignSelf: 'stretch',
+  },
+  completeBtnText: { color: colors.btnPrimaryText, fontSize: 16, fontWeight: '700' },
+  // End-of-shift summary confirm.
+  summaryCard: {
+    backgroundColor: colors.surface,
+    borderRadius: 12,
+    padding: 20,
+    marginTop: 20,
+    alignItems: 'stretch',
+    ...shadow.card,
+  },
+  summaryTitle: { color: colors.textPrimary, fontSize: 18, fontWeight: '700', textAlign: 'center' },
+  summaryBig: { color: colors.money, fontSize: 32, fontWeight: '700', marginTop: 10, textAlign: 'center' },
+  summarySub: { color: colors.textFaint, fontSize: 14, marginTop: 2, textAlign: 'center' },
+  summaryCod: { color: colors.cod, fontSize: 14, textAlign: 'center', marginTop: 12, lineHeight: 20 },
+  stayBtn: { alignItems: 'center', paddingVertical: 14, marginTop: 4 },
+  stayText: { color: colors.textFaint, fontSize: 14 },
 });

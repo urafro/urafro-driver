@@ -12,7 +12,10 @@ export function mapsUrl(lat: number, lng: number): string {
   return `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}`;
 }
 
-// WhatsApp deep link — WhatsApp IS the support/coordination channel in this market.
-export function waUrl(phone: string): string {
-  return `https://wa.me/${phone.replace(/[^\d]/g, '')}`;
+// WhatsApp deep link — WhatsApp IS the support/coordination channel in this
+// market. An optional prefilled message powers the at-door quick-replies (the
+// driver shouldn't type while on a moped); WhatsApp reads the `?text=` param.
+export function waUrl(phone: string, text?: string): string {
+  const base = `https://wa.me/${phone.replace(/[^\d]/g, '')}`;
+  return text ? `${base}?text=${encodeURIComponent(text)}` : base;
 }

@@ -21,6 +21,18 @@ jobs:
         run: npm run typecheck
       - name: Unit tests
         run: npm test
+      - name: Design-token gate (urafro ADR-034)
+        # Every colour lives in src/theme.ts — the single Brand V1 token module
+        # (this repo is public; the gate keeps forks/contributors from
+        # reintroducing stray palette literals). Test files are exempt.
+        run: |
+          if grep -rEn '#[0-9a-fA-F]{6}\b|#[0-9a-fA-F]{3}\b' App.tsx src/ \
+            --include='*.tsx' --include='*.ts' \
+            | grep -v '^src/theme.ts' | grep -v '\.test\.'; then
+            echo '✗ Raw colour literal outside src/theme.ts — add a role token instead.'
+            exit 1
+          fi
+          echo '✓ All colours live in src/theme.ts.'
       # NOTE: a "contract types in sync" check was tried here but openapi-typescript's
       # floating sub-deps make `npx` output non-reproducible across machines (and the
       # TS6 peer conflict blocks pinning it as a locked devDep). The committed types

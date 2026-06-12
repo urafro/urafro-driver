@@ -4,6 +4,7 @@ import { listOffers, updateLocation } from './api';
 import { loadSession, loadActiveJob } from './session';
 import { maybeNotifyNewOffers } from './notifications';
 import { money } from './format';
+import { colors } from '../theme';
 
 // Background location for a driver on shift. expo-location delivers fixes (in the
 // foreground AND background) to this TaskManager task, which posts them to the
@@ -79,7 +80,7 @@ export async function startBackgroundLocation(): Promise<boolean> {
     foregroundService: {
       notificationTitle: 'urAfro Driver — on shift',
       notificationBody: 'Sharing your location to receive and run deliveries.',
-      notificationColor: '#22c55e',
+      notificationColor: colors.notificationAccent,
     },
   });
   return true;

@@ -221,15 +221,192 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** The driver's own profile */
+        /**
+         * The driver's own profile
+         * @description Identity + capabilities + active vehicle + derived stats in one lean payload (ADR-003 P0). Heavy sub-resources (vehicle CRUD, documents, payout methods) are their own endpoints.
+         */
         get: operations["driverGetProfile"];
         put?: never;
         post?: never;
         delete?: never;
         options?: never;
         head?: never;
-        /** Update driver-editable profile fields (name, vehicle) */
+        /**
+         * Update driver-editable profile fields
+         * @description Name, preferred display name, language preference, and emergency contact. Phone is the OTP identity; approval/status are ops/system-owned; the vehicle is structured (PUT /driver/vehicles). Empty strings clear a field.
+         */
         patch: operations["driverUpdateProfile"];
+        trace?: never;
+    };
+    "/driver/vehicles": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The driver's active vehicle */
+        get: operations["driverGetVehicle"];
+        /**
+         * Set the driver's active vehicle (upsert)
+         * @description One active vehicle per driver; re-PUT updates it in place.
+         */
+        put: operations["driverPutVehicle"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/driver/schedule": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The driver's weekly availability windows */
+        get: operations["driverGetSchedule"];
+        /**
+         * Replace the driver's availability schedule
+         * @description Planned weekly hours (ADR-003 P4) — informational, not a hard go-online lock.
+         */
+        put: operations["driverSetSchedule"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/driver/documents": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Per-requirement verification status */
+        get: operations["driverListDocuments"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/driver/documents/{type}/upload-url": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Begin a document submission (presigned upload)
+         * @description Returns a short-lived presigned PUT URL; the client uploads the file bytes to object storage directly, then calls /driver/documents/confirm. 503 if storage is not configured.
+         */
+        post: operations["driverDocumentUploadUrl"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/driver/documents/confirm": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Confirm a document upload completed */
+        post: operations["driverConfirmDocument"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/driver/documents/terms": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Accept the current terms (attestation) */
+        post: operations["driverAcceptTerms"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/driver/payout-methods": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The driver's payout methods */
+        get: operations["driverListPayoutMethods"];
+        put?: never;
+        /**
+         * Add a payout method
+         * @description The account reference is encrypted server-side; 503 if payouts are not configured.
+         */
+        post: operations["driverAddPayoutMethod"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/driver/payout-methods/{id}/default": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Make a payout method the default */
+        post: operations["driverSetDefaultPayoutMethod"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/deliveries/{id}/rating": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Rate the driver of a completed delivery (tenant → driver)
+         * @description 1–5 stars + optional comment, for the tenant's own delivered job. Feeds driver reputation. One per delivery; re-rating overwrites (ADR-003 P3).
+         */
+        post: operations["rateDelivery"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/driver/deliveries": {
@@ -324,6 +501,26 @@ export interface paths {
         get: operations["driverGetDelivery"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/driver/deliveries/{id}/rating": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Rate a completed delivery (driver → tenant)
+         * @description 1–5 stars + optional comment, for a delivered job. One per delivery; re-rating overwrites (ADR-003 P3).
+         */
+        post: operations["driverRateDelivery"];
         delete?: never;
         options?: never;
         head?: never;
@@ -521,6 +718,8 @@ export interface components {
             status?: components["schemas"]["DeliveryStatus"];
             pickup?: components["schemas"]["GeoLocation"];
             dropoff?: components["schemas"]["GeoLocation"];
+            /** @description Straight-line pickup→dropoff distance in km (1 dp) — the SAME haversine the fee uses, not road distance. Driver UIs present it as approximate ("~7.8 km"). Null if either coordinate is missing. */
+            trip_km?: number | null;
             driver?: components["schemas"]["Driver"] | null;
             /** @description Platform delivery fee in minor units, quoted at creation from the pickup→dropoff distance (base + per-km, clamped). The driver earns a configured share of this on completion; the platform keeps the rest. */
             fee_minor?: number | null;
@@ -543,6 +742,117 @@ export interface components {
             /** @enum {string} */
             status?: "available" | "offline" | "busy";
         };
+        /** @description Computed gates the app renders affordances off — never a single flag. P0 derives can_go_online from approval; later phases add payouts/COD. */
+        DriverCapabilities: {
+            can_go_online: boolean;
+            can_receive_payouts: boolean;
+            can_handle_high_value_cod: boolean;
+        };
+        /** @description The driver's structured active vehicle (ADR-003 P0). */
+        DriverVehicle: {
+            /** Format: uuid */
+            id: string;
+            /** @enum {string} */
+            type: "bicycle" | "motorbike" | "car" | "van" | "foot";
+            make?: string | null;
+            model?: string | null;
+            colour?: string | null;
+            plate?: string | null;
+            year?: number | null;
+            capacity_kg?: number | null;
+        };
+        /** @description Derived reputation/performance (ADR-003 P0). Rates are null until there is a denominator (so UIs show "New", not a fake 0%). Ratings populate in P3. */
+        DriverStats: {
+            lifetime_jobs: number;
+            completed_jobs: number;
+            failed_jobs: number;
+            offered_count: number;
+            accepted_count: number;
+            rating_count: number;
+            completion_rate: number | null;
+            acceptance_rate: number | null;
+            rating_avg: number | null;
+        };
+        /** @description The driver's own composed profile (ADR-003 P0/P1). */
+        DriverProfile: {
+            /** Format: uuid */
+            driver_id: string;
+            name: string;
+            display_name?: string | null;
+            phone: string;
+            /**
+             * @description The verification state machine (ADR-003 P1); only `verified` can go on shift.
+             * @enum {string}
+             */
+            verification_status: "unverified" | "in_review" | "verified" | "suspended" | "banned";
+            /** @description 0 none · 1 identity verified · 2 identity + licence (gates payouts/high-value COD). */
+            kyc_tier: number;
+            /** @description Max COD cash the driver may carry (minor units), by KYC tier (ADR-003 P2). */
+            cod_cap_minor: number;
+            /** @enum {string} */
+            status: "available" | "offline" | "busy";
+            /** @enum {string} */
+            preferred_language: "en" | "sn" | "nd";
+            emergency_contact?: {
+                name?: string | null;
+                phone?: string | null;
+            } | null;
+            /** Format: date-time */
+            member_since: string;
+            /** @description The driver's service zone (ADR-003 P4), or null for the open pool. */
+            zone?: {
+                /** Format: uuid */
+                id: string;
+                name: string;
+            } | null;
+            capabilities: components["schemas"]["DriverCapabilities"];
+            vehicle?: components["schemas"]["DriverVehicle"] | null;
+            vehicle_label?: string | null;
+            stats: components["schemas"]["DriverStats"];
+        };
+        /** @description Per-requirement verification status for the driver's own view (ADR-003 P1; no file URLs — KYC PII stays ops-only). */
+        DriverRequirement: {
+            /** @enum {string} */
+            type: "identity_id" | "profile_photo" | "drivers_licence" | "vehicle_registration" | "terms";
+            /** @enum {string} */
+            status: "not_submitted" | "pending_review" | "approved" | "rejected" | "expired";
+            /** Format: date-time */
+            uploaded_at?: string | null;
+            review_reason?: string | null;
+        };
+        /** @description A short-lived URL to PUT a document's bytes directly to object storage (ADR-003 P1). */
+        PresignedUpload: {
+            /** Format: uuid */
+            document_id: string;
+            storage_key: string;
+            upload: {
+                url: string;
+                /** @enum {string} */
+                method: "PUT";
+                expires_in: number;
+            };
+        };
+        /** @description A weekly availability window in local minutes-of-day (ADR-003 P4). */
+        ScheduleWindow: {
+            /** @description 0=Sun … 6=Sat */
+            day_of_week: number;
+            start_minute: number;
+            end_minute: number;
+        };
+        /** @description A driver payout method (ADR-003 P2). The full account reference is encrypted server-side — only a masked tail is ever returned. */
+        PayoutMethod: {
+            /** Format: uuid */
+            id: string;
+            /** @enum {string} */
+            kind: "ecocash" | "bank";
+            /** @example •••• 1219 */
+            account_ref_mask: string;
+            holder_name: string;
+            bank_name?: string | null;
+            is_default: boolean;
+            /** Format: date-time */
+            verified_at?: string | null;
+        };
         Offer: components["schemas"]["Delivery"] & {
             /**
              * Format: date-time
@@ -551,6 +861,8 @@ export interface components {
             offer_expires_at?: string;
             /** @description The DRIVER'S share of the fee in minor units — what driver-facing UIs must quote (never the full fee_minor). */
             driver_fee_minor?: number | null;
+            /** @description Straight-line distance in km (1 dp) from the driver's last known location to the pickup — how far they'd travel to start the run (ADR-002 Phase B "distance-to-pickup"). Straight-line, not road distance. Null if the driver's position is unknown. */
+            pickup_distance_km?: number | null;
         };
         /** @description A delivery as seen by its **assigned driver** — the public Delivery plus the contacts needed to coordinate the run and the driver's own cut of the fee. Returned only on the driver's own endpoints after claiming; contacts never appear in tenant, offer, or webhook payloads. */
         DriverDelivery: components["schemas"]["Delivery"] & {
@@ -1023,17 +1335,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        /** Format: uuid */
-                        driver_id: string;
-                        name: string;
-                        phone: string;
-                        vehicle?: string | null;
-                        /** @description False until ops approves — the driver can log in but not go on shift. */
-                        approved: boolean;
-                        /** @enum {string} */
-                        status: "available" | "offline" | "busy";
-                    };
+                    "application/json": components["schemas"]["DriverProfile"];
                 };
             };
             401: components["responses"]["Unauthorized"];
@@ -1050,7 +1352,11 @@ export interface operations {
             content: {
                 "application/json": {
                     name?: string;
-                    vehicle?: string;
+                    display_name?: string;
+                    /** @enum {string} */
+                    preferred_language?: "en" | "sn" | "nd";
+                    emergency_contact_name?: string;
+                    emergency_contact_phone?: string;
                 };
             };
         };
@@ -1064,6 +1370,333 @@ export interface operations {
             };
             400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
+        };
+    };
+    driverGetVehicle: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The active vehicle (or null). */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["DriverVehicle"] | null;
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+        };
+    };
+    driverPutVehicle: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @enum {string} */
+                    type: "bicycle" | "motorbike" | "car" | "van" | "foot";
+                    make?: string;
+                    model?: string;
+                    colour?: string;
+                    plate?: string;
+                    year?: number;
+                    capacity_kg?: number;
+                };
+            };
+        };
+        responses: {
+            /** @description The saved active vehicle. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DriverVehicle"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+        };
+    };
+    driverGetSchedule: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Availability windows. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["ScheduleWindow"][];
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+        };
+    };
+    driverSetSchedule: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    windows: components["schemas"]["ScheduleWindow"][];
+                };
+            };
+        };
+        responses: {
+            /** @description Saved. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+        };
+    };
+    driverListDocuments: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description One entry per requirement type. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["DriverRequirement"][];
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+        };
+    };
+    driverDocumentUploadUrl: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                type: "identity_id" | "profile_photo" | "drivers_licence" | "vehicle_registration";
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Presigned upload. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PresignedUpload"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            /** @description Document storage is not configured. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    driverConfirmDocument: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** Format: uuid */
+                    document_id: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Confirmed. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    driverAcceptTerms: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    version: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Accepted. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthorized"];
+        };
+    };
+    driverListPayoutMethods: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Payout methods (masked). */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["PayoutMethod"][];
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+        };
+    };
+    driverAddPayoutMethod: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @enum {string} */
+                    kind: "ecocash" | "bank";
+                    account_ref: string;
+                    holder_name: string;
+                    bank_name?: string;
+                };
+            };
+        };
+        responses: {
+            /** @description The saved method (masked). */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PayoutMethod"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            /** @description Payouts are not configured. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    driverSetDefaultPayoutMethod: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Default updated. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    rateDelivery: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    stars: number;
+                    comment?: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Rated. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
         };
     };
     driverListDeliveries: {
@@ -1214,6 +1847,36 @@ export interface operations {
                     "application/json": components["schemas"]["DriverDelivery"];
                 };
             };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    driverRateDelivery: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    stars: number;
+                    comment?: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Rated. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
             404: components["responses"]["NotFound"];
         };

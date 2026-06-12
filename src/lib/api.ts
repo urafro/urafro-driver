@@ -140,25 +140,113 @@ export function markFailed(token: string, id: string, reason?: FailureReason): P
   });
 }
 
-// ── Profile (ADR-002 B) ───────────────────────────────────────────────────────
-export interface DriverProfile {
-  driver_id: string;
-  name: string;
-  phone: string;
-  vehicle: string | null;
-  approved: boolean;
-  status: 'available' | 'offline' | 'busy';
-}
+// ── Profile + vehicle (ADR-003 P0) ────────────────────────────────────────────
+// Types come straight from the regenerated contract so the client can't drift.
+export type DriverProfile = Schemas['DriverProfile'];
+export type DriverVehicle = Schemas['DriverVehicle'];
+export type VehicleType = DriverVehicle['type'];
 
 export function getProfile(token: string): Promise<DriverProfile> {
   return request('/driver/profile', { method: 'GET', token });
 }
 
+/** Driver-editable profile fields (name/display name/language/emergency contact);
+ *  the structured vehicle is set via putVehicle. */
 export function updateProfile(
   token: string,
-  patch: { name?: string; vehicle?: string },
+  patch: {
+    name?: string;
+    display_name?: string;
+    preferred_language?: string;
+    emergency_contact_name?: string;
+    emergency_contact_phone?: string;
+  },
 ): Promise<void> {
   return request('/driver/profile', { method: 'PATCH', token, body: JSON.stringify(patch) });
+}
+
+export function getVehicle(token: string): Promise<{ data: DriverVehicle | null }> {
+  return request('/driver/vehicles', { method: 'GET', token });
+}
+
+// ── Verification documents (ADR-003 P1) ───────────────────────────────────────
+export type DriverRequirement = Schemas['DriverRequirement'];
+export type PresignedUpload = Schemas['PresignedUpload'];
+export type FileRequirementType =
+  | 'identity_id'
+  | 'profile_photo'
+  | 'drivers_licence'
+  | 'vehicle_registration';
+
+export function getDocuments(token: string): Promise<{ data: DriverRequirement[] }> {
+  return request('/driver/documents', { method: 'GET', token });
+}
+
+/** Begin a document submission — returns a presigned PUT URL (503 if storage off). */
+export function getUploadUrl(token: string, type: FileRequirementType): Promise<PresignedUpload> {
+  return request(`/driver/documents/${type}/upload-url`, { method: 'POST', token });
+}
+
+export function confirmDocument(token: string, documentId: string): Promise<void> {
+  return request('/driver/documents/confirm', {
+    method: 'POST',
+    token,
+    body: JSON.stringify({ document_id: documentId }),
+  });
+}
+
+export function acceptTerms(token: string, version: string): Promise<void> {
+  return request('/driver/documents/terms', {
+    method: 'POST',
+    token,
+    body: JSON.stringify({ version }),
+  });
+}
+
+// ── Payout methods (ADR-003 P2) ───────────────────────────────────────────────
+export type PayoutMethod = Schemas['PayoutMethod'];
+
+export function getPayoutMethods(token: string): Promise<{ data: PayoutMethod[] }> {
+  return request('/driver/payout-methods', { method: 'GET', token });
+}
+
+/** Add a payout method (account ref is encrypted server-side; 503 if payouts off). */
+export function addPayoutMethod(
+  token: string,
+  body: { kind: 'ecocash' | 'bank'; account_ref: string; holder_name: string; bank_name?: string },
+): Promise<PayoutMethod> {
+  return request('/driver/payout-methods', { method: 'POST', token, body: JSON.stringify(body) });
+}
+
+export function setDefaultPayoutMethod(token: string, id: string): Promise<void> {
+  return request(`/driver/payout-methods/${id}/default`, { method: 'POST', token });
+}
+
+// ── Availability schedule (ADR-003 P4) ────────────────────────────────────────
+export type ScheduleWindow = Schemas['ScheduleWindow'];
+
+export function getSchedule(token: string): Promise<{ data: ScheduleWindow[] }> {
+  return request('/driver/schedule', { method: 'GET', token });
+}
+
+export function setSchedule(token: string, windows: ScheduleWindow[]): Promise<void> {
+  return request('/driver/schedule', { method: 'PUT', token, body: JSON.stringify({ windows }) });
+}
+
+/** Upsert the driver's active vehicle (one active per driver, server-enforced). */
+export function putVehicle(
+  token: string,
+  vehicle: {
+    type: VehicleType;
+    make?: string;
+    model?: string;
+    colour?: string;
+    plate?: string;
+    year?: number;
+    capacity_kg?: number;
+  },
+): Promise<DriverVehicle> {
+  return request('/driver/vehicles', { method: 'PUT', token, body: JSON.stringify(vehicle) });
 }
 
 // ── History + decline (ADR-002 B) ─────────────────────────────────────────────
@@ -171,6 +259,15 @@ export function listMyDeliveries(token: string): Promise<{ data: HistoryItem[] }
 
 export function declineOffer(token: string, id: string): Promise<void> {
   return request(`/driver/offers/${id}/decline`, { method: 'POST', token });
+}
+
+/** Rate a delivered job (driver → tenant/pickup), 1–5 stars (ADR-003 P3). */
+export function rateDelivery(token: string, deliveryId: string, stars: number, comment?: string): Promise<void> {
+  return request(`/driver/deliveries/${deliveryId}/rating`, {
+    method: 'POST',
+    token,
+    body: JSON.stringify(comment ? { stars, comment } : { stars }),
+  });
 }
 
 // ── Earnings + push (ADR-002 A.1/A.4) ────────────────────────────────────────

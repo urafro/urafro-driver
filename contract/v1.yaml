@@ -334,6 +334,10 @@ paths:
     get:
       tags: [Driver]
       summary: The driver's own profile
+      description: >
+        Identity + capabilities + active vehicle + derived stats in one lean
+        payload (ADR-003 P0). Heavy sub-resources (vehicle CRUD, documents,
+        payout methods) are their own endpoints.
       operationId: driverGetProfile
       security:
         - DriverBearerAuth: []
@@ -342,22 +346,15 @@ paths:
           description: Profile.
           content:
             application/json:
-              schema:
-                type: object
-                required: [driver_id, name, phone, approved, status]
-                properties:
-                  driver_id: { type: string, format: uuid }
-                  name: { type: string }
-                  phone: { type: string }
-                  vehicle: { type: [string, "null"] }
-                  approved:
-                    type: boolean
-                    description: False until ops approves — the driver can log in but not go on shift.
-                  status: { type: string, enum: [available, offline, busy] }
+              schema: { $ref: '#/components/schemas/DriverProfile' }
         '401': { $ref: '#/components/responses/Unauthorized' }
     patch:
       tags: [Driver]
-      summary: Update driver-editable profile fields (name, vehicle)
+      summary: Update driver-editable profile fields
+      description: >
+        Name, preferred display name, language preference, and emergency contact.
+        Phone is the OTP identity; approval/status are ops/system-owned; the
+        vehicle is structured (PUT /driver/vehicles). Empty strings clear a field.
       operationId: driverUpdateProfile
       security:
         - DriverBearerAuth: []
@@ -369,11 +366,293 @@ paths:
               type: object
               properties:
                 name: { type: string, minLength: 2, maxLength: 80 }
-                vehicle: { type: string, maxLength: 80 }
+                display_name: { type: string, maxLength: 80 }
+                preferred_language: { type: string, enum: [en, sn, nd] }
+                emergency_contact_name: { type: string, maxLength: 120 }
+                emergency_contact_phone: { type: string, maxLength: 40 }
       responses:
         '204': { description: Updated. }
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /driver/vehicles:
+    get:
+      tags: [Driver]
+      summary: The driver's active vehicle
+      operationId: driverGetVehicle
+      security:
+        - DriverBearerAuth: []
+      responses:
+        '200':
+          description: The active vehicle (or null).
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    oneOf:
+                      - { $ref: '#/components/schemas/DriverVehicle' }
+                      - { type: "null" }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+    put:
+      tags: [Driver]
+      summary: Set the driver's active vehicle (upsert)
+      description: One active vehicle per driver; re-PUT updates it in place.
+      operationId: driverPutVehicle
+      security:
+        - DriverBearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [type]
+              properties:
+                type: { type: string, enum: [bicycle, motorbike, car, van, foot] }
+                make: { type: string, maxLength: 40 }
+                model: { type: string, maxLength: 40 }
+                colour: { type: string, maxLength: 30 }
+                plate: { type: string, maxLength: 20 }
+                year: { type: integer, minimum: 1950, maximum: 2100 }
+                capacity_kg: { type: integer, minimum: 0, maximum: 100000 }
+      responses:
+        '200':
+          description: The saved active vehicle.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DriverVehicle' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /driver/schedule:
+    get:
+      tags: [Driver]
+      summary: The driver's weekly availability windows
+      operationId: driverGetSchedule
+      security:
+        - DriverBearerAuth: []
+      responses:
+        '200':
+          description: Availability windows.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/ScheduleWindow' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+    put:
+      tags: [Driver]
+      summary: Replace the driver's availability schedule
+      description: Planned weekly hours (ADR-003 P4) — informational, not a hard go-online lock.
+      operationId: driverSetSchedule
+      security:
+        - DriverBearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [windows]
+              properties:
+                windows:
+                  type: array
+                  maxItems: 50
+                  items: { $ref: '#/components/schemas/ScheduleWindow' }
+      responses:
+        '204': { description: Saved. }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /driver/documents:
+    get:
+      tags: [Driver]
+      summary: Per-requirement verification status
+      operationId: driverListDocuments
+      security:
+        - DriverBearerAuth: []
+      responses:
+        '200':
+          description: One entry per requirement type.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/DriverRequirement' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /driver/documents/{type}/upload-url:
+    post:
+      tags: [Driver]
+      summary: Begin a document submission (presigned upload)
+      description: >
+        Returns a short-lived presigned PUT URL; the client uploads the file
+        bytes to object storage directly, then calls /driver/documents/confirm.
+        503 if storage is not configured.
+      operationId: driverDocumentUploadUrl
+      security:
+        - DriverBearerAuth: []
+      parameters:
+        - name: type
+          in: path
+          required: true
+          schema: { type: string, enum: [identity_id, profile_photo, drivers_licence, vehicle_registration] }
+      responses:
+        '201':
+          description: Presigned upload.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PresignedUpload' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '503': { description: Document storage is not configured. }
+
+  /driver/documents/confirm:
+    post:
+      tags: [Driver]
+      summary: Confirm a document upload completed
+      operationId: driverConfirmDocument
+      security:
+        - DriverBearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [document_id]
+              properties:
+                document_id: { type: string, format: uuid }
+      responses:
+        '204': { description: Confirmed. }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /driver/documents/terms:
+    post:
+      tags: [Driver]
+      summary: Accept the current terms (attestation)
+      operationId: driverAcceptTerms
+      security:
+        - DriverBearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [version]
+              properties:
+                version: { type: string, maxLength: 40 }
+      responses:
+        '204': { description: Accepted. }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /driver/payout-methods:
+    get:
+      tags: [Driver]
+      summary: The driver's payout methods
+      operationId: driverListPayoutMethods
+      security:
+        - DriverBearerAuth: []
+      responses:
+        '200':
+          description: Payout methods (masked).
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/PayoutMethod' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+    post:
+      tags: [Driver]
+      summary: Add a payout method
+      description: The account reference is encrypted server-side; 503 if payouts are not configured.
+      operationId: driverAddPayoutMethod
+      security:
+        - DriverBearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [kind, account_ref, holder_name]
+              properties:
+                kind: { type: string, enum: [ecocash, bank] }
+                account_ref: { type: string, minLength: 4, maxLength: 40 }
+                holder_name: { type: string, minLength: 2, maxLength: 120 }
+                bank_name: { type: string, maxLength: 80 }
+      responses:
+        '201':
+          description: The saved method (masked).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PayoutMethod' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '503': { description: Payouts are not configured. }
+
+  /driver/payout-methods/{id}/default:
+    post:
+      tags: [Driver]
+      summary: Make a payout method the default
+      operationId: driverSetDefaultPayoutMethod
+      security:
+        - DriverBearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '204': { description: Default updated. }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /deliveries/{id}/rating:
+    post:
+      tags: [Deliveries]
+      summary: Rate the driver of a completed delivery (tenant → driver)
+      description: 1–5 stars + optional comment, for the tenant's own delivered job. Feeds driver reputation. One per delivery; re-rating overwrites (ADR-003 P3).
+      operationId: rateDelivery
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [stars]
+              properties:
+                stars: { type: integer, minimum: 1, maximum: 5 }
+                comment: { type: string, maxLength: 500 }
+      responses:
+        '204': { description: Rated. }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
 
   /driver/deliveries:
     get:
@@ -514,6 +793,35 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/DriverDelivery' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /driver/deliveries/{id}/rating:
+    post:
+      tags: [Driver]
+      summary: Rate a completed delivery (driver → tenant)
+      description: 1–5 stars + optional comment, for a delivered job. One per delivery; re-rating overwrites (ADR-003 P3).
+      operationId: driverRateDelivery
+      security:
+        - DriverBearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [stars]
+              properties:
+                stars: { type: integer, minimum: 1, maximum: 5 }
+                comment: { type: string, maxLength: 500 }
+      responses:
+        '204': { description: Rated. }
+        '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '404': { $ref: '#/components/responses/NotFound' }
 
@@ -796,6 +1104,12 @@ components:
         status: { $ref: '#/components/schemas/DeliveryStatus' }
         pickup: { $ref: '#/components/schemas/GeoLocation' }
         dropoff: { $ref: '#/components/schemas/GeoLocation' }
+        trip_km:
+          type: [number, "null"]
+          description: >-
+            Straight-line pickup→dropoff distance in km (1 dp) — the SAME
+            haversine the fee uses, not road distance. Driver UIs present it as
+            approximate ("~7.8 km"). Null if either coordinate is missing.
         driver:
           oneOf:
             - { $ref: '#/components/schemas/Driver' }
@@ -837,6 +1151,146 @@ components:
           type: string
           enum: [available, offline, busy]
 
+    # ADR-003 driver-profile schemas (P0).
+    DriverCapabilities:
+      type: object
+      description: >-
+        Computed gates the app renders affordances off — never a single flag.
+        P0 derives can_go_online from approval; later phases add payouts/COD.
+      required: [can_go_online, can_receive_payouts, can_handle_high_value_cod]
+      properties:
+        can_go_online: { type: boolean }
+        can_receive_payouts: { type: boolean }
+        can_handle_high_value_cod: { type: boolean }
+
+    DriverVehicle:
+      type: object
+      description: The driver's structured active vehicle (ADR-003 P0).
+      required: [id, type]
+      properties:
+        id: { type: string, format: uuid }
+        type: { type: string, enum: [bicycle, motorbike, car, van, foot] }
+        make: { type: [string, "null"] }
+        model: { type: [string, "null"] }
+        colour: { type: [string, "null"] }
+        plate: { type: [string, "null"] }
+        year: { type: [integer, "null"] }
+        capacity_kg: { type: [integer, "null"] }
+
+    DriverStats:
+      type: object
+      description: >-
+        Derived reputation/performance (ADR-003 P0). Rates are null until there is
+        a denominator (so UIs show "New", not a fake 0%). Ratings populate in P3.
+      required: [lifetime_jobs, completed_jobs, failed_jobs, offered_count, accepted_count, rating_count, completion_rate, acceptance_rate, rating_avg]
+      properties:
+        lifetime_jobs: { type: integer }
+        completed_jobs: { type: integer }
+        failed_jobs: { type: integer }
+        offered_count: { type: integer }
+        accepted_count: { type: integer }
+        rating_count: { type: integer }
+        completion_rate: { type: [number, "null"] }
+        acceptance_rate: { type: [number, "null"] }
+        rating_avg: { type: [number, "null"] }
+
+    DriverProfile:
+      type: object
+      description: The driver's own composed profile (ADR-003 P0/P1).
+      required: [driver_id, name, phone, verification_status, kyc_tier, cod_cap_minor, status, preferred_language, member_since, capabilities, stats]
+      properties:
+        driver_id: { type: string, format: uuid }
+        name: { type: string }
+        display_name: { type: [string, "null"] }
+        phone: { type: string }
+        verification_status:
+          type: string
+          enum: [unverified, in_review, verified, suspended, banned]
+          description: The verification state machine (ADR-003 P1); only `verified` can go on shift.
+        kyc_tier:
+          type: integer
+          description: 0 none · 1 identity verified · 2 identity + licence (gates payouts/high-value COD).
+        cod_cap_minor:
+          type: integer
+          description: Max COD cash the driver may carry (minor units), by KYC tier (ADR-003 P2).
+        status: { type: string, enum: [available, offline, busy] }
+        preferred_language: { type: string, enum: [en, sn, nd] }
+        emergency_contact:
+          oneOf:
+            - type: object
+              properties:
+                name: { type: [string, "null"] }
+                phone: { type: [string, "null"] }
+            - { type: "null" }
+        member_since: { type: string, format: date-time }
+        zone:
+          description: The driver's service zone (ADR-003 P4), or null for the open pool.
+          oneOf:
+            - type: object
+              required: [id, name]
+              properties:
+                id: { type: string, format: uuid }
+                name: { type: string }
+            - { type: "null" }
+        capabilities: { $ref: '#/components/schemas/DriverCapabilities' }
+        vehicle:
+          oneOf:
+            - { $ref: '#/components/schemas/DriverVehicle' }
+            - { type: "null" }
+        vehicle_label: { type: [string, "null"] }
+        stats: { $ref: '#/components/schemas/DriverStats' }
+
+    DriverRequirement:
+      type: object
+      description: Per-requirement verification status for the driver's own view (ADR-003 P1; no file URLs — KYC PII stays ops-only).
+      required: [type, status]
+      properties:
+        type:
+          type: string
+          enum: [identity_id, profile_photo, drivers_licence, vehicle_registration, terms]
+        status:
+          type: string
+          enum: [not_submitted, pending_review, approved, rejected, expired]
+        uploaded_at: { type: [string, "null"], format: date-time }
+        review_reason: { type: [string, "null"] }
+
+    PresignedUpload:
+      type: object
+      description: A short-lived URL to PUT a document's bytes directly to object storage (ADR-003 P1).
+      required: [document_id, storage_key, upload]
+      properties:
+        document_id: { type: string, format: uuid }
+        storage_key: { type: string }
+        upload:
+          type: object
+          required: [url, method, expires_in]
+          properties:
+            url: { type: string }
+            method: { type: string, enum: [PUT] }
+            expires_in: { type: integer }
+
+    ScheduleWindow:
+      type: object
+      description: A weekly availability window in local minutes-of-day (ADR-003 P4).
+      required: [day_of_week, start_minute, end_minute]
+      properties:
+        day_of_week: { type: integer, minimum: 0, maximum: 6, description: 0=Sun … 6=Sat }
+        start_minute: { type: integer, minimum: 0, maximum: 1439 }
+        end_minute: { type: integer, minimum: 1, maximum: 1440 }
+
+    PayoutMethod:
+      type: object
+      description: A driver payout method (ADR-003 P2). The full account reference is encrypted server-side — only a masked tail is ever returned.
+      required: [id, kind, account_ref_mask, holder_name, is_default]
+      properties:
+        id: { type: string, format: uuid }
+        kind: { type: string, enum: [ecocash, bank] }
+        account_ref_mask: { type: string, example: "•••• 1219" }
+        holder_name: { type: string }
+        bank_name: { type: [string, "null"] }
+        is_default: { type: boolean }
+        verified_at: { type: [string, "null"], format: date-time }
+
     Offer:
       allOf:
         - $ref: '#/components/schemas/Delivery'
@@ -851,6 +1305,13 @@ components:
               description: >-
                 The DRIVER'S share of the fee in minor units — what driver-facing
                 UIs must quote (never the full fee_minor).
+            pickup_distance_km:
+              type: [number, "null"]
+              description: >-
+                Straight-line distance in km (1 dp) from the driver's last known
+                location to the pickup — how far they'd travel to start the run
+                (ADR-002 Phase B "distance-to-pickup"). Straight-line, not road
+                distance. Null if the driver's position is unknown.
 
     DriverDelivery:
       description: >-

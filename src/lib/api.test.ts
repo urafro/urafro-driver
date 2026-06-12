@@ -157,12 +157,21 @@ describe('api client', () => {
     expect(headersOf(init)['Content-Type']).toBeUndefined();
   });
 
-  it('updateProfile PATCHes only the driver-editable fields; history GETs with auth', async () => {
-    const { updateProfile, listMyDeliveries } = await import('./api');
+  it('updateProfile PATCHes only the driver-editable fields; putVehicle PUTs the vehicle; history GETs with auth', async () => {
+    const { updateProfile, putVehicle, listMyDeliveries } = await import('./api');
     let mock = stubFetch(204);
-    await updateProfile('tok', { name: 'Tendai M.', vehicle: 'Honda Fit' });
+    await updateProfile('tok', { name: 'Tendai M.', preferred_language: 'sn' });
     expect(mock.mock.calls[0][1].method).toBe('PATCH');
-    expect(JSON.parse(mock.mock.calls[0][1].body as string)).toEqual({ name: 'Tendai M.', vehicle: 'Honda Fit' });
+    expect(JSON.parse(mock.mock.calls[0][1].body as string)).toEqual({
+      name: 'Tendai M.',
+      preferred_language: 'sn',
+    });
+
+    mock = stubFetch(200, { id: 'v1', type: 'car', make: 'Honda' });
+    await putVehicle('tok', { type: 'car', make: 'Honda' });
+    expect(mock.mock.calls[0][0]).toContain('/v1/driver/vehicles');
+    expect(mock.mock.calls[0][1].method).toBe('PUT');
+    expect(JSON.parse(mock.mock.calls[0][1].body as string)).toEqual({ type: 'car', make: 'Honda' });
 
     mock = stubFetch(200, { data: [{ id: 'd1', status: 'delivered', driver_fee_minor: 160 }] });
     const h = await listMyDeliveries('tok');
