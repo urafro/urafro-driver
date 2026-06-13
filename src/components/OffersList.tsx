@@ -57,7 +57,6 @@ export default function OffersList({
             <View style={styles.headerRow}>
               <View style={styles.payoutWrap}>
                 <Text style={styles.payout}>{payout}</Text>
-                <Text style={styles.payoutCaption}>you earn</Text>
               </View>
               <View style={[styles.timerPill, urgent && styles.timerPillUrgent]}>
                 <Text style={[styles.timerText, urgent && styles.timerTextUrgent]}>{expires}s</Text>
@@ -124,7 +123,6 @@ const styles = StyleSheet.create({
   headerRow: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8 },
   payoutWrap: { flexDirection: 'row', alignItems: 'baseline', gap: 6, flexShrink: 1 },
   payout: { color: colors.textPrimary, fontSize: 24, fontWeight: '700' },
-  payoutCaption: { color: colors.textMuted, fontSize: 14 },
 
   timerPill: {
     borderRadius: PILL,
