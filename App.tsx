@@ -119,7 +119,7 @@ function Root() {
   // Not-yet-verified drivers (unverified / in_review / suspended / banned) get the
   // onboarding + verification flow; only `verified` reaches the tabbed app.
   if (profile && profile.verification_status !== 'verified') {
-    return <Onboarding token={session.token} profile={profile} onReload={() => void loadProfile()} />;
+    return <Onboarding token={session.token} profile={profile} onReload={loadProfile} />;
   }
   return <Tabs />;
 }
