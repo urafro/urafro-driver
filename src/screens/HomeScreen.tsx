@@ -390,17 +390,27 @@ export default function HomeScreen() {
     setLocating(true);
     setError(null);
     setOffers(null); // show "Checking for offers…" until the first poll lands
+    // Open the offers UI IMMEDIATELY (optimistic) — otherwise a push that lands during
+    // the (possibly multi-second) go-online round-trip is fetched by the notification
+    // listener but stays HIDDEN behind the `online` render gate until getCurrentLocation
+    // + goOnline resolve. That's the "first offer lags, later ones are instant" bug:
+    // the very first offer (driver already available server-side) arrives mid-transition
+    // and only appears once online flips. Reverted below if going online fails.
+    setOnline(true);
+    let confirmedOnline = false;
     try {
       // Permission is the only hard requirement to go online — a fix is not. A slow/
       // cold GPS lock (getCurrentLocation → null) must NOT block going on shift; the
       // background stream supplies position shortly after.
       if (!(await ensureForegroundPermission())) {
+        setOnline(false);
         setError('Location permission is needed to receive offers.');
         return;
       }
       const loc = await getCurrentLocation();
       const state = await goOnline(token, loc ?? undefined);
-      setOnline(state.status !== 'offline');
+      confirmedOnline = state.status !== 'offline';
+      setOnline(confirmedOnline);
       // One-time explainer BEFORE the background prompt: Android 11+ can't grant
       // "Allow all the time" in-app, so without context drivers silently lose
       // background GPS.
@@ -412,6 +422,11 @@ export default function HomeScreen() {
       // OS can still freeze the app, and clears itself once the exemption is real.
       refreshBatteryRisk();
     } catch {
+      // Only drop the optimistic online if go-online itself didn't land — a failure in
+      // the best-effort background-location setup AFTER goOnline succeeded must not flip
+      // a genuinely-online driver back to offline (reconcileShift would re-correct, but
+      // the flash is wrong). reconcileShift on next resume is the backstop either way.
+      if (!confirmedOnline) setOnline(false);
       setError('Could not go online — try again.');
     } finally {
       setBusy(false);
