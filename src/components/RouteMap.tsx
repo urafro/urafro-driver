@@ -68,7 +68,7 @@ function buildHtml(from: Coords | null, to: Coords): string {
   return `<!DOCTYPE html><html><head>
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-<style>html,body,#m{height:100%;margin:0;padding:0}#m,.leaflet-container{background:#e9e6ea}</style>
+<style>html,body,#m{height:100%;margin:0;padding:0}#m,.leaflet-container{background:${colors.surfaceAlt}}</style>
 </head><body><div id="m"></div>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
@@ -77,12 +77,12 @@ function buildHtml(from: Coords | null, to: Coords): string {
   var map=L.map('m',{zoomControl:false,attributionControl:false,dragging:false,tap:false,keyboard:false,scrollWheelZoom:false,doubleClickZoom:false});
   L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19}).addTo(map);
   function dot(c,s,b){return L.divIcon({className:'',iconSize:[s,s],iconAnchor:[s/2,s/2],html:'<div style="width:'+s+'px;height:'+s+'px;border-radius:50%;background:'+c+';border:2px solid '+b+';box-shadow:0 1px 3px rgba(0,0,0,.45)"></div>'});}
-  L.marker(stop,{icon:dot('#ffc03d',22,'#100c08')}).addTo(map);
+  L.marker(stop,{icon:dot('${colors.btnPrimaryBg}',22,'${colors.textPrimary}')}).addTo(map);
   if(driver){
-    L.marker(driver,{icon:dot('#15803d',16,'#ffffff')}).addTo(map);
+    L.marker(driver,{icon:dot('${colors.success}',16,'${colors.surface}')}).addTo(map);
     map.fitBounds([driver,stop],{padding:[42,42],maxZoom:16});
     var line=null;
-    function straight(){if(!line){line=L.polyline([driver,stop],{color:'#603262',weight:3,dashArray:'6 8',opacity:0.85}).addTo(map);}}
+    function straight(){if(!line){line=L.polyline([driver,stop],{color:'${colors.tabActive}',weight:3,dashArray:'6 8',opacity:0.85}).addTo(map);}}
     // Road-following route from the OSRM public demo server (free, no key — interim;
     // upgrade to a paid directions API alongside native maps). Falls back to a
     // straight dashed line if routing fails (offline / rate-limited / no route).
@@ -90,7 +90,7 @@ function buildHtml(from: Coords | null, to: Coords): string {
     fetch(u).then(function(r){return r.ok?r.json():null;}).then(function(j){
       var g=j&&j.routes&&j.routes[0]&&j.routes[0].geometry;
       if(g&&g.coordinates&&g.coordinates.length>1){
-        line=L.polyline(g.coordinates.map(function(c){return [c[1],c[0]];}),{color:'#603262',weight:4,opacity:0.9}).addTo(map);
+        line=L.polyline(g.coordinates.map(function(c){return [c[1],c[0]];}),{color:'${colors.tabActive}',weight:4,opacity:0.9}).addTo(map);
         map.fitBounds(line.getBounds(),{padding:[42,42],maxZoom:16});
       }else{straight();}
     }).catch(function(){straight();});
