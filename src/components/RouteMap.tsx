@@ -8,11 +8,12 @@ import { colors, PILL } from '../theme';
 
 // Interim active-job map (Option B — see memory project_driver_active_map). A WebView
 // + Leaflet/OSM that plots the driver relative to the CURRENT stop (merchant before
-// pickup, customer after) with a dashed connector. Heavier on low-end Android + 2G
-// than native maps; the PLANNED upgrade is react-native-maps + paid tiles + a routing
-// API once billing is funded. Degrades gracefully: no driver fix yet → centre on the
-// stop; tiles/Leaflet fail to load → the address card above and the "Open in Google
-// Maps" CTA still carry the driver to the door.
+// pickup, customer after) with a ROAD-FOLLOWING route (OSRM public demo server),
+// falling back to a straight dashed line if routing fails. Heavier on low-end Android
+// + 2G than native maps; the PLANNED upgrade is react-native-maps + paid tiles + a
+// production routing API once billing is funded. Degrades gracefully: no driver fix
+// yet → centre on the stop; tiles/Leaflet/routing fail → the address card above and
+// the "Open in Google Maps" CTA still carry the driver to the door.
 export default function RouteMap({
   from,
   to,
@@ -57,9 +58,10 @@ export default function RouteMap({
 }
 
 // Self-contained Leaflet page. The driver (green dot) and the stop (gold pin) are
-// markers; a dashed brand-purple line connects them and the view fits both. With no
-// driver fix, just centre on the stop. Leaflet loads from a CDN — a known 2G cost
-// folded into the native-maps upgrade.
+// markers; a road-following route (fetched from OSRM, straight dashed line on failure)
+// connects them and the view fits the route. With no driver fix, just centre on the
+// stop. Leaflet + OSRM load over the network — a known 2G cost folded into the
+// native-maps upgrade.
 function buildHtml(from: Coords | null, to: Coords): string {
   const stop = [to.lat, to.lng];
   const driver = from ? [from.lat, from.lng] : null;
@@ -78,8 +80,20 @@ function buildHtml(from: Coords | null, to: Coords): string {
   L.marker(stop,{icon:dot('#ffc03d',22,'#100c08')}).addTo(map);
   if(driver){
     L.marker(driver,{icon:dot('#15803d',16,'#ffffff')}).addTo(map);
-    L.polyline([driver,stop],{color:'#603262',weight:3,dashArray:'6 8',opacity:0.9}).addTo(map);
     map.fitBounds([driver,stop],{padding:[42,42],maxZoom:16});
+    var line=null;
+    function straight(){if(!line){line=L.polyline([driver,stop],{color:'#603262',weight:3,dashArray:'6 8',opacity:0.85}).addTo(map);}}
+    // Road-following route from the OSRM public demo server (free, no key — interim;
+    // upgrade to a paid directions API alongside native maps). Falls back to a
+    // straight dashed line if routing fails (offline / rate-limited / no route).
+    var u='https://router.project-osrm.org/route/v1/driving/'+driver[1]+','+driver[0]+';'+stop[1]+','+stop[0]+'?overview=full&geometries=geojson';
+    fetch(u).then(function(r){return r.ok?r.json():null;}).then(function(j){
+      var g=j&&j.routes&&j.routes[0]&&j.routes[0].geometry;
+      if(g&&g.coordinates&&g.coordinates.length>1){
+        line=L.polyline(g.coordinates.map(function(c){return [c[1],c[0]];}),{color:'#603262',weight:4,opacity:0.9}).addTo(map);
+        map.fitBounds(line.getBounds(),{padding:[42,42],maxZoom:16});
+      }else{straight();}
+    }).catch(function(){straight();});
   }else{
     map.setView(stop,15);
   }
