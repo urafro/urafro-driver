@@ -43,8 +43,9 @@ export default function Onboarding({
   token: string;
   profile: DriverProfile;
   /** Re-fetch the profile in the app root — when it comes back approved, the root
-   *  swaps this whole flow out for the tabbed app. */
-  onReload: () => void;
+   *  swaps this whole flow out for the tabbed app. Returns a promise so the manual
+   *  "Check again" button can await it and show real progress. */
+  onReload: () => void | Promise<void>;
 }) {
   const { signOut } = useSession();
   const [step, setStep] = useState<Step>(profile.name?.trim() ? 'waiting' : 'welcome');
@@ -53,6 +54,8 @@ export default function Onboarding({
   const [vDetail, setVDetail] = useState(profile.vehicle?.make ?? '');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [checking, setChecking] = useState(false);
+  const [notice, setNotice] = useState<string | null>(null);
 
   // Verification-status-aware copy for the waiting step.
   const vs = profile.verification_status;
@@ -120,6 +123,22 @@ export default function Onboarding({
       setBusy(false);
     }
   }, [token, name, vType, vDetail, onReload]);
+
+  // Manual re-check from the waiting gate. Awaits the root's profile re-fetch so the
+  // button shows a real "Checking…" state. If we're still on this screen afterwards,
+  // ops hasn't cleared us yet (a `verified` status swaps the whole flow out for the
+  // tabbed app, unmounting this) — so surface a "still under review" acknowledgement
+  // rather than leaving the tap looking like it did nothing.
+  const recheck = useCallback(async () => {
+    setChecking(true);
+    setNotice(null);
+    try {
+      await onReload();
+      setNotice("Still under review — we'll let you know the moment you're cleared.");
+    } finally {
+      setChecking(false);
+    }
+  }, [onReload]);
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
@@ -233,7 +252,8 @@ export default function Onboarding({
             <Text style={styles.editText}>Edit your name or vehicle</Text>
           </Pressable>
 
-          <PrimaryButton label={busy ? 'Checking…' : 'Check again'} onPress={onReload} busy={busy} />
+          <PrimaryButton label={checking ? 'Checking…' : 'Check again'} onPress={() => void recheck()} busy={checking} />
+          {notice ? <Text style={styles.notice}>{notice}</Text> : null}
 
           <View style={styles.footer}>
             {OPS_WHATSAPP ? (
@@ -401,6 +421,7 @@ const styles = StyleSheet.create({
   buttonText: { color: colors.btnPrimaryText, fontSize: 16, fontWeight: '700' },
 
   error: { color: colors.danger, fontSize: 15, fontWeight: '700', lineHeight: 21 },
+  notice: { color: colors.textMuted, fontSize: 14, lineHeight: 20, textAlign: 'center' },
 
   footer: { marginTop: 8, gap: 16, alignItems: 'center' },
   opsRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },

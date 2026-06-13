@@ -63,6 +63,7 @@ import { useActiveJob } from '../state/activeJob';
 import { colors, shadow, PILL } from '../theme';
 import OffersList from '../components/OffersList';
 import ActiveJob, { type LifecycleAction, type ActionExtra } from '../components/ActiveJob';
+import ShiftStatus from '../components/ShiftStatus';
 
 const POLL_MS = 8000;
 const FLUSH_MS = 12000;
@@ -677,33 +678,27 @@ export default function HomeScreen({ focused }: { focused: boolean }) {
       ) : (
         <>
           <Text style={styles.title}>Your shift</Text>
-          <View style={styles.statusCard}>
-            <View style={styles.statusRow}>
-              <View style={[styles.statusDot, online ? styles.statusDotOn : styles.statusDotOff]} />
-              <Text style={styles.statusTitle}>{online ? "You're online" : "You're off shift"}</Text>
-            </View>
-            <Text style={styles.statusMsg}>
-              {online
-                ? 'Offers pop up below and as notifications.'
-                : 'Go online to start receiving delivery offers near you.'}
-            </Text>
-          </View>
+          <ShiftStatus online={online} />
           {earnings ? (
             <View style={styles.earnCard}>
-              <View style={styles.earnCol}>
-                <Text style={styles.earnValue}>{money(earnings.today_minor)}</Text>
-                <Text style={styles.earnLabel}>
-                  today · {earnings.today_deliveries} deliver{earnings.today_deliveries === 1 ? 'y' : 'ies'}
-                </Text>
-              </View>
-              <View style={styles.earnCol}>
-                <Text style={styles.earnValue}>{money(earnings.payable_minor)}</Text>
-                <Text style={styles.earnLabel}>owed to you</Text>
+              <Text style={styles.earnHeroLabel}>Today&apos;s earnings</Text>
+              <Text style={styles.earnHero}>{money(earnings.today_minor)}</Text>
+              <Text style={styles.earnHeroSub}>
+                {earnings.today_deliveries} deliver{earnings.today_deliveries === 1 ? 'y' : 'ies'}
+              </Text>
+              <View style={styles.earnRow}>
+                <Feather name="credit-card" size={18} color={colors.textFaint} />
+                <Text style={styles.earnRowLabel}>Owed to you</Text>
+                <Text style={styles.earnRowValue}>{money(earnings.payable_minor)}</Text>
               </View>
               {earnings.cod_owed_minor > 0 ? (
-                <View style={styles.earnCol}>
-                  <Text style={[styles.earnValue, styles.earnCod]}>{money(earnings.cod_owed_minor)}</Text>
-                  <Text style={styles.earnLabel}>cash to hand in</Text>
+                <View style={styles.codCallout}>
+                  <Feather name="dollar-sign" size={20} color={colors.codText} />
+                  <View style={styles.codBody}>
+                    <Text style={styles.codTitle}>Cash to hand in</Text>
+                    <Text style={styles.codSub}>Hand to ops at end of shift</Text>
+                  </View>
+                  <Text style={styles.codValue}>{money(earnings.cod_owed_minor)}</Text>
                 </View>
               ) : null}
             </View>
@@ -794,13 +789,6 @@ export default function HomeScreen({ focused }: { focused: boolean }) {
       {/* Shift-level errors only (go online/offline, claim) — action errors during
           a job render inside the ActiveJob card instead. */}
       {!completed && !job && error ? <Text style={styles.error}>{error}</Text> : null}
-
-      {/* Ops contact + sign-out live on the Profile tab now. */}
-      {!completed ? (
-        <View style={styles.footer}>
-          <Text style={styles.meta}>Driver {session?.driverId.slice(0, 8)}…</Text>
-        </View>
-      ) : null}
     </ScrollView>
   );
 }
@@ -809,33 +797,40 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.bg },
   content: { padding: 24, paddingTop: 72, flexGrow: 1 },
   title: { color: colors.textPrimary, fontSize: 28, fontWeight: '700' },
-  status: { color: colors.textSecondary, fontSize: 18, marginTop: 20 },
-  statusCard: {
-    backgroundColor: colors.surface,
-    borderRadius: 12,
-    padding: 16,
-    marginTop: 20,
-    ...shadow.card,
-  },
-  statusRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  statusDot: { width: 12, height: 12, borderRadius: 6 },
-  statusDotOn: { backgroundColor: colors.success },
-  statusDotOff: { backgroundColor: colors.textFaint },
-  statusTitle: { color: colors.textPrimary, fontSize: 18, fontWeight: '700' },
-  statusMsg: { color: colors.textFaint, fontSize: 14, marginTop: 8, lineHeight: 20 },
   earnCard: {
-    flexDirection: 'row',
     backgroundColor: colors.surface,
     borderRadius: 12,
     padding: 16,
     marginTop: 16,
-    gap: 18,
     ...shadow.card,
   },
-  earnCol: { flex: 1 },
-  earnValue: { color: colors.money, fontSize: 20, fontWeight: '700' },
-  earnCod: { color: colors.cod },
-  earnLabel: { color: colors.textFaint, fontSize: 12, marginTop: 2 },
+  earnHeroLabel: { color: colors.textFaint, fontSize: 12 },
+  earnHero: { color: colors.money, fontSize: 30, fontWeight: '700', marginTop: 2, letterSpacing: -0.5 },
+  earnHeroSub: { color: colors.textFaint, fontSize: 13, marginTop: 1 },
+  earnRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginTop: 14,
+    paddingTop: 14,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.hairline,
+  },
+  earnRowLabel: { color: colors.textSecondary, fontSize: 14 },
+  earnRowValue: { color: colors.money, fontSize: 16, fontWeight: '700', marginLeft: 'auto' },
+  codCallout: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    backgroundColor: colors.codBg,
+    borderRadius: 8,
+    padding: 12,
+    marginTop: 14,
+  },
+  codBody: { flex: 1 },
+  codTitle: { color: colors.codText, fontSize: 14, fontWeight: '700' },
+  codSub: { color: colors.codText, fontSize: 12, marginTop: 1 },
+  codValue: { color: colors.codText, fontSize: 16, fontWeight: '700' },
   toggle: { borderRadius: PILL, paddingVertical: 18, alignItems: 'center', marginTop: 20 },
   onBtn: { backgroundColor: colors.btnPrimaryBg },
   offBtn: { backgroundColor: colors.btnSecondaryBg },
@@ -870,15 +865,6 @@ const styles = StyleSheet.create({
   },
   batteryTitle: { color: colors.batteryTitle, fontSize: 15, fontWeight: '700' },
   batteryBody: { color: colors.batteryBody, fontSize: 13, marginTop: 4, lineHeight: 18 },
-  footer: {
-    marginTop: 'auto',
-    paddingTop: 32,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  meta: { color: colors.textFaint, fontSize: 13 },
-  link: { color: colors.textMuted, fontSize: 14 },
   // Payday moment (the loop's most motivating screen — previously silent).
   completeCard: { alignItems: 'center', paddingTop: 24, gap: 8 },
   completeCheck: {

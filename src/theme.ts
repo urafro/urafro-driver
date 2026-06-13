@@ -15,6 +15,7 @@ export const colors = {
   surfaceAlt: '#f6f3f7',    // secondary buttons inside cards (navigate/call, reasons)
   inputBg: '#f9f9f9',       // inputs sitting ON a (white) card — a subtle well
   inputBgRaised: '#ffffff', // inputs sitting on the screen bg
+  hairline: '#ece9e6',      // faint in-card divider (warm light gray)
   border: '#b26eb4',        // purple field boundary (primary-400 — 3.63:1 on
                             // white, 3.45:1 on bg; WCAG 1.4.11 needs ≥3:1 for
                             // input boundaries — the web's hairline #d8bfd9
@@ -43,8 +44,11 @@ export const colors = {
   // Status
   success: '#15803d',
   successSoft: '#15803d',   // background-GPS active note (full-strength on light)
+  successBg: '#dcf2e3',     // tinted disc behind the online shift glyph (icon 4.3:1)
   warning: '#a16207',       // pending-sync note (4.58:1)
-  cod: '#a16207',           // cash-to-collect amounts
+  cod: '#a16207',           // cash-to-collect amounts (on white — 4.58:1)
+  codBg: '#fef3c7',         // COD "cash to hand in" callout fill
+  codText: '#854f0b',       // COD callout text/icon ON codBg (5.6:1 — AA)
   danger: '#c20000',        // errors, failed status
 
   // Banners
