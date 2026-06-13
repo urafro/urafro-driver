@@ -7,6 +7,9 @@ import {
   pickupDistanceLabel,
   tripLabel,
   secondsUntil,
+  podMethodLabel,
+  dayLabel,
+  timeLabel,
 } from './format';
 
 describe('money', () => {
@@ -101,5 +104,46 @@ describe('secondsUntil', () => {
 
   it('returns 0 for a missing timestamp', () => {
     expect(secondsUntil(undefined, Date.now())).toBe(0);
+  });
+});
+
+describe('podMethodLabel', () => {
+  it('maps each handover method to a driver-readable label', () => {
+    expect(podMethodLabel('otp')).toBe('Confirmed by code');
+    expect(podMethodLabel('manual')).toBe('Completed manually');
+    expect(podMethodLabel('photo')).toBe('Photo proof');
+    expect(podMethodLabel('signature')).toBe('Signature');
+  });
+
+  it('omits (null) for unknown / missing methods', () => {
+    expect(podMethodLabel(null)).toBeNull();
+    expect(podMethodLabel(undefined)).toBeNull();
+    expect(podMethodLabel('weird')).toBeNull();
+  });
+});
+
+describe('dayLabel', () => {
+  // Midday timestamps so a ±24h shift is unambiguously a different calendar day in
+  // any reasonable timezone the test runner might use.
+  const noon = Date.parse('2026-06-13T12:00:00Z');
+  it('labels the same calendar day as Today and the prior day as Yesterday', () => {
+    expect(dayLabel(new Date(noon).toISOString(), noon)).toBe('Today');
+    expect(dayLabel(new Date(noon - 86_400_000).toISOString(), noon)).toBe('Yesterday');
+  });
+
+  it('falls back to a dated label for older days, and "" for no timestamp', () => {
+    expect(dayLabel(new Date(noon - 5 * 86_400_000).toISOString(), noon)).not.toMatch(/Today|Yesterday/);
+    expect(dayLabel(null, noon)).toBe('');
+  });
+});
+
+describe('timeLabel', () => {
+  it('formats a timestamp as local clock time (12h or 24h locale)', () => {
+    expect(timeLabel('2026-06-13T14:30:00Z')).toMatch(/\d{1,2}[:.]30/); // 2:30 / 14:30 / 16:30 (TZ)
+  });
+
+  it('returns "" for a missing timestamp', () => {
+    expect(timeLabel(null)).toBe('');
+    expect(timeLabel(undefined)).toBe('');
   });
 });

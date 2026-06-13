@@ -54,3 +54,45 @@ export function secondsUntil(iso: string | undefined, nowMs: number): number {
   if (!iso) return 0;
   return Math.max(0, Math.round((new Date(iso).getTime() - nowMs) / 1000));
 }
+
+// ── Jobs tab (history) formatting ─────────────────────────────────────────────
+
+// How a delivery's handover was confirmed, for the job record. null → omit the row.
+export function podMethodLabel(method: string | null | undefined): string | null {
+  switch (method) {
+    case 'otp':
+      return 'Confirmed by code';
+    case 'manual':
+      return 'Completed manually';
+    case 'photo':
+      return 'Photo proof';
+    case 'signature':
+      return 'Signature';
+    default:
+      return null;
+  }
+}
+
+// Short clock time for a job row, e.g. "2:14 PM" (device locale + timezone). '' if absent.
+export function timeLabel(iso: string | null | undefined): string {
+  if (!iso) return '';
+  return new Date(iso).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+}
+
+// A day heading for grouping jobs: "Today" / "Yesterday" / "Fri 13 Jun", in the
+// device's local calendar. `nowMs` is injectable for deterministic tests.
+export function dayLabel(iso: string | null | undefined, nowMs: number = Date.now()): string {
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (sameLocalDay(d, new Date(nowMs))) return 'Today';
+  if (sameLocalDay(d, new Date(nowMs - 86_400_000))) return 'Yesterday';
+  return d.toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' });
+}
+
+function sameLocalDay(a: Date, b: Date): boolean {
+  return (
+    a.getFullYear() === b.getFullYear() &&
+    a.getMonth() === b.getMonth() &&
+    a.getDate() === b.getDate()
+  );
+}

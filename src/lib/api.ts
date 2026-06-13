@@ -264,24 +264,34 @@ export function putVehicle(
 }
 
 // ── History + decline (ADR-002 B) ─────────────────────────────────────────────
-/** A past job: the public delivery shape + the driver's cut (NO contacts). */
-export type HistoryItem = Delivery & { driver_fee_minor?: number | null };
+export type PodMethod = 'photo' | 'signature' | 'otp' | 'manual';
 
-export function listMyDeliveries(token: string): Promise<{ data: HistoryItem[] }> {
-  return request('/driver/deliveries', { method: 'GET', token });
+/** A past job (the Jobs tab): the public delivery shape + the driver's cut + the
+ *  per-job facts that make it a real work record — how it was confirmed, when it
+ *  completed, and the cash actually collected. NO contacts (stale customer PII). */
+export type HistoryItem = Delivery & {
+  driver_fee_minor?: number | null;
+  pod_method?: PodMethod | null;
+  delivered_at?: string | null;
+  cod_collected_minor?: number | null;
+};
+
+/** A page of job history. Pass `opts.before` = the previous page's `next_before`
+ *  (opaque cursor) to load older jobs; `next_before` is null when there are none. */
+export function listMyDeliveries(
+  token: string,
+  opts: { limit?: number; before?: string; status?: string } = {},
+): Promise<{ data: HistoryItem[]; next_before: string | null }> {
+  const qs = new URLSearchParams();
+  if (opts.limit != null) qs.set('limit', String(opts.limit));
+  if (opts.before) qs.set('before', opts.before);
+  if (opts.status) qs.set('status', opts.status);
+  const q = qs.toString();
+  return request(`/driver/deliveries${q ? `?${q}` : ''}`, { method: 'GET', token });
 }
 
 export function declineOffer(token: string, id: string): Promise<void> {
   return request(`/driver/offers/${id}/decline`, { method: 'POST', token });
-}
-
-/** Rate a delivered job (driver → tenant/pickup), 1–5 stars (ADR-003 P3). */
-export function rateDelivery(token: string, deliveryId: string, stars: number, comment?: string): Promise<void> {
-  return request(`/driver/deliveries/${deliveryId}/rating`, {
-    method: 'POST',
-    token,
-    body: JSON.stringify(comment ? { stars, comment } : { stars }),
-  });
 }
 
 // ── Earnings + push (ADR-002 A.1/A.4) ────────────────────────────────────────
