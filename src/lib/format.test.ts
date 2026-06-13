@@ -1,5 +1,13 @@
 import { describe, it, expect } from 'vitest';
-import { money, placeLabel, secondsUntil } from './format';
+import {
+  money,
+  placeLabel,
+  placeLabelDetailed,
+  notifyPlace,
+  pickupDistanceLabel,
+  tripLabel,
+  secondsUntil,
+} from './format';
 
 describe('money', () => {
   it('formats minor units (cents) as dollars', () => {
@@ -27,6 +35,60 @@ describe('placeLabel', () => {
 
   it('handles a missing location', () => {
     expect(placeLabel(undefined)).toBe('Unknown location');
+  });
+});
+
+describe('placeLabelDetailed', () => {
+  it('shows landmark primary + address secondary when both exist', () => {
+    expect(
+      placeLabelDetailed({ lat: -17.8, lng: 31.0, source: 'map_pin', landmark: 'Blue gate', address_text: '14 Rd' }),
+    ).toEqual({ primary: 'Blue gate', secondary: '14 Rd' });
+  });
+
+  it('promotes the address to primary when there is no landmark', () => {
+    expect(placeLabelDetailed({ lat: -17.8, lng: 31.0, source: 'map_pin', address_text: '14 Avondale Rd' })).toEqual({
+      primary: '14 Avondale Rd',
+      secondary: null,
+    });
+  });
+
+  it('falls back to coordinates, then unknown', () => {
+    expect(placeLabelDetailed({ lat: -17.8312, lng: 31.0456, source: 'map_pin' })).toEqual({
+      primary: '-17.8312, 31.0456',
+      secondary: null,
+    });
+    expect(placeLabelDetailed(undefined)).toEqual({ primary: 'Unknown location', secondary: null });
+  });
+});
+
+describe('notifyPlace', () => {
+  it('returns landmark or address only, never coordinates', () => {
+    expect(notifyPlace({ landmark: 'Blue gate', address_text: '14 Rd' })).toBe('Blue gate');
+    expect(notifyPlace({ address_text: '14 Avondale Rd' })).toBe('14 Avondale Rd');
+    expect(notifyPlace({})).toBeNull();
+    expect(notifyPlace(undefined)).toBeNull();
+  });
+});
+
+describe('pickupDistanceLabel', () => {
+  it('says "At pickup" when the driver is essentially there', () => {
+    expect(pickupDistanceLabel(0)).toBe('At pickup');
+    expect(pickupDistanceLabel(0.04)).toBe('At pickup');
+  });
+
+  it('shows the distance otherwise, and omits when unknown', () => {
+    expect(pickupDistanceLabel(0.1)).toBe('0.1 km to pickup');
+    expect(pickupDistanceLabel(2)).toBe('2 km to pickup');
+    expect(pickupDistanceLabel(null)).toBeNull();
+    expect(pickupDistanceLabel(undefined)).toBeNull();
+  });
+});
+
+describe('tripLabel', () => {
+  it('labels the trip distance, or omits when unknown', () => {
+    expect(tripLabel(1.1)).toBe('1.1 km trip');
+    expect(tripLabel(null)).toBeNull();
+    expect(tripLabel(undefined)).toBeNull();
   });
 });
 

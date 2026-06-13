@@ -2,6 +2,7 @@ import { Platform } from 'react-native';
 import * as Notifications from 'expo-notifications';
 import Constants from 'expo-constants';
 import { registerPushToken } from './api';
+import { notifyPlace } from './format';
 
 // Driver notifications (ADR-002 Phase A.1, app half).
 //
@@ -63,13 +64,13 @@ export async function registerForPush(token: string): Promise<boolean> {
 }
 
 /** Fire a local offer notification (the no-Firebase fallback path). */
-export async function notifyNewOffer(body: string): Promise<void> {
+export async function notifyNewOffer(title: string, body: string): Promise<void> {
   try {
     await ensureNotificationChannel();
     const perm = await Notifications.getPermissionsAsync();
     if (!perm.granted) return;
     await Notifications.scheduleNotificationAsync({
-      content: { title: 'New delivery offer', body, sound: 'default' },
+      content: { title, body, sound: 'default' },
       trigger: Platform.OS === 'android' ? { channelId: OFFERS_CHANNEL } : null,
     });
   } catch {
@@ -89,6 +90,8 @@ interface OfferLike {
   id?: string;
   driver_fee_minor?: number | null;
   fee_minor?: number | null;
+  dropoff?: { landmark?: string | null; address_text?: string | null } | null;
+  trip_km?: number | null;
 }
 
 const seenOfferIds = new Set<string>();
@@ -102,8 +105,14 @@ export async function maybeNotifyNewOffers(
   seenOfferIds.clear();
   for (const o of offers) if (o.id) seenOfferIds.add(o.id);
   if (!firstNew) return;
+  // Title carries the payout (visible even when the banner is collapsed); body says
+  // WHERE the job goes — landmark, or the address when there's no landmark — plus
+  // the trip distance, so the driver can judge it without opening the app.
   const earn = firstNew.driver_fee_minor ?? firstNew.fee_minor;
-  await notifyNewOffer(
-    `${earn != null ? `Earn ${formatMoney(earn)} · ` : ''}expires soon — open to claim.`,
-  );
+  const title = earn != null ? `New delivery · ${formatMoney(earn)}` : 'New delivery offer';
+  const dest = notifyPlace(firstNew.dropoff);
+  const trip = firstNew.trip_km != null ? `${firstNew.trip_km} km` : null;
+  const detail = [dest ? `To: ${dest}` : null, trip].filter(Boolean).join(' · ');
+  const body = detail ? `${detail} · expires soon` : 'Expires soon — open to claim.';
+  await notifyNewOffer(title, body);
 }
