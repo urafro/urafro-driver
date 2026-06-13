@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   AppState,
+  Linking,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -45,6 +46,7 @@ import {
   maybeNotifyNewOffers,
   markOffersSeen,
   onNotificationReceived,
+  notificationsEnabled,
 } from '../lib/notifications';
 import { saveActiveJob, loadActiveJob, clearActiveJob } from '../lib/session';
 import { money, placeLabel } from '../lib/format';
@@ -173,6 +175,17 @@ export default function HomeScreen({ focused }: { focused: boolean }) {
     void isBatteryOptimizationOn().then(setBatteryRisk).catch(() => {});
   }, []);
 
+  // Notification permission — if denied, NO alert path fires (remote push AND both
+  // local fallbacks gate on the grant), so the driver would only ever see offers by
+  // staring at the list. Surface a banner; re-checked on resume so it clears once
+  // they grant it in settings.
+  const [notifBlocked, setNotifBlocked] = useState(false);
+  const refreshNotifPermission = useCallback(() => {
+    void notificationsEnabled()
+      .then((ok) => setNotifBlocked(!ok))
+      .catch(() => {});
+  }, []);
+
   useEffect(() => {
     if (!token) return;
     void reconcileShift().catch(() => {
@@ -180,15 +193,17 @@ export default function HomeScreen({ focused }: { focused: boolean }) {
     });
     void loadOffers(); // race the offers fetch against reconcile — don't wait for it
     refreshBatteryRisk();
+    refreshNotifPermission();
     const sub = AppState.addEventListener('change', (state) => {
       if (state === 'active') {
         void reconcileShift().catch(() => {});
         void loadOffers();
         refreshBatteryRisk();
+        refreshNotifPermission();
       }
     });
     return () => sub.remove();
-  }, [token, reconcileShift, loadOffers, refreshBatteryRisk]);
+  }, [token, reconcileShift, loadOffers, refreshBatteryRisk, refreshNotifPermission]);
 
   // Persist the active delivery SNAPSHOT whenever it changes, so a relaunch renders
   // it instantly even in a dead zone. Skip the first run (job is null on mount) —
@@ -299,6 +314,7 @@ export default function HomeScreen({ focused }: { focused: boolean }) {
   useEffect(() => {
     if (!online || job) return;
     let cancelled = false;
+    let ticks = 0;
     // ALWAYS ping location from the foreground poll — the background stream does NOT
     // tick while stationary (Samsung suppresses same-position fixes at the system
     // level), so without this a driver staring at the open app could go heartbeat-
@@ -315,7 +331,14 @@ export default function HomeScreen({ focused }: { focused: boolean }) {
     // slow 2G location lock no longer delays the offers fetch (the open-from-push lag
     // was offers running as the third serial round-trip, behind getProfile + this ping).
     async function tick() {
-      await Promise.all([loadOffers(), pingLocation()]);
+      ticks += 1;
+      const ops: Promise<unknown>[] = [loadOffers(), pingLocation()];
+      // Every ~40s, re-read shift status from the server. If repeated location pings
+      // failed and the driver was swept offline (heartbeat stale), reconcileShift
+      // flips `online` false so they see "off shift" + the Go-online button instead
+      // of staring at a silently-dead empty list believing they're available.
+      if (ticks % 5 === 0) ops.push(reconcileShift().catch(() => {}));
+      await Promise.all(ops);
     }
     void tick();
     const interval = setInterval(() => void tick(), POLL_MS);
@@ -323,7 +346,7 @@ export default function HomeScreen({ focused }: { focused: boolean }) {
       cancelled = true;
       clearInterval(interval);
     };
-  }, [online, job, token, bgActive, loadOffers]);
+  }, [online, job, token, bgActive, loadOffers, reconcileShift]);
 
   const performAction = useCallback(
     async (a: QueuedAction): Promise<void> => {
@@ -505,10 +528,12 @@ export default function HomeScreen({ focused }: { focused: boolean }) {
       try {
         await declineOffer(token, id);
       } catch {
-        // poll re-syncs the truth
+        // The optimistic removal didn't land — restore the list now (silently) rather
+        // than leaving a wanted offer hidden until the next 8s poll.
+        void loadOffers(true);
       }
     },
-    [token],
+    [token, loadOffers],
   );
 
   const act = useCallback(
@@ -591,6 +616,20 @@ export default function HomeScreen({ focused }: { focused: boolean }) {
           </Text>
         </Pressable>
       ) : null}
+      {/* Notifications off → no alert path fires (push + both local fallbacks gate on
+          the grant); the driver would only see offers by watching the list. */}
+      {!completed && online && notifBlocked ? (
+        <Pressable style={styles.batteryBanner} onPress={() => void Linking.openSettings()}>
+          <View style={styles.iconRow}>
+            <Feather name="bell-off" size={16} color={colors.batteryTitle} />
+            <Text style={styles.batteryTitle}>Turn on notifications to get offers</Text>
+          </View>
+          <Text style={styles.batteryBody}>
+            Notifications are off, so you won&apos;t be alerted to new deliveries. Tap to open
+            settings and allow them.
+          </Text>
+        </Pressable>
+      ) : null}
       {completed ? (
         <View style={styles.completeCard}>
           <View style={styles.completeCheck}>
@@ -611,7 +650,13 @@ export default function HomeScreen({ focused }: { focused: boolean }) {
               shift. It’s separate from your earnings.
             </Text>
           ) : null}
-          <Pressable style={styles.completeBtn} onPress={() => setCompleted(null)}>
+          <Pressable
+            style={styles.completeBtn}
+            onPress={() => {
+              setCompleted(null);
+              void loadOffers(true); // an offer may have landed while the payday card was up
+            }}
+          >
             <Text style={styles.completeBtnText}>Back to offers</Text>
           </Pressable>
         </View>

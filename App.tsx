@@ -5,6 +5,7 @@ import { Feather } from '@expo/vector-icons';
 import { SessionProvider, useSession } from './src/state/session';
 import { ActiveJobProvider, useActiveJob } from './src/state/activeJob';
 import { getProfile, type DriverProfile } from './src/lib/api';
+import { onNotificationResponse } from './src/lib/notifications';
 import { colors } from './src/theme';
 import LoginScreen from './src/screens/LoginScreen';
 import Onboarding from './src/screens/Onboarding';
@@ -32,6 +33,12 @@ const TABS: { key: Tab; label: string; icon: keyof typeof Feather.glyphMap }[] =
 function Tabs() {
   const [tab, setTab] = useState<Tab>('shift');
   const { active } = useActiveJob();
+  // Tapping a delivery notification (warm or cold-start) lands on the Shift tab where
+  // offers live — its focus-refresh then pulls the offer in immediately.
+  useEffect(() => {
+    const sub = onNotificationResponse(() => setTab('shift'));
+    return () => sub.remove();
+  }, []);
   return (
     <View style={styles.root}>
       <View style={[styles.screen, tab !== 'shift' && styles.hidden]}>
