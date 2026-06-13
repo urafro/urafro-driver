@@ -657,20 +657,42 @@ paths:
   /driver/deliveries:
     get:
       tags: [Driver]
-      summary: The driver's recent job history
+      summary: The driver's job history
       description: >
-        Newest first (≤20). Public delivery shape plus `driver_fee_minor` —
-        contacts are deliberately absent (stale customer PII on past jobs).
+        Newest first — the Jobs tab. Public delivery shape plus `driver_fee_minor`
+        and per-job facts (`pod_method`, `delivered_at`, `cod_collected_minor`);
+        contacts are deliberately absent (stale customer PII on past jobs). Money
+        aggregates (payable, COD owed) live in /driver/earnings. Cursor-paginated:
+        pass the previous page's `next_before` back as `before` to load older jobs.
       operationId: driverListDeliveries
       security:
         - DriverBearerAuth: []
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          schema: { type: integer, minimum: 1, maximum: 50, default: 20 }
+        - name: before
+          in: query
+          required: false
+          description: >
+            Opaque pagination cursor — pass the previous page's `next_before`
+            verbatim to load older jobs. (Internally `<updated_at>|<id>`; treat as
+            opaque.) A malformed cursor returns the first page.
+          schema: { type: string }
+        - name: status
+          in: query
+          required: false
+          description: Filter to a single delivery status (e.g. delivered, failed).
+          schema: { type: string }
       responses:
         '200':
-          description: Recent jobs.
+          description: Job history page.
           content:
             application/json:
               schema:
                 type: object
+                required: [data, next_before]
                 properties:
                   data:
                     type: array
@@ -680,6 +702,22 @@ paths:
                         - type: object
                           properties:
                             driver_fee_minor: { type: [integer, "null"] }
+                            pod_method:
+                              type: [string, "null"]
+                              enum: [photo, signature, otp, manual, null]
+                              description: How the handover was confirmed (delivered jobs).
+                            delivered_at:
+                              type: [string, "null"]
+                              format: date-time
+                              description: Completion time (PoD geostamp); null unless delivered.
+                            cod_collected_minor:
+                              type: [integer, "null"]
+                              description: Cash actually collected on this run (vs collect_minor due).
+                  next_before:
+                    type: [string, "null"]
+                    description: >
+                      Opaque cursor for the next (older) page — pass it back as
+                      `before`. Null when there are no more jobs.
         '401': { $ref: '#/components/responses/Unauthorized' }
 
   /driver/offers/{id}/decline:

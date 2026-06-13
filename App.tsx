@@ -51,7 +51,10 @@ function Tabs() {
       ) : null}
       {tab === 'history' ? (
         <View style={styles.screen}>
-          <HistoryScreen />
+          <HistoryScreen
+            onOpenShift={() => setTab('shift')}
+            onOpenEarnings={() => setTab('earnings')}
+          />
         </View>
       ) : null}
       {tab === 'profile' ? (

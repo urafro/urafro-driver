@@ -417,8 +417,8 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * The driver's recent job history
-         * @description Newest first (≤20). Public delivery shape plus `driver_fee_minor` — contacts are deliberately absent (stale customer PII on past jobs).
+         * The driver's job history
+         * @description Newest first — the Jobs tab. Public delivery shape plus `driver_fee_minor` and per-job facts (`pod_method`, `delivered_at`, `cod_collected_minor`); contacts are deliberately absent (stale customer PII on past jobs). Money aggregates (payable, COD owed) live in /driver/earnings. Cursor-paginated: pass the previous page's `next_before` back as `before` to load older jobs.
          */
         get: operations["driverListDeliveries"];
         put?: never;
@@ -1701,23 +1701,43 @@ export interface operations {
     };
     driverListDeliveries: {
         parameters: {
-            query?: never;
+            query?: {
+                limit?: number;
+                /** @description Opaque pagination cursor — pass the previous page's `next_before` verbatim to load older jobs. (Internally `<updated_at>|<id>`; treat as opaque.) A malformed cursor returns the first page. */
+                before?: string;
+                /** @description Filter to a single delivery status (e.g. delivered, failed). */
+                status?: string;
+            };
             header?: never;
             path?: never;
             cookie?: never;
         };
         requestBody?: never;
         responses: {
-            /** @description Recent jobs. */
+            /** @description Job history page. */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
                     "application/json": {
-                        data?: (components["schemas"]["Delivery"] & {
+                        data: (components["schemas"]["Delivery"] & {
                             driver_fee_minor?: number | null;
+                            /**
+                             * @description How the handover was confirmed (delivered jobs).
+                             * @enum {string|null}
+                             */
+                            pod_method?: "photo" | "signature" | "otp" | "manual" | null;
+                            /**
+                             * Format: date-time
+                             * @description Completion time (PoD geostamp); null unless delivered.
+                             */
+                            delivered_at?: string | null;
+                            /** @description Cash actually collected on this run (vs collect_minor due). */
+                            cod_collected_minor?: number | null;
                         })[];
+                        /** @description Opaque cursor for the next (older) page — pass it back as `before`. Null when there are no more jobs. */
+                        next_before: string | null;
                     };
                 };
             };
