@@ -2,7 +2,8 @@ import { Feather } from '@expo/vector-icons';
 import { useEffect, useState } from 'react';
 import { ActivityIndicator, Linking, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import type { DriverDelivery, FailureReason } from '../lib/api';
-import { getCurrentLocation, type Coords } from '../lib/location';
+import { watchLocation, type Coords } from '../lib/location';
+import { metersBetween } from '../lib/geo';
 import { money, placeLabel } from '../lib/format';
 import { mapsUrl, telUrl, waUrl } from '../lib/links';
 import { colors, shadow, PILL } from '../theme';
@@ -85,21 +86,26 @@ export default function ActiveJob({
   const [codInput, setCodInput] = useState('');
   const [pinInput, setPinInput] = useState('');
 
-  // The driver's own position for the route map. Fetched HERE (this screen only shows
+  // The driver's own position for the route map. Watched HERE (this screen only shows
   // on shift, so location permission is granted) rather than threaded from HomeScreen,
-  // keeping the map self-contained. Refreshed every 20s so the dot tracks movement.
+  // keeping the map self-contained. A live stream — not a one-shot fetch — so the dot
+  // appears the moment GPS locks (the old getCurrentLocation gave up after 8s and
+  // returned null indoors, leaving the map dot-less) and then follows the driver. Only
+  // re-render (→ re-fetch the OSRM route) once they've actually moved >50m; GPS jitter
+  // while stationary would otherwise hammer the route API on 2G.
   const [driverLoc, setDriverLoc] = useState<Coords | null>(null);
   useEffect(() => {
-    let cancelled = false;
-    const fetchLoc = async () => {
-      const loc = await getCurrentLocation();
-      if (loc && !cancelled) setDriverLoc(loc);
-    };
-    void fetchLoc();
-    const id = setInterval(() => void fetchLoc(), 20_000);
+    let active = true;
+    let unsub: (() => void) | undefined;
+    void watchLocation((c) => {
+      setDriverLoc((prev) => (prev && metersBetween(prev, c) < 50 ? prev : c));
+    }).then((u) => {
+      if (active) unsub = u;
+      else u(); // unmounted before subscribe resolved
+    });
     return () => {
-      cancelled = true;
-      clearInterval(id);
+      active = false;
+      unsub?.();
     };
   }, []);
 

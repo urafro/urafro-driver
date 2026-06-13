@@ -16,6 +16,32 @@ export async function ensureForegroundPermission(): Promise<boolean> {
   return status === 'granted';
 }
 
+/**
+ * Subscribe to the foreground position stream for the active-job map. The dot now
+ * appears as soon as GPS locks and then follows the driver — the old one-shot
+ * getCurrentLocation gave up after its 8s cap and returned null indoors, so the
+ * dot frequently never rendered at all. Seeds instantly from the last known fix so
+ * the map isn't blank during the cold lock. distanceInterval:0 (time-driven) is
+ * deliberate (same lesson as the shift heartbeat): a non-zero smallestDisplacement
+ * suppresses the first callback until the driver moves. Returns an unsubscribe;
+ * a no-op unsubscribe if permission is denied.
+ */
+export async function watchLocation(onChange: (c: Coords) => void): Promise<() => void> {
+  const { status } = await Location.requestForegroundPermissionsAsync();
+  if (status !== 'granted') return () => {};
+  try {
+    const known = await Location.getLastKnownPositionAsync();
+    if (known) onChange({ lat: known.coords.latitude, lng: known.coords.longitude });
+  } catch {
+    // no last-known fix — the stream supplies one once GPS locks
+  }
+  const sub = await Location.watchPositionAsync(
+    { accuracy: Location.Accuracy.Balanced, timeInterval: 5_000, distanceInterval: 0 },
+    (pos) => onChange({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
+  );
+  return () => sub.remove();
+}
+
 export async function getCurrentLocation(): Promise<Coords | null> {
   const { status } = await Location.requestForegroundPermissionsAsync();
   if (status !== 'granted') return null;
