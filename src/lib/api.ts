@@ -32,24 +32,38 @@ export function setUnauthorizedHandler(fn: (() => void) | null): void {
   onUnauthorized = fn;
 }
 
+// 2G safety net: abort a request that hangs on a dead/stalled socket so callers (the
+// offers poll, the action queue) actually fail-and-retry instead of stalling forever
+// — a real failure mode on the low-end/2G target, where a hung fetch left the offers
+// list frozen on "Checking for offers…" with no retry.
+const REQUEST_TIMEOUT_MS = 12000;
+
 async function request<T>(
   path: string,
   init: RequestInit & { token?: string } = {},
 ): Promise<T> {
   const { token, headers, ...rest } = init;
-  const res = await fetch(`${API_V1}${path}`, {
-    ...rest,
-    headers: {
-      // Only declare a JSON body when there actually IS one. React Native's Android
-      // fetch puts a stray NUL byte on a bodyless POST; with Content-Type:
-      // application/json the server's body-parser then rejects it with a 400
-      // ("Unexpected token … is not valid JSON") BEFORE the handler runs — which
-      // broke every bodyless POST (claim, picked_up, in_transit, failed).
-      ...(rest.body != null ? { 'Content-Type': 'application/json' } : {}),
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      ...headers,
-    },
-  });
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  let res: Response;
+  try {
+    res = await fetch(`${API_V1}${path}`, {
+      ...rest,
+      signal: controller.signal,
+      headers: {
+        // Only declare a JSON body when there actually IS one. React Native's Android
+        // fetch puts a stray NUL byte on a bodyless POST; with Content-Type:
+        // application/json the server's body-parser then rejects it with a 400
+        // ("Unexpected token … is not valid JSON") BEFORE the handler runs — which
+        // broke every bodyless POST (claim, picked_up, in_transit, failed).
+        ...(rest.body != null ? { 'Content-Type': 'application/json' } : {}),
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        ...headers,
+      },
+    });
+  } finally {
+    clearTimeout(timer);
+  }
   if (!res.ok) {
     // An authenticated 401 = the token is dead. Trigger a global sign-out (the call
     // still throws below so the caller's own error handling runs too). Guarded on

@@ -84,6 +84,29 @@ export function onNotificationReceived(onReceive: () => void): { remove: () => v
   return Notifications.addNotificationReceivedListener(() => onReceive());
 }
 
+/** Whether the OS notification permission is currently granted. Used to surface a
+ *  "turn on notifications" banner — without it, ALL alert paths are silent and the
+ *  driver only sees offers by staring at the list. */
+export async function notificationsEnabled(): Promise<boolean> {
+  try {
+    return (await Notifications.getPermissionsAsync()).granted;
+  } catch {
+    return true; // unknown → don't nag
+  }
+}
+
+/** Fire `onTap` when the driver TAPS a notification (warm via a listener, and cold via
+ *  the launch response), so opening from a push lands them on offers. Returns a
+ *  subscription; also resolves any cold-start tap once. */
+export function onNotificationResponse(onTap: () => void): { remove: () => void } {
+  void Notifications.getLastNotificationResponseAsync()
+    .then((r) => {
+      if (r) onTap();
+    })
+    .catch(() => {});
+  return Notifications.addNotificationResponseReceivedListener(() => onTap());
+}
+
 // ── Shared new-offer detection ────────────────────────────────────────────────
 // ONE seen-set serving BOTH callers — the foreground offers poll and the headless
 // background-location task (RN pauses JS timers when backgrounded, so the
