@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
+import * as FileSystem from 'expo-file-system/legacy';
 import {
   ApiError,
   acceptTerms,
@@ -98,10 +99,14 @@ export default function VerificationCard({ token, onChange }: { token: string; o
         if (picked.canceled || picked.assets.length === 0) return;
 
         const presign = await getUploadUrl(token, type); // 503 if storage off
-        const fileRes = await fetch(picked.assets[0].uri);
-        const blob = await fileRes.blob();
-        const put = await fetch(presign.upload.url, { method: 'PUT', body: blob });
-        if (!put.ok) throw new Error(`upload failed (${put.status})`);
+        // Stream the file to R2 via native HTTP (OkHttp/NSURLSession). A JS
+        // fetch(uri).blob() PUT fails to send the body on Android (the file:// →
+        // Blob path), so uploadAsync with BINARY_CONTENT is the robust route.
+        const put = await FileSystem.uploadAsync(presign.upload.url, picked.assets[0].uri, {
+          httpMethod: 'PUT',
+          uploadType: FileSystem.FileSystemUploadType.BINARY_CONTENT,
+        });
+        if (put.status < 200 || put.status >= 300) throw new Error(`upload ${put.status}`);
         await confirmDocument(token, presign.document_id);
         await load();
         onChange?.();
