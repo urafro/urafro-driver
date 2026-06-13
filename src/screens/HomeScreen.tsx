@@ -40,7 +40,12 @@ import {
   maybeExplainBackgroundPermission,
   requestBatteryExemption,
 } from '../lib/battery';
-import { registerForPush, maybeNotifyNewOffers } from '../lib/notifications';
+import {
+  registerForPush,
+  maybeNotifyNewOffers,
+  markOffersSeen,
+  onNotificationReceived,
+} from '../lib/notifications';
 import { saveActiveJob, loadActiveJob, clearActiveJob } from '../lib/session';
 import { money, placeLabel } from '../lib/format';
 import {
@@ -127,17 +132,29 @@ export default function HomeScreen() {
   // the offer fast instead of waiting for the poll, which is itself gated behind
   // reconcileShift flipping `online`) AND from the poll tick. Skipped on a job (the
   // offers list is hidden then, and we mustn't fire offer notifications mid-delivery).
-  const loadOffers = useCallback(async () => {
+  const loadOffers = useCallback(async (silent = false) => {
     if (!token || jobRef.current) return;
     try {
       const { data } = await listOffers(token);
       const fresh = data ?? [];
       setOffers(fresh);
-      void maybeNotifyNewOffers(fresh, money);
+      // `silent` = refreshed because a push already notified the driver — just sync
+      // the seen-set so the next poll doesn't fire a DUPLICATE local notification.
+      if (silent) markOffersSeen(fresh);
+      else void maybeNotifyNewOffers(fresh, money);
     } catch {
       // transient (network) — the next poll tick retries
     }
   }, [token]);
+
+  // A new-offer push arriving while the app is in the FOREGROUND should surface the
+  // offer instantly, not wait for the next 8s poll. Refresh SILENTLY — the push
+  // already notified the driver, so notifying again would double up.
+  useEffect(() => {
+    if (!token) return;
+    const sub = onNotificationReceived(() => void loadOffers(true));
+    return () => sub.remove();
+  }, [token, loadOffers]);
 
   // Battery-saver risk (ADR-001): true while the OS may freeze the app in the
   // background. Re-checked on resume so the banner clears the moment the driver
