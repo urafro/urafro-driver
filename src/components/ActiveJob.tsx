@@ -1,10 +1,12 @@
 import { Feather } from '@expo/vector-icons';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { ActivityIndicator, Linking, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import type { DriverDelivery, FailureReason } from '../lib/api';
+import { getCurrentLocation, type Coords } from '../lib/location';
 import { money, placeLabel } from '../lib/format';
 import { mapsUrl, telUrl, waUrl } from '../lib/links';
 import { colors, shadow, PILL } from '../theme';
+import RouteMap from './RouteMap';
 
 export type LifecycleAction = 'picked_up' | 'in_transit' | 'delivered' | 'failed';
 export interface ActionExtra {
@@ -82,6 +84,24 @@ export default function ActiveJob({
   const [note, setNote] = useState('');
   const [codInput, setCodInput] = useState('');
   const [pinInput, setPinInput] = useState('');
+
+  // The driver's own position for the route map. Fetched HERE (this screen only shows
+  // on shift, so location permission is granted) rather than threaded from HomeScreen,
+  // keeping the map self-contained. Refreshed every 20s so the dot tracks movement.
+  const [driverLoc, setDriverLoc] = useState<Coords | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    const fetchLoc = async () => {
+      const loc = await getCurrentLocation();
+      if (loc && !cancelled) setDriverLoc(loc);
+    };
+    void fetchLoc();
+    const id = setInterval(() => void fetchLoc(), 20_000);
+    return () => {
+      cancelled = true;
+      clearInterval(id);
+    };
+  }, []);
 
   const codDue = job.collect_minor ?? 0;
   const startAction = (to: LifecycleAction) => {
@@ -215,22 +235,14 @@ export default function ActiveJob({
         ) : null}
       </View>
 
-      {/* Map affordance — taps through to Google Maps (no in-app turn-by-turn). */}
-      {hasGeo ? (
-        <Pressable style={styles.map} onPress={navigate}>
-          <View style={styles.mapRoad} />
-          <View style={styles.mapRoadCross} />
-          <View style={styles.mapPin} />
-          <View style={styles.mapLabel}>
-            <Text style={styles.mapLabelText} numberOfLines={1}>
-              {placeLabel(target.geo)}
-            </Text>
-          </View>
-          <View style={[styles.mapCta, styles.mapCtaInner]}>
-            <Feather name="navigation" size={16} color={colors.textPrimary} />
-            <Text style={styles.mapCtaText}>Open in Google Maps</Text>
-          </View>
-        </Pressable>
+      {/* Active-job map (Option B): the driver's live position relative to the
+          current stop (merchant before pickup, customer after) on a Leaflet/OSM map. */}
+      {hasGeo && target.geo ? (
+        <RouteMap
+          from={driverLoc}
+          to={{ lat: target.geo.lat, lng: target.geo.lng }}
+          label={placeLabel(target.geo)}
+        />
       ) : null}
 
       {/* Secondary "then deliver to" card — only on the pickup leg */}
@@ -438,68 +450,6 @@ const styles = StyleSheet.create({
   },
   waChipInner: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   waChipText: { color: colors.textPrimary, fontSize: 14, fontWeight: '700' },
-
-  // Map affordance
-  map: {
-    height: 120,
-    borderRadius: 14,
-    overflow: 'hidden',
-    backgroundColor: colors.surfaceAlt,
-    borderWidth: 1,
-    borderColor: colors.border,
-    justifyContent: 'flex-end',
-  },
-  mapRoad: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    top: 44,
-    height: 10,
-    backgroundColor: colors.surface,
-  },
-  mapRoadCross: {
-    position: 'absolute',
-    top: 0,
-    bottom: 0,
-    left: '34%',
-    width: 10,
-    backgroundColor: colors.surface,
-  },
-  mapPin: {
-    position: 'absolute',
-    top: 26,
-    right: 36,
-    width: 20,
-    height: 20,
-    borderRadius: PILL,
-    backgroundColor: colors.btnPrimaryBg,
-    borderWidth: 2,
-    borderColor: colors.textPrimary,
-  },
-  mapLabel: {
-    position: 'absolute',
-    left: 8,
-    bottom: 8,
-    maxWidth: '70%',
-    backgroundColor: colors.surface,
-    borderRadius: PILL,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-  },
-  mapLabelText: { fontSize: 12, fontWeight: '700', color: colors.textPrimary },
-  mapCta: {
-    position: 'absolute',
-    right: 8,
-    bottom: 8,
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: PILL,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-  },
-  mapCtaInner: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  mapCtaText: { fontSize: 12, fontWeight: '700', color: colors.textPrimary },
 
   // Earn / collect
   moneyRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
