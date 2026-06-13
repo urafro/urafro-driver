@@ -40,6 +40,7 @@ export default function OffersList({
         if (!id) return null;
         const expires = secondsUntil(offer.offer_expires_at, now);
         const urgent = expires < 60;
+        const expired = expires <= 0; // dead offer — server 409s a claim; the next poll drops it
         const claiming = claimingId === id;
         // The driver's cut (ADR-002 A.3) — never quote more than they earn.
         // fee_minor fallback only covers a stale server payload.
@@ -82,11 +83,13 @@ export default function OffersList({
 
             <View style={styles.actions}>
               <Pressable
-                style={[styles.accept, claimingId != null && styles.disabled]}
+                style={[styles.accept, (claimingId != null || expired) && styles.disabled]}
                 onPress={() => onClaim(id)}
-                disabled={claimingId != null}
+                disabled={claimingId != null || expired}
               >
-                <Text style={styles.acceptText}>{claiming ? 'Claiming…' : `Accept — ${payout}`}</Text>
+                <Text style={styles.acceptText}>
+                  {expired ? 'Expired' : claiming ? 'Claiming…' : `Accept — ${payout}`}
+                </Text>
               </Pressable>
               {/* Decline (ADR-002 B): the job is never re-offered to this driver. */}
               <Pressable
