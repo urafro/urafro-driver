@@ -69,7 +69,7 @@ const FLUSH_MS = 12000;
 // → claim → on a job. Lifecycle actions are 2G-resilient: a transient failure
 // queues the action and a background flush retries it until it lands (and then
 // reconciles the on-screen job). Location pings + offer polls degrade softly.
-export default function HomeScreen() {
+export default function HomeScreen({ focused }: { focused: boolean }) {
   const { session } = useSession();
   const token = session?.token ?? '';
   const { setActive } = useActiveJob();
@@ -155,6 +155,14 @@ export default function HomeScreen() {
     const sub = onNotificationReceived(() => void loadOffers(true));
     return () => sub.remove();
   }, [token, loadOffers]);
+
+  // The Shift screen stays MOUNTED (hidden) while the driver browses other tabs, so
+  // an offer that lands meanwhile is only picked up by the next poll tick — switching
+  // back can show a stale/empty list until then. Refresh the instant Shift is focused
+  // (silent — any arriving offer was already notified) so it's current on arrival.
+  useEffect(() => {
+    if (focused) void loadOffers(true);
+  }, [focused, loadOffers]);
 
   // Battery-saver risk (ADR-001): true while the OS may freeze the app in the
   // background. Re-checked on resume so the banner clears the moment the driver

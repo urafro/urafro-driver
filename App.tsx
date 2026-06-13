@@ -35,7 +35,7 @@ function Tabs() {
   return (
     <View style={styles.root}>
       <View style={[styles.screen, tab !== 'shift' && styles.hidden]}>
-        <HomeScreen />
+        <HomeScreen focused={tab === 'shift'} />
       </View>
       {tab === 'earnings' ? (
         <View style={styles.screen}>
