@@ -78,6 +78,13 @@ export async function notifyNewOffer(title: string, body: string): Promise<void>
   }
 }
 
+/** Fire `onReceive` whenever a notification arrives while the app is in the
+ *  FOREGROUND (e.g. a new-offer push). Lets the offers list refresh the instant a
+ *  push lands instead of waiting for the next poll tick. Returns a subscription. */
+export function onNotificationReceived(onReceive: () => void): { remove: () => void } {
+  return Notifications.addNotificationReceivedListener(() => onReceive());
+}
+
 // ── Shared new-offer detection ────────────────────────────────────────────────
 // ONE seen-set serving BOTH callers — the foreground offers poll and the headless
 // background-location task (RN pauses JS timers when backgrounded, so the
@@ -115,4 +122,12 @@ export async function maybeNotifyNewOffers(
   const detail = [dest ? `To: ${dest}` : null, trip].filter(Boolean).join(' · ');
   const body = detail ? `${detail} · expires soon` : 'Expires soon — open to claim.';
   await notifyNewOffer(title, body);
+}
+
+/** Record the current offers as already-seen WITHOUT notifying — used when the list
+ *  is refreshed in response to a push the driver already received, so the next poll
+ *  doesn't fire a duplicate local notification for the same offer. */
+export function markOffersSeen(offers: OfferLike[]): void {
+  seenOfferIds.clear();
+  for (const o of offers) if (o.id) seenOfferIds.add(o.id);
 }

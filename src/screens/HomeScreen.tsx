@@ -40,7 +40,12 @@ import {
   maybeExplainBackgroundPermission,
   requestBatteryExemption,
 } from '../lib/battery';
-import { registerForPush, maybeNotifyNewOffers } from '../lib/notifications';
+import {
+  registerForPush,
+  maybeNotifyNewOffers,
+  markOffersSeen,
+  onNotificationReceived,
+} from '../lib/notifications';
 import { saveActiveJob, loadActiveJob, clearActiveJob } from '../lib/session';
 import { money, placeLabel } from '../lib/format';
 import {
@@ -65,13 +70,14 @@ const FLUSH_MS = 12000;
 // → claim → on a job. Lifecycle actions are 2G-resilient: a transient failure
 // queues the action and a background flush retries it until it lands (and then
 // reconciles the on-screen job). Location pings + offer polls degrade softly.
-export default function HomeScreen() {
+export default function HomeScreen({ focused }: { focused: boolean }) {
   const { session } = useSession();
   const token = session?.token ?? '';
   const { setActive } = useActiveJob();
 
   const [online, setOnline] = useState(false);
-  const [offers, setOffers] = useState<Offer[]>([]);
+  // null = not fetched yet (show "Checking for offers…"); [] = fetched, none nearby.
+  const [offers, setOffers] = useState<Offer[] | null>(null);
   const [job, setJob] = useState<DriverDelivery | null>(null);
   const [busy, setBusy] = useState(false);
   const [locating, setLocating] = useState(false);
@@ -123,6 +129,42 @@ export default function HomeScreen() {
     }
   }, [token]);
 
+  // Fetch offers NOW — called eagerly on open/resume (so a notification tap paints
+  // the offer fast instead of waiting for the poll, which is itself gated behind
+  // reconcileShift flipping `online`) AND from the poll tick. Skipped on a job (the
+  // offers list is hidden then, and we mustn't fire offer notifications mid-delivery).
+  const loadOffers = useCallback(async (silent = false) => {
+    if (!token || jobRef.current) return;
+    try {
+      const { data } = await listOffers(token);
+      const fresh = data ?? [];
+      setOffers(fresh);
+      // `silent` = refreshed because a push already notified the driver — just sync
+      // the seen-set so the next poll doesn't fire a DUPLICATE local notification.
+      if (silent) markOffersSeen(fresh);
+      else void maybeNotifyNewOffers(fresh, money);
+    } catch {
+      // transient (network) — the next poll tick retries
+    }
+  }, [token]);
+
+  // A new-offer push arriving while the app is in the FOREGROUND should surface the
+  // offer instantly, not wait for the next 8s poll. Refresh SILENTLY — the push
+  // already notified the driver, so notifying again would double up.
+  useEffect(() => {
+    if (!token) return;
+    const sub = onNotificationReceived(() => void loadOffers(true));
+    return () => sub.remove();
+  }, [token, loadOffers]);
+
+  // The Shift screen stays MOUNTED (hidden) while the driver browses other tabs, so
+  // an offer that lands meanwhile is only picked up by the next poll tick — switching
+  // back can show a stale/empty list until then. Refresh the instant Shift is focused
+  // (silent — any arriving offer was already notified) so it's current on arrival.
+  useEffect(() => {
+    if (focused) void loadOffers(true);
+  }, [focused, loadOffers]);
+
   // Battery-saver risk (ADR-001): true while the OS may freeze the app in the
   // background. Re-checked on resume so the banner clears the moment the driver
   // actually grants the exemption (a one-shot prompt can't know that).
@@ -136,15 +178,17 @@ export default function HomeScreen() {
     void reconcileShift().catch(() => {
       // non-critical — the driver can always toggle manually
     });
+    void loadOffers(); // race the offers fetch against reconcile — don't wait for it
     refreshBatteryRisk();
     const sub = AppState.addEventListener('change', (state) => {
       if (state === 'active') {
         void reconcileShift().catch(() => {});
+        void loadOffers();
         refreshBatteryRisk();
       }
     });
     return () => sub.remove();
-  }, [token, reconcileShift, refreshBatteryRisk]);
+  }, [token, reconcileShift, loadOffers, refreshBatteryRisk]);
 
   // Persist the active delivery SNAPSHOT whenever it changes, so a relaunch renders
   // it instantly even in a dead zone. Skip the first run (job is null on mount) —
@@ -255,23 +299,23 @@ export default function HomeScreen() {
   useEffect(() => {
     if (!online || job) return;
     let cancelled = false;
-    async function tick() {
+    // ALWAYS ping location from the foreground poll — the background stream does NOT
+    // tick while stationary (Samsung suppresses same-position fixes at the system
+    // level), so without this a driver staring at the open app could go heartbeat-
+    // stale and be swept off shift. Cheap: last-known fix first.
+    async function pingLocation() {
       try {
-        // ALWAYS ping location from the foreground poll — the background stream
-        // does NOT tick while stationary (Samsung suppresses same-position fixes
-        // at the system level), so without this a driver staring at the open app
-        // could go heartbeat-stale and be swept off shift. Cheap: last-known
-        // fix first, and a duplicate ping while moving is harmless.
         const loc = await getCurrentLocation();
         if (loc && !cancelled) await updateLocation(token, loc.lat, loc.lng);
-        const { data } = await listOffers(token);
-        if (cancelled) return;
-        const fresh = data ?? [];
-        setOffers(fresh);
-        void maybeNotifyNewOffers(fresh, money);
       } catch {
-        // transient (network) — the next tick retries
+        // transient — the next tick retries
       }
+    }
+    // Offers and the liveness ping run CONCURRENTLY so neither blocks the other — a
+    // slow 2G location lock no longer delays the offers fetch (the open-from-push lag
+    // was offers running as the third serial round-trip, behind getProfile + this ping).
+    async function tick() {
+      await Promise.all([loadOffers(), pingLocation()]);
     }
     void tick();
     const interval = setInterval(() => void tick(), POLL_MS);
@@ -279,7 +323,7 @@ export default function HomeScreen() {
       cancelled = true;
       clearInterval(interval);
     };
-  }, [online, job, token, bgActive]);
+  }, [online, job, token, bgActive, loadOffers]);
 
   const performAction = useCallback(
     async (a: QueuedAction): Promise<void> => {
@@ -354,17 +398,28 @@ export default function HomeScreen() {
     setBusy(true);
     setLocating(true);
     setError(null);
+    setOffers(null); // show "Checking for offers…" until the first poll lands
+    // Open the offers UI IMMEDIATELY (optimistic) — otherwise a push that lands during
+    // the (possibly multi-second) go-online round-trip is fetched by the notification
+    // listener but stays HIDDEN behind the `online` render gate until getCurrentLocation
+    // + goOnline resolve. That's the "first offer lags, later ones are instant" bug:
+    // the very first offer (driver already available server-side) arrives mid-transition
+    // and only appears once online flips. Reverted below if going online fails.
+    setOnline(true);
+    let confirmedOnline = false;
     try {
       // Permission is the only hard requirement to go online — a fix is not. A slow/
       // cold GPS lock (getCurrentLocation → null) must NOT block going on shift; the
       // background stream supplies position shortly after.
       if (!(await ensureForegroundPermission())) {
+        setOnline(false);
         setError('Location permission is needed to receive offers.');
         return;
       }
       const loc = await getCurrentLocation();
       const state = await goOnline(token, loc ?? undefined);
-      setOnline(state.status !== 'offline');
+      confirmedOnline = state.status !== 'offline';
+      setOnline(confirmedOnline);
       // One-time explainer BEFORE the background prompt: Android 11+ can't grant
       // "Allow all the time" in-app, so without context drivers silently lose
       // background GPS.
@@ -376,6 +431,11 @@ export default function HomeScreen() {
       // OS can still freeze the app, and clears itself once the exemption is real.
       refreshBatteryRisk();
     } catch {
+      // Only drop the optimistic online if go-online itself didn't land — a failure in
+      // the best-effort background-location setup AFTER goOnline succeeded must not flip
+      // a genuinely-online driver back to offline (reconcileShift would re-correct, but
+      // the flash is wrong). reconcileShift on next resume is the backstop either way.
+      if (!confirmedOnline) setOnline(false);
       setError('Could not go online — try again.');
     } finally {
       setBusy(false);
@@ -391,7 +451,7 @@ export default function HomeScreen() {
       await stopBackgroundLocation();
       setOnline(false);
       setBgActive(false);
-      setOffers([]);
+      setOffers(null);
     } catch {
       setError('Could not go offline — try again.');
     } finally {
@@ -406,7 +466,7 @@ export default function HomeScreen() {
       try {
         const delivery = await claimDelivery(token, id);
         setJob(delivery);
-        setOffers([]);
+        setOffers(null);
       } catch (e) {
         // Friendly copy by failure class. Keep the technical detail in the log so a
         // future on-device issue stays visible via `adb logcat` (a diagnostic build is
@@ -441,7 +501,7 @@ export default function HomeScreen() {
   // re-lists it (already in the seen-set, so no duplicate notification).
   const decline = useCallback(
     async (id: string) => {
-      setOffers((prev) => prev.filter((o) => o.id !== id));
+      setOffers((prev) => (prev ?? []).filter((o) => o.id !== id));
       try {
         await declineOffer(token, id);
       } catch {
@@ -648,12 +708,19 @@ export default function HomeScreen() {
                 )}
               </Pressable>
               {online ? (
-                <OffersList
-                  offers={offers}
-                  onClaim={claim}
-                  onDecline={decline}
-                  claimingId={claimingId}
-                />
+                offers === null ? (
+                  <View style={styles.checkingCard}>
+                    <ActivityIndicator color={colors.textFaint} />
+                    <Text style={styles.checkingText}>Checking for offers…</Text>
+                  </View>
+                ) : (
+                  <OffersList
+                    offers={offers}
+                    onClaim={claim}
+                    onDecline={decline}
+                    claimingId={claimingId}
+                  />
+                )
               ) : null}
             </>
           )}
@@ -731,6 +798,18 @@ const styles = StyleSheet.create({
   syncingRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 16 },
   syncing: { color: colors.warning, fontSize: 13 },
   error: { color: colors.danger, fontSize: 14, marginTop: 16 },
+  checkingCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+    backgroundColor: colors.surface,
+    borderRadius: 12,
+    padding: 24,
+    marginTop: 28,
+    ...shadow.card,
+  },
+  checkingText: { color: colors.textFaint, fontSize: 15 },
   batteryBanner: {
     backgroundColor: colors.batteryBg,
     borderColor: colors.batteryBorder,
