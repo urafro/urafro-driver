@@ -787,8 +787,12 @@ export interface components {
             verification_status: "unverified" | "in_review" | "verified" | "suspended" | "banned";
             /** @description 0 none · 1 identity verified · 2 identity + licence (gates payouts/high-value COD). */
             kyc_tier: number;
-            /** @description Max COD cash the driver may carry (minor units), by KYC tier (ADR-003 P2). */
+            /** @description The driver's collateral-backed COD cash limit (minor units) = min(⅓·vehicle estimated value, KYC-tier ceiling, ops override). 0 until ops value a vehicle — an unvalued driver can't carry COD (ADR-002 §10 / C1). */
             cod_cap_minor: number;
+            /** @description COD cash the driver currently holds and owes onward (minor units) (C2). */
+            cod_outstanding_minor: number;
+            /** @description Remaining COD the driver can still accept = max(0, cap − outstanding) (C8). */
+            cod_headroom_minor: number;
             /** @enum {string} */
             status: "available" | "offline" | "busy";
             /** @enum {string} */
