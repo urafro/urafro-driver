@@ -156,7 +156,16 @@ export function markFailed(token: string, id: string, reason?: FailureReason): P
 
 // ── Profile + vehicle (ADR-003 P0) ────────────────────────────────────────────
 // Types come straight from the regenerated contract so the client can't drift.
-export type DriverProfile = Schemas['DriverProfile'];
+// Augmented: the server returns the COD headroom fields below since urafro-next
+// PR #54 (P0 Slice 2 C8), but the vendored contract isn't re-vendored yet — so
+// they're optional here rather than hand-edited into the generated api.gen.ts.
+// NOTE: `cod_cap_minor` (in the contract) now means the COLLATERAL-backed cap
+// = min(⅓·vehicle value, KYC ceiling, ops override) — 0 until a vehicle is valued.
+// TODO: drop this augmentation once contract/v1.yaml is re-vendored with C8.
+export type DriverProfile = Schemas['DriverProfile'] & {
+  cod_outstanding_minor?: number;
+  cod_headroom_minor?: number;
+};
 export type DriverVehicle = Schemas['DriverVehicle'];
 export type VehicleType = DriverVehicle['type'];
 

@@ -380,6 +380,31 @@ export default function ProfileScreen() {
         </View>
       ) : null}
 
+      {/* Cash-on-delivery limit (C8). Headroom is the actionable figure; a $0 cap
+          (no valued vehicle yet) gets an explainer, not a bare "$0.00". */}
+      {profile ? (
+        <View style={styles.card}>
+          <Text style={styles.cardTitle}>Cash on delivery</Text>
+          {profile.cod_cap_minor > 0 ? (
+            <>
+              <Row label="Cash you can still carry" value={money(profile.cod_headroom_minor)} color={colors.cod} />
+              <Text style={styles.moneyHint}>
+                Your COD limit is {money(profile.cod_cap_minor)} — it rises as ops value your vehicle and your
+                verification tier goes up.
+              </Text>
+            </>
+          ) : (
+            <View style={styles.codLocked}>
+              <Feather name="alert-circle" size={18} color={colors.codText} />
+              <Text style={styles.codLockedText}>
+                You can&apos;t carry cash-on-delivery jobs yet. Ask ops to value your vehicle so you can start
+                carrying COD.
+              </Text>
+            </View>
+          )}
+        </View>
+      ) : null}
+
       {OPS_WHATSAPP ? (
         <Pressable style={styles.ghostBtn} onPress={() => void Linking.openURL(waUrl(OPS_WHATSAPP))}>
           <Text style={styles.ghostBtnText}>Contact ops on WhatsApp</Text>
@@ -476,6 +501,8 @@ const styles = StyleSheet.create({
   moneyLabel: { color: colors.textMuted, fontSize: 15 },
   moneyValue: { fontSize: 15, fontWeight: '700' },
   moneyHint: { color: colors.textFaint, fontSize: 12, marginTop: 8 },
+  codLocked: { flexDirection: 'row', alignItems: 'flex-start', gap: 8, backgroundColor: colors.codBg, borderRadius: 8, padding: 12 },
+  codLockedText: { flex: 1, color: colors.codText, fontSize: 14 },
 
   ghostBtn: {
     minHeight: 48,
