@@ -22,6 +22,9 @@ export interface QueuedAction {
    *  verified handover; if the server rejects it then (400), the flusher completes
    *  manually instead — see performAction in HomeScreen. */
   podPin?: string;
+  /** Claimed PoD method (e.g. 'photo' once the picture is uploaded). Rides the replay
+   *  so a queued photo-delivery still stamps the photo key; defaults to 'manual'. */
+  method?: string;
 }
 
 const KEY = 'pending_actions';

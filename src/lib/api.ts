@@ -137,6 +137,17 @@ export function markDelivered(
   });
 }
 
+/** Presigned PUT to upload a proof-of-delivery photo for an active job (ADR-041/R11).
+ *  The driver PUTs the bytes to `upload.url`, then marks delivered with method='photo'
+ *  (the server stamps the deterministic key). 503 when photo storage is unconfigured. */
+export interface PodPhotoUpload {
+  storage_key: string;
+  upload: { url: string; method: 'PUT'; expires_in: number };
+}
+export function getPodPhotoUrl(token: string, id: string): Promise<PodPhotoUpload> {
+  return request(`/driver/deliveries/${id}/pod-photo-url`, { method: 'POST', token });
+}
+
 export type FailureReason =
   | 'customer_unreachable'
   | 'wrong_address'

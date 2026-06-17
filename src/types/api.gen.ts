@@ -618,6 +618,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/driver/deliveries/{id}/pod-photo-url": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Get a presigned URL to upload a proof-of-delivery photo
+         * @description Mint a short-lived presigned PUT URL so the assigned courier uploads a proof-of-delivery photo directly to private object storage. The driver then completes the job with `method: photo`. Only the assigned courier, only while the job is active. 503 when photo storage is not configured.
+         */
+        post: operations["driverPodPhotoUploadUrl"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export interface webhooks {
     deliveryEvent: {
@@ -729,6 +749,8 @@ export interface components {
             failure_reason?: components["schemas"]["FailureReason"] | null;
             /** @description At-door proof-of-delivery PIN, generated at intake. **Tenant surfaces only** (create response, GET, list) — relay it to the recipient; it is never present in driver payloads or webhook bodies. The driver submits it on delivered for a verified (`otp`) handover. */
             pod_pin?: string | null;
+            /** @description Short-lived signed URL to view the proof-of-delivery photo (present when completed with `method: photo`). **Tenant surfaces only**; null otherwise. */
+            pod_photo_url?: string | null;
             /** Format: date-time */
             created_at?: string;
             /** Format: date-time */
@@ -2042,6 +2064,46 @@ export interface operations {
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
             409: components["responses"]["Conflict"];
+        };
+    };
+    driverPodPhotoUploadUrl: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Presigned upload for the PoD photo. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        storage_key: string;
+                        upload: {
+                            url: string;
+                            /** @enum {string} */
+                            method: "PUT";
+                            expires_in: number;
+                        };
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            /** @description Photo storage is not configured. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
         };
     };
     onDeliveryEvent: {
