@@ -10,6 +10,7 @@ import {
   View,
 } from 'react-native';
 import { ApiError, requestOtp, verifyOtp } from '../lib/api';
+import { shouldRetry } from '../lib/queue';
 import { toE164 } from '../lib/phone';
 import { useSession } from '../state/session';
 import { colors, PILL } from '../theme';
@@ -37,7 +38,19 @@ export default function LoginScreen() {
     setBusy(true);
     setError(null);
     try {
-      await requestOtp(e164);
+      try {
+        await requestOtp(e164);
+      } catch (e) {
+        // The backend (or its DB) may have been idle: the first request wakes it but
+        // can time out on the cold start. Retry ONCE after a beat — the retry hits a
+        // warm server. Only for TRANSIENT failures (timeout / 5xx); a 4xx like 429
+        // (rate-limited) is terminal and rethrows immediately.
+        if (!shouldRetry(e)) throw e;
+        setError('Waking things up — one moment…');
+        await new Promise((r) => setTimeout(r, 2000));
+        await requestOtp(e164);
+      }
+      setError(null);
       setPhone(e164);
       setStep('code');
     } catch (e) {
