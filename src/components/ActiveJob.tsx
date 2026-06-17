@@ -1,7 +1,9 @@
 import { Feather } from '@expo/vector-icons';
 import { useEffect, useState } from 'react';
 import { ActivityIndicator, Linking, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
-import type { DriverDelivery, FailureReason } from '../lib/api';
+import * as ImagePicker from 'expo-image-picker';
+import * as FileSystem from 'expo-file-system/legacy';
+import { ApiError, getPodPhotoUrl, type DriverDelivery, type FailureReason } from '../lib/api';
 import { watchLocation, type Coords } from '../lib/location';
 import { metersBetween } from '../lib/geo';
 import { money, placeLabel } from '../lib/format';
@@ -16,6 +18,8 @@ export interface ActionExtra {
   note?: string;
   /** At-door delivery code read out by the customer (verified handover). */
   podPin?: string;
+  /** Claimed PoD method — set to 'photo' once a delivery photo has been uploaded. */
+  method?: string;
 }
 
 // The actions available from each status (mirrors the platform state machine).
@@ -63,11 +67,14 @@ const STEP_DONE: Record<string, number> = {
 // Call), the other stop for context, and the next lifecycle step(s).
 export default function ActiveJob({
   job,
+  token,
   onAction,
   busy,
   actionError,
 }: {
   job: DriverDelivery;
+  /** Driver bearer token — needed to mint the PoD-photo upload URL directly. */
+  token: string;
   onAction: (to: LifecycleAction, extra?: ActionExtra) => void;
   busy: boolean;
   /** Result of the driver's last lifecycle tap (layer-1 action feedback) —
@@ -85,6 +92,10 @@ export default function ActiveJob({
   const [note, setNote] = useState('');
   const [codInput, setCodInput] = useState('');
   const [pinInput, setPinInput] = useState('');
+  // Photo-PoD capture is a separate async (camera + R2 upload) BEFORE the delivered
+  // call, so it owns its own busy/error state distinct from the lifecycle `busy` prop.
+  const [uploading, setUploading] = useState(false);
+  const [photoError, setPhotoError] = useState<string | null>(null);
 
   // The driver's own position for the route map. Watched HERE (this screen only shows
   // on shift, so location permission is granted) rather than threaded from HomeScreen,
@@ -124,9 +135,10 @@ export default function ActiveJob({
   // The deliver panel deliberately STAYS OPEN here: on success the whole card
   // unmounts (the job clears), and on a wrong-code 400 the driver needs the form
   // (with their typed code) still in front of them to retry.
-  const confirmDelivered = (withPin: boolean) => {
+  // The note + COD captured in the panel — shared by every completion path
+  // (code / photo / manual).
+  const buildExtra = (): ActionExtra => {
     const extra: ActionExtra = {};
-    if (withPin) extra.podPin = pinInput;
     if (note.trim()) extra.note = note.trim().slice(0, 500);
     if (codDue > 0) {
       // Parse dollars → minor units; an unparseable edit falls back to the full
@@ -134,9 +146,51 @@ export default function ActiveJob({
       const parsed = Math.round(Number.parseFloat(codInput.replace(',', '.')) * 100);
       extra.codCollectedMinor = Number.isFinite(parsed) && parsed >= 0 ? parsed : codDue;
     }
+    return extra;
+  };
+  const confirmDelivered = (withPin: boolean) => {
+    const extra = buildExtra();
+    if (withPin) extra.podPin = pinInput;
     onAction('delivered', extra);
   };
+  // Photo proof: snap a picture, upload it straight to private storage, then complete
+  // with method='photo' (NO pin — the photo is the proof, so the server stamps the
+  // photo key rather than upgrading to 'otp'). Capture+upload need a live connection,
+  // so this path never rides the offline queue; on failure we keep the panel open.
+  const takePhoto = async () => {
+    const id = job.id;
+    if (!id) return;
+    setPhotoError(null);
+    try {
+      const perm = await ImagePicker.requestCameraPermissionsAsync();
+      if (!perm.granted) {
+        setPhotoError('Allow camera access to add a delivery photo.');
+        return;
+      }
+      const shot = await ImagePicker.launchCameraAsync({ quality: 0.5 }); // compress for 2G
+      if (shot.canceled || shot.assets.length === 0) return;
+      setUploading(true);
+      const presign = await getPodPhotoUrl(token, id); // 503 if storage off
+      // Native binary PUT (OkHttp/NSURLSession) — a JS fetch(uri).blob() PUT drops the
+      // body on Android, so uploadAsync with BINARY_CONTENT is the robust route.
+      const put = await FileSystem.uploadAsync(presign.upload.url, shot.assets[0].uri, {
+        httpMethod: 'PUT',
+        uploadType: FileSystem.FileSystemUploadType.BINARY_CONTENT,
+      });
+      if (put.status < 200 || put.status >= 300) throw new Error(`upload ${put.status}`);
+      onAction('delivered', { ...buildExtra(), method: 'photo' });
+    } catch (e) {
+      setPhotoError(
+        e instanceof ApiError && e.status === 503
+          ? 'Photo proof isn’t enabled yet — use the code or complete without it.'
+          : 'Couldn’t upload the photo — check your connection and try again.',
+      );
+    } finally {
+      setUploading(false);
+    }
+  };
   const pinReady = /^\d{4}$/.test(pinInput);
+  const blocked = busy || uploading;
 
   // Before pickup the driver heads to the merchant; after, to the customer.
   const goingToPickup = status === 'assigned';
@@ -342,18 +396,36 @@ export default function ActiveJob({
             maxLength={500}
           />
           <Pressable
-            style={[styles.btn, styles.primary, (busy || !pinReady) && styles.busy]}
-            disabled={busy || !pinReady}
+            style={[styles.btn, styles.primary, (blocked || !pinReady) && styles.busy]}
+            disabled={blocked || !pinReady}
             onPress={() => confirmDelivered(true)}
           >
             {busy ? <ActivityIndicator color={colors.btnPrimaryText} /> : <Text style={styles.btnText}>Confirm delivered</Text>}
           </Pressable>
-          {/* Manual fallback — the customer may not have the code (older receipt,
-              phone dead). Books the same completion, just unverified ('manual'). */}
-          <Pressable style={styles.panelCancel} disabled={busy} onPress={() => confirmDelivered(false)}>
-            <Text style={styles.panelCancelText}>No code? Complete without it</Text>
+          {/* Photo proof — an alternative to the code: snap a picture of the handover,
+              which completes the delivery (method='photo'). The merchant can view it. */}
+          <Text style={styles.orHint}>or, no code?</Text>
+          <Pressable
+            style={[styles.btn, styles.photoBtn, blocked && styles.busy]}
+            disabled={blocked}
+            onPress={takePhoto}
+          >
+            {uploading ? (
+              <ActivityIndicator color={colors.textPrimary} />
+            ) : (
+              <View style={styles.photoBtnInner}>
+                <Feather name="camera" size={18} color={colors.textPrimary} />
+                <Text style={styles.photoBtnText}>Take delivery photo</Text>
+              </View>
+            )}
           </Pressable>
-          <Pressable style={styles.panelCancel} onPress={() => setPanel(null)}>
+          {photoError ? <Text style={styles.actionError}>{photoError}</Text> : null}
+          {/* Manual fallback — no code and no photo (older receipt, phone dead).
+              Books the same completion, just unverified ('manual'). */}
+          <Pressable style={styles.panelCancel} disabled={blocked} onPress={() => confirmDelivered(false)}>
+            <Text style={styles.panelCancelText}>Complete without proof</Text>
+          </Pressable>
+          <Pressable style={styles.panelCancel} disabled={uploading} onPress={() => setPanel(null)}>
             <Text style={styles.panelCancelText}>Cancel</Text>
           </Pressable>
         </View>
@@ -513,6 +585,12 @@ const styles = StyleSheet.create({
   btn: { minHeight: 48, borderRadius: PILL, alignItems: 'center', justifyContent: 'center', paddingVertical: 14 },
   primary: { backgroundColor: colors.btnPrimaryBg },
   danger: { backgroundColor: 'transparent', borderWidth: 1, borderColor: colors.dangerBorder },
+  // Photo-proof button: a ghost (bordered) button so it reads as the alternative
+  // path, not competing with the gold primary "Confirm delivered".
+  orHint: { color: colors.textFaint, fontSize: 14, textAlign: 'center', marginTop: 2 },
+  photoBtn: { backgroundColor: 'transparent', borderWidth: 1, borderColor: colors.textPrimary },
+  photoBtnInner: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  photoBtnText: { color: colors.textPrimary, fontSize: 16, fontWeight: '700' },
   busy: { opacity: 0.6 },
   btnText: { color: colors.btnPrimaryText, fontSize: 16, fontWeight: '700' },
   dangerText: { color: colors.danger },

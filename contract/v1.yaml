@@ -995,6 +995,46 @@ paths:
         '404': { $ref: '#/components/responses/NotFound' }
         '409': { $ref: '#/components/responses/Conflict' }
 
+  /driver/deliveries/{id}/pod-photo-url:
+    post:
+      tags: [Driver]
+      summary: Get a presigned URL to upload a proof-of-delivery photo
+      description: >
+        Mint a short-lived presigned PUT URL so the assigned courier uploads a
+        proof-of-delivery photo directly to private object storage. The driver then
+        completes the job with `method: photo`. Only the assigned courier, only while
+        the job is active. 503 when photo storage is not configured.
+      operationId: driverPodPhotoUploadUrl
+      security:
+        - DriverBearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '201':
+          description: Presigned upload for the PoD photo.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [storage_key, upload]
+                properties:
+                  storage_key: { type: string }
+                  upload:
+                    type: object
+                    required: [url, method, expires_in]
+                    properties:
+                      url: { type: string }
+                      method: { type: string, enum: [PUT] }
+                      expires_in: { type: integer }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '503':
+          description: Photo storage is not configured.
+
 # OpenAPI 3.1 webhooks — events the platform POSTs to a tenant's registered URL.
 # All are HMAC-signed (X-Delivery-Signature); tenants verify with their secret.
 webhooks:
@@ -1174,6 +1214,11 @@ components:
             only** (create response, GET, list) — relay it to the recipient; it is
             never present in driver payloads or webhook bodies. The driver submits
             it on delivered for a verified (`otp`) handover.
+        pod_photo_url:
+          type: [string, "null"]
+          description: >-
+            Short-lived signed URL to view the proof-of-delivery photo (present when
+            completed with `method: photo`). **Tenant surfaces only**; null otherwise.
         created_at: { type: string, format: date-time }
         updated_at: { type: string, format: date-time }
 

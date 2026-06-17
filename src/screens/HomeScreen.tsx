@@ -355,7 +355,7 @@ export default function HomeScreen({ focused }: { focused: boolean }) {
       else if (a.action === 'delivered') {
         try {
           await markDelivered(token, a.deliveryId, {
-            method: 'manual',
+            method: a.method ?? 'manual',
             note: a.note,
             cod_collected_minor: a.codCollectedMinor,
             ...(a.podPin ? { pod_pin: a.podPin } : {}),
@@ -550,6 +550,7 @@ export default function HomeScreen({ focused }: { focused: boolean }) {
         codCollectedMinor: extra?.codCollectedMinor,
         note: extra?.note,
         podPin: extra?.podPin,
+        method: extra?.method,
       };
       setBusy(true);
       setError(null);
@@ -559,7 +560,7 @@ export default function HomeScreen({ focused }: { focused: boolean }) {
         else if (to === 'in_transit') updated = await markInTransit(token, id);
         else if (to === 'delivered')
           updated = await markDelivered(token, id, {
-            method: 'manual',
+            method: extra?.method ?? 'manual',
             note: extra?.note,
             cod_collected_minor: extra?.codCollectedMinor,
             ...(extra?.podPin ? { pod_pin: extra.podPin } : {}),
@@ -667,7 +668,7 @@ export default function HomeScreen({ focused }: { focused: boolean }) {
               tap, so it renders INSIDE the card next to what they touched (layer-1
               action feedback) — not at the bottom of the scroll where the keyboard
               hides it. */}
-          <ActiveJob job={job} onAction={act} busy={busy} actionError={error} />
+          <ActiveJob job={job} token={token} onAction={act} busy={busy} actionError={error} />
           {/* Availability stays visible but locked mid-delivery — going offline on a
               job isn't allowed, and hiding the control read as "where did it go?". */}
           <View style={[styles.toggle, styles.offBtn, styles.busy, styles.toggleRow]}>

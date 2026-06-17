@@ -28,7 +28,8 @@
         "android.permission.FOREGROUND_SERVICE_LOCATION",
         "android.permission.RECEIVE_BOOT_COMPLETED",
         "android.permission.WAKE_LOCK",
-        "android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS"
+        "android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS",
+        "android.permission.CAMERA"
       ]
     },
     "androidStatusBar": {
@@ -60,7 +61,8 @@
       [
         "expo-image-picker",
         {
-          "photosPermission": "urAfro Driver accesses your photos so you can upload your ID and verification documents."
+          "photosPermission": "urAfro Driver accesses your photos so you can upload your ID and verification documents.",
+          "cameraPermission": "urAfro Driver uses your camera to take a delivery photo as proof of delivery."
         }
       ]
     ],
