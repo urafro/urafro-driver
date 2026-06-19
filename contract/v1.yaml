@@ -1201,6 +1201,16 @@ components:
         collect_minor:
           type: [integer, "null"]
           description: Cash-on-delivery amount (minor units); null = prepaid / nothing to collect.
+        opening_price_minor:
+          type: [integer, "null"]
+          description: >-
+            Customer-named opening price (minor units) when this is an AUCTION (ADR-036); null on a
+            fixed-price delivery. The offered courier ACCEPTs or COUNTERs against it (POST .../bid).
+        ceiling_minor:
+          type: [integer, "null"]
+          description: >-
+            Fraud-guard ceiling (minor units, 10× the cost estimate) a courier's COUNTER may not
+            exceed on an auction (ADR-036); null on a fixed-price delivery.
         failure_reason:
           oneOf:
             - { $ref: '#/components/schemas/FailureReason' }
@@ -1221,6 +1231,17 @@ components:
             completed with `method: photo`). **Tenant surfaces only**; null otherwise.
         created_at: { type: string, format: date-time }
         updated_at: { type: string, format: date-time }
+
+    DeliveryBid:
+      type: object
+      description: A courier's sealed bid on a customer-named auction (ADR-036).
+      properties:
+        id: { type: string, format: uuid }
+        price_minor:
+          type: integer
+          description: The bid price (minor units) — ACCEPT@opening, or the courier's counter.
+        bid_type: { type: string, enum: [accept, counter] }
+        expires_at: { type: string, format: date-time }
 
     FailureReason:
       type: string
