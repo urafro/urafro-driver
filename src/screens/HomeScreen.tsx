@@ -92,6 +92,8 @@ export default function HomeScreen({ focused }: { focused: boolean }) {
   // accept/counter buttons. Local-only: a bid doesn't assign the job (the customer/auto-clear does
   // later), so until then the offer still lists; this stops a re-bid and clarifies the state.
   const [bidSentIds, setBidSentIds] = useState<ReadonlySet<string>>(new Set());
+  // Debounce the resume handler against Samsung's flurry of AppState 'active' transitions.
+  const lastResumeRef = useRef(0);
   const [pending, setPending] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [earnings, setEarnings] = useState<Earnings | null>(null);
@@ -196,6 +198,10 @@ export default function HomeScreen({ focused }: { focused: boolean }) {
   // foregrounded one. Offer refresh is SILENT (the push already notified the driver).
   const onPush = useCallback(
     (data: PushData) => {
+      // Diagnostic: confirms a push reached the JS layer (foreground-receive or tap) + its type,
+      // so the next device test shows whether a foregrounded offer push fires at all (the latency
+      // log had only 'resume' loads — i.e. the app was backgrounded). Cheap; remove once confirmed.
+      console.log(`[push] received type=${data.type ?? 'none'}`);
       if (data.type === 'assigned' && typeof data.deliveryId === 'string') {
         void openAssignedJob(data.deliveryId);
       } else {
@@ -251,12 +257,18 @@ export default function HomeScreen({ focused }: { focused: boolean }) {
     refreshBatteryRisk();
     refreshNotifPermission();
     const sub = AppState.addEventListener('change', (state) => {
-      if (state === 'active') {
-        void reconcileShift().catch(() => {});
-        void loadOffers(false, 4, 'resume');
-        refreshBatteryRisk();
-        refreshNotifPermission();
-      }
+      if (state !== 'active') return;
+      // Samsung emits a flurry of 'active' transitions (AOD / lock-screen / shade), which fired the
+      // resume reconcile+refetch ~40× in 5s — a 2G network storm that ALSO delayed `online` flipping
+      // (40 competing getProfile calls), and the offers list is gated behind `online`, so it delayed
+      // the very card the driver was waiting for. Debounce to one resume per 2s.
+      const now = Date.now();
+      if (now - lastResumeRef.current < 2000) return;
+      lastResumeRef.current = now;
+      void reconcileShift().catch(() => {});
+      void loadOffers(false, 4, 'resume');
+      refreshBatteryRisk();
+      refreshNotifPermission();
     });
     return () => sub.remove();
   }, [token, reconcileShift, loadOffers, refreshBatteryRisk, refreshNotifPermission]);
