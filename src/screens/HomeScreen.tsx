@@ -47,7 +47,9 @@ import {
   maybeNotifyNewOffers,
   markOffersSeen,
   onNotificationReceived,
+  onNotificationResponse,
   notificationsEnabled,
+  type PushData,
 } from '../lib/notifications';
 import { saveActiveJob, loadActiveJob, clearActiveJob } from '../lib/session';
 import { money, placeLabel } from '../lib/format';
@@ -169,14 +171,49 @@ export default function HomeScreen({ focused }: { focused: boolean }) {
     [token],
   );
 
-  // A new-offer push arriving while the app is in the FOREGROUND should surface the
-  // offer instantly, not wait for the next 8s poll. Refresh SILENTLY — the push
-  // already notified the driver, so notifying again would double up.
+  // Fetch + open a job the driver just WON via a bid (ADR-036). The auction accept is async with
+  // no claim-style response, so the 'assigned' push (carrying the deliveryId) is how the app learns;
+  // we fetch the delivery and surface it. Best-effort — the active-job poll then keeps it fresh.
+  const openAssignedJob = useCallback(
+    async (deliveryId: string) => {
+      try {
+        const d = await getDelivery(token, deliveryId);
+        if (d.status === 'assigned' || d.status === 'picked_up' || d.status === 'in_transit') {
+          setJob(d);
+          setOnline(true);
+          setBgActive(await startBackgroundLocation());
+        }
+      } catch {
+        // best-effort — the active-job poll / reconcile picks it up
+      }
+    },
+    [token],
+  );
+
+  // Route a push (received in FOREGROUND or TAPPED from the tray): a bid-accepted push opens the
+  // won job; anything else (a new offer) refreshes the offers list instantly rather than waiting
+  // for the 8s poll. Both paths reach here so a backgrounded win surfaces on tap, not only a
+  // foregrounded one. Offer refresh is SILENT (the push already notified the driver).
+  const onPush = useCallback(
+    (data: PushData) => {
+      if (data.type === 'assigned' && typeof data.deliveryId === 'string') {
+        void openAssignedJob(data.deliveryId);
+      } else {
+        void loadOffers(true, 4, 'push');
+      }
+    },
+    [openAssignedJob, loadOffers],
+  );
+
   useEffect(() => {
     if (!token) return;
-    const sub = onNotificationReceived(() => void loadOffers(true, 4, 'push'));
-    return () => sub.remove();
-  }, [token, loadOffers]);
+    const received = onNotificationReceived(onPush);
+    const tapped = onNotificationResponse(onPush);
+    return () => {
+      received.remove();
+      tapped.remove();
+    };
+  }, [token, onPush]);
 
   // The Shift screen stays MOUNTED (hidden) while the driver browses other tabs, so
   // an offer that lands meanwhile is only picked up by the next poll tick — switching
