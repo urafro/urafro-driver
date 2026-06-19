@@ -78,11 +78,19 @@ export async function notifyNewOffer(title: string, body: string): Promise<void>
   }
 }
 
-/** Fire `onReceive` whenever a notification arrives while the app is in the
- *  FOREGROUND (e.g. a new-offer push). Lets the offers list refresh the instant a
- *  push lands instead of waiting for the next poll tick. Returns a subscription. */
-export function onNotificationReceived(onReceive: () => void): { remove: () => void } {
-  return Notifications.addNotificationReceivedListener(() => onReceive());
+/** The server's push `data` payload (Expo notification content data). `type` routes the
+ *  handler — 'offer' → refresh offers; 'assigned' → fetch + open the won job (carries deliveryId). */
+export type PushData = { type?: string; deliveryId?: string };
+
+function pushData(content: { data?: unknown } | undefined): PushData {
+  return (content?.data ?? {}) as PushData;
+}
+
+/** Fire `onReceive` whenever a notification arrives while the app is in the FOREGROUND (a new-offer
+ *  or bid-accepted push). Passes the push `data` so the handler can route on `type`. Lets the UI
+ *  react the instant a push lands instead of waiting for the next poll tick. Returns a subscription. */
+export function onNotificationReceived(onReceive: (data: PushData) => void): { remove: () => void } {
+  return Notifications.addNotificationReceivedListener((n) => onReceive(pushData(n.request.content)));
 }
 
 /** Whether the OS notification permission is currently granted. Used to surface a
@@ -99,13 +107,15 @@ export async function notificationsEnabled(): Promise<boolean> {
 /** Fire `onTap` when the driver TAPS a notification (warm via a listener, and cold via
  *  the launch response), so opening from a push lands them on offers. Returns a
  *  subscription; also resolves any cold-start tap once. */
-export function onNotificationResponse(onTap: () => void): { remove: () => void } {
+export function onNotificationResponse(onTap: (data: PushData) => void): { remove: () => void } {
   void Notifications.getLastNotificationResponseAsync()
     .then((r) => {
-      if (r) onTap();
+      if (r) onTap(pushData(r.notification.request.content));
     })
     .catch(() => {});
-  return Notifications.addNotificationResponseReceivedListener(() => onTap());
+  return Notifications.addNotificationResponseReceivedListener((r) =>
+    onTap(pushData(r.notification.request.content)),
+  );
 }
 
 // ── Shared new-offer detection ────────────────────────────────────────────────
