@@ -1,22 +1,29 @@
 import { useEffect, useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import type { Offer } from '../lib/api';
+import { driverNetMinor, parseCounterMinor, isCounterWithinCeiling } from '../lib/auction';
 import { money, placeLabel, placeLabelDetailed, pickupDistanceLabel, tripLabel, secondsUntil } from '../lib/format';
 import { colors, shadow, PILL } from '../theme';
 
-// Live list of nearby job offers. Each card leads with the driver's payout (the
-// number that decides the job), then the dropoff landmark, the pickup zone, any
-// cash to collect, and a live expiry countdown that turns amber in the last minute.
+// Live list of nearby job offers. A FIXED-PRICE job leads with the driver's payout and is CLAIMED
+// (instant assign). An AUCTION job (ADR-036, customer-named price) leads with what the customer
+// offered and is BID on — ACCEPT their price, or COUNTER your own (≤ the 10× ceiling); the job is
+// assigned later when the customer / auto-clear accepts a bid, so a bid shows "offer sent" rather
+// than opening the active-job screen.
 export default function OffersList({
   offers,
   onClaim,
+  onBid,
   onDecline,
-  claimingId,
+  actingId,
+  bidSentIds,
 }: {
   offers: Offer[];
   onClaim: (id: string) => void;
+  onBid: (id: string, type: 'accept' | 'counter', priceMinor?: number) => void;
   onDecline: (id: string) => void;
-  claimingId: string | null;
+  actingId: string | null;
+  bidSentIds: ReadonlySet<string>;
 }) {
   const [now, setNow] = useState(Date.now());
   useEffect(() => {
@@ -35,74 +42,187 @@ export default function OffersList({
 
   return (
     <View style={styles.list}>
-      {offers.map((offer) => {
-        const id = offer.id;
-        if (!id) return null;
-        const expires = secondsUntil(offer.offer_expires_at, now);
-        const urgent = expires < 60;
-        const expired = expires <= 0; // dead offer — server 409s a claim; the next poll drops it
-        const claiming = claimingId === id;
-        // The driver's cut (ADR-002 A.3) — never quote more than they earn.
-        // fee_minor fallback only covers a stale server payload.
-        const payout = money(offer.driver_fee_minor ?? offer.fee_minor);
-        // Dropoff leads the card; show the landmark AND address when both exist.
-        const drop = placeLabelDetailed(offer.dropoff);
-        // Two different straight-line measurements (driver→pickup vs pickup→dropoff)
-        // shown together so "At pickup · 1.1 km trip" reads coherently.
-        const meta = [pickupDistanceLabel(offer.pickup_distance_km), tripLabel(offer.trip_km)]
-          .filter(Boolean)
-          .join(' · ');
-        return (
-          <View key={id} style={styles.card}>
-            {/* Header: payout big, countdown pill (amber under 60s) */}
-            <View style={styles.headerRow}>
-              <View style={styles.payoutWrap}>
-                <Text style={styles.payout}>{payout}</Text>
-              </View>
-              <View style={[styles.timerPill, urgent && styles.timerPillUrgent]}>
-                <Text style={[styles.timerText, urgent && styles.timerTextUrgent]}>{expires}s</Text>
-              </View>
+      {offers.map((offer) =>
+        offer.id ? (
+          <OfferCard
+            key={offer.id}
+            offer={offer}
+            now={now}
+            onClaim={onClaim}
+            onBid={onBid}
+            onDecline={onDecline}
+            acting={actingId != null}
+            actingThis={actingId === offer.id}
+            bidSent={bidSentIds.has(offer.id)}
+          />
+        ) : null,
+      )}
+    </View>
+  );
+}
+
+function OfferCard({
+  offer,
+  now,
+  onClaim,
+  onBid,
+  onDecline,
+  acting,
+  actingThis,
+  bidSent,
+}: {
+  offer: Offer;
+  now: number;
+  onClaim: (id: string) => void;
+  onBid: (id: string, type: 'accept' | 'counter', priceMinor?: number) => void;
+  onDecline: (id: string) => void;
+  acting: boolean;
+  actingThis: boolean;
+  bidSent: boolean;
+}) {
+  const id = offer.id as string;
+  const expires = secondsUntil(offer.offer_expires_at, now);
+  const urgent = expires < 60;
+  const expired = expires <= 0; // dead offer — server 409s a claim/bid; the next poll drops it
+  const isAuction = offer.opening_price_minor != null;
+  const opening = offer.opening_price_minor ?? 0;
+  const ceiling = offer.ceiling_minor ?? null;
+
+  // The driver's NET share of a gross fare (auction shows real earnings, not the cost estimate);
+  // null when no positive fee anchors the ratio (then we show gross only). See lib/auction.
+  const netOf = (grossMinor: number): number | null =>
+    driverNetMinor(grossMinor, offer.fee_minor, offer.driver_fee_minor);
+
+  // Fixed-price payout = the driver's cut (fee_minor fallback covers a stale payload).
+  const fixedPayout = money(offer.driver_fee_minor ?? offer.fee_minor);
+  const openingNet = netOf(opening);
+
+  const drop = placeLabelDetailed(offer.dropoff);
+  const meta = [pickupDistanceLabel(offer.pickup_distance_km), tripLabel(offer.trip_km)].filter(Boolean).join(' · ');
+
+  // Per-card counter state (an auction job lets the driver name their own fare).
+  const [countering, setCountering] = useState(false);
+  const [counterText, setCounterText] = useState('');
+  const counterMinor = parseCounterMinor(counterText);
+  const counterValid = isCounterWithinCeiling(counterMinor, ceiling);
+  const counterTooHigh = counterMinor != null && ceiling != null && counterMinor > ceiling;
+  const counterNet = counterMinor != null ? netOf(counterMinor) : null;
+
+  return (
+    <View style={styles.card}>
+      {/* Header: the customer's offered price (auction) or the driver's payout (fixed). */}
+      <View style={styles.headerRow}>
+        <View style={styles.payoutWrap}>
+          {isAuction ? (
+            <View>
+              <Text style={styles.offerLabel}>Customer offers</Text>
+              <Text style={styles.payout}>{money(opening)}</Text>
+              {openingNet != null ? <Text style={styles.netHint}>You earn ~{money(openingNet)}</Text> : null}
             </View>
+          ) : (
+            <Text style={styles.payout}>{fixedPayout}</Text>
+          )}
+        </View>
+        <View style={[styles.timerPill, urgent && styles.timerPillUrgent]}>
+          <Text style={[styles.timerText, urgent && styles.timerTextUrgent]}>{expires}s</Text>
+        </View>
+      </View>
 
-            {/* Dropoff leads — the driver's main decision; landmark over address,
-                with the address as a supporting line when both exist. */}
-            <Text style={styles.dropoff} numberOfLines={2}>{drop.primary}</Text>
-            {drop.secondary ? (
-              <Text style={styles.dropoffSub} numberOfLines={1}>{drop.secondary}</Text>
-            ) : null}
-            <Text style={styles.pickup} numberOfLines={1}>Pickup · {placeLabel(offer.pickup)}</Text>
-            {meta ? <Text style={styles.trip}>{meta}</Text> : null}
+      <Text style={styles.dropoff} numberOfLines={2}>{drop.primary}</Text>
+      {drop.secondary ? <Text style={styles.dropoffSub} numberOfLines={1}>{drop.secondary}</Text> : null}
+      <Text style={styles.pickup} numberOfLines={1}>Pickup · {placeLabel(offer.pickup)}</Text>
+      {meta ? <Text style={styles.trip}>{meta}</Text> : null}
 
-            {offer.collect_minor ? (
-              <View style={styles.codRow}>
-                <View style={styles.codChip}>
-                  <Text style={styles.codText}>Collect {money(offer.collect_minor)} cash</Text>
-                </View>
-              </View>
-            ) : null}
-
-            <View style={styles.actions}>
-              <Pressable
-                style={[styles.accept, (claimingId != null || expired) && styles.disabled]}
-                onPress={() => onClaim(id)}
-                disabled={claimingId != null || expired}
-              >
-                <Text style={styles.acceptText}>
-                  {expired ? 'Expired' : claiming ? 'Claiming…' : `Accept — ${payout}`}
-                </Text>
-              </Pressable>
-              {/* Decline (ADR-002 B): the job is never re-offered to this driver. */}
-              <Pressable
-                style={[styles.pass, claimingId != null && styles.disabled]}
-                onPress={() => onDecline(id)}
-                disabled={claimingId != null}
-              >
-                <Text style={styles.passText}>Pass</Text>
-              </Pressable>
-            </View>
+      {offer.collect_minor ? (
+        <View style={styles.codRow}>
+          <View style={styles.codChip}>
+            <Text style={styles.codText}>Collect {money(offer.collect_minor)} cash</Text>
           </View>
-        );
-      })}
+        </View>
+      ) : null}
+
+      <View style={styles.actions}>
+        {!isAuction ? (
+          // Fixed-price: claim = instant assign.
+          <Pressable
+            style={[styles.accept, (acting || expired) && styles.disabled]}
+            onPress={() => onClaim(id)}
+            disabled={acting || expired}
+          >
+            <Text style={styles.acceptText}>{expired ? 'Expired' : actingThis ? 'Claiming…' : `Accept — ${fixedPayout}`}</Text>
+          </Pressable>
+        ) : bidSent ? (
+          // Auction: this driver has bid — assigned later if the customer / auto-clear accepts it.
+          <View style={styles.bidSent}>
+            <Text style={styles.bidSentText}>✓ Offer sent — waiting for the customer</Text>
+          </View>
+        ) : countering ? (
+          // Auction: name your own fare (≤ the ceiling).
+          <View style={styles.counterBox}>
+            <View style={styles.counterInputRow}>
+              <Text style={styles.dollar}>$</Text>
+              <TextInput
+                style={styles.counterInput}
+                value={counterText}
+                onChangeText={setCounterText}
+                keyboardType="decimal-pad"
+                placeholder={(opening / 100).toFixed(2)}
+                placeholderTextColor={colors.textFaint}
+                autoFocus
+              />
+            </View>
+            {counterValid && counterNet != null ? (
+              <Text style={styles.netHint}>You earn ~{money(counterNet)}</Text>
+            ) : null}
+            {counterTooHigh && ceiling != null ? (
+              <Text style={styles.errHint}>Too high — {money(ceiling)} or less.</Text>
+            ) : null}
+            <Pressable
+              style={[styles.accept, (!counterValid || acting) && styles.disabled]}
+              onPress={() => counterValid && counterMinor != null && onBid(id, 'counter', counterMinor)}
+              disabled={!counterValid || acting}
+            >
+              <Text style={styles.acceptText}>{actingThis ? 'Sending…' : 'Send counter-offer'}</Text>
+            </Pressable>
+            <Pressable
+              style={[styles.pass, acting && styles.disabled]}
+              onPress={() => {
+                setCountering(false);
+                setCounterText('');
+              }}
+              disabled={acting}
+            >
+              <Text style={styles.passText}>Back</Text>
+            </Pressable>
+          </View>
+        ) : (
+          // Auction default: accept the customer's price, or open the counter input.
+          <>
+            <Pressable
+              style={[styles.accept, (acting || expired) && styles.disabled]}
+              onPress={() => onBid(id, 'accept')}
+              disabled={acting || expired}
+            >
+              <Text style={styles.acceptText}>{expired ? 'Expired' : actingThis ? 'Sending…' : `Accept — ${money(opening)}`}</Text>
+            </Pressable>
+            <Pressable
+              style={[styles.secondary, (acting || expired) && styles.disabled]}
+              onPress={() => setCountering(true)}
+              disabled={acting || expired}
+            >
+              <Text style={styles.secondaryText}>Offer my own price</Text>
+            </Pressable>
+          </>
+        )}
+
+        {/* Decline (ADR-002 B): the job is never re-offered to this driver. Hidden while
+            countering (the "Back" button covers returning); shown in every other state. */}
+        {!(isAuction && countering) ? (
+          <Pressable style={[styles.pass, acting && styles.disabled]} onPress={() => onDecline(id)} disabled={acting}>
+            <Text style={styles.passText}>Pass</Text>
+          </Pressable>
+        ) : null}
+      </View>
     </View>
   );
 }
@@ -126,6 +246,9 @@ const styles = StyleSheet.create({
   headerRow: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8 },
   payoutWrap: { flexDirection: 'row', alignItems: 'baseline', gap: 6, flexShrink: 1 },
   payout: { color: colors.textPrimary, fontSize: 24, fontWeight: '700' },
+  offerLabel: { color: colors.textFaint, fontSize: 13, fontWeight: '700' },
+  netHint: { color: colors.textMuted, fontSize: 13, marginTop: 2 },
+  errHint: { color: colors.warning, fontSize: 13, fontWeight: '700', marginTop: 2 },
 
   timerPill: {
     borderRadius: PILL,
@@ -163,6 +286,15 @@ const styles = StyleSheet.create({
     paddingHorizontal: 24,
   },
   acceptText: { color: colors.btnPrimaryText, fontSize: 16, fontWeight: '700' },
+  secondary: {
+    backgroundColor: colors.surfaceAlt,
+    borderRadius: PILL,
+    minHeight: 48,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 24,
+  },
+  secondaryText: { color: colors.textPrimary, fontSize: 16, fontWeight: '700' },
   pass: {
     backgroundColor: colors.surfaceAlt,
     borderRadius: PILL,
@@ -173,4 +305,27 @@ const styles = StyleSheet.create({
   },
   passText: { color: colors.textMuted, fontSize: 16, fontWeight: '700' },
   disabled: { opacity: 0.6 },
+
+  bidSent: {
+    backgroundColor: colors.surfaceAlt,
+    borderRadius: 12,
+    minHeight: 48,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 16,
+  },
+  bidSentText: { color: colors.textMuted, fontSize: 15, fontWeight: '700', textAlign: 'center' },
+
+  counterBox: { gap: 8 },
+  counterInputRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: colors.surfaceAlt,
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    minHeight: 48,
+  },
+  dollar: { color: colors.textMuted, fontSize: 18, fontWeight: '700' },
+  counterInput: { flex: 1, color: colors.textPrimary, fontSize: 18, fontWeight: '700', paddingVertical: 10 },
 });

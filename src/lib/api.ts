@@ -12,6 +12,8 @@ export type Offer = Schemas['Offer'];
 export type DriverState = Schemas['DriverState'];
 // The assigned driver's view of a delivery — includes the pickup/dropoff contacts.
 export type DriverDelivery = Schemas['DriverDelivery'];
+// A courier's sealed bid on a customer-named auction (ADR-036).
+export type DeliveryBid = Schemas['DeliveryBid'];
 
 export class ApiError extends Error {
   constructor(
@@ -113,6 +115,21 @@ export function getDelivery(token: string, id: string): Promise<DriverDelivery> 
 
 export function claimDelivery(token: string, id: string): Promise<DriverDelivery> {
   return request(`/driver/deliveries/${id}/claim`, { method: 'POST', token });
+}
+
+// Bid on a customer-named auction (ADR-036): ACCEPT the customer's opening price, or COUNTER with
+// the courier's own price (rejected by the server above the delivery's 10× ceiling). Sealed — the
+// courier sees only their own bid. Unlike claim, this does NOT assign the job; the buyer/auto-clear
+// accepts a bid later, at which point the driver is assigned and the job surfaces via the active-job
+// reconcile. Returns the submitted bid.
+export function submitBid(
+  token: string,
+  id: string,
+  input: { type: 'accept' | 'counter'; price_minor?: number },
+): Promise<DeliveryBid> {
+  const body =
+    input.type === 'counter' ? { type: 'counter', price_minor: input.price_minor } : { type: 'accept' };
+  return request(`/driver/deliveries/${id}/bid`, { method: 'POST', token, body: JSON.stringify(body) });
 }
 
 export function markPickedUp(token: string, id: string): Promise<DriverDelivery> {

@@ -745,6 +745,10 @@ export interface components {
             fee_minor?: number | null;
             /** @description Cash-on-delivery amount (minor units); null = prepaid / nothing to collect. */
             collect_minor?: number | null;
+            /** @description Customer-named opening price (minor units) when this is an AUCTION (ADR-036); null on a fixed-price delivery. The offered courier ACCEPTs or COUNTERs against it (POST .../bid). */
+            opening_price_minor?: number | null;
+            /** @description Fraud-guard ceiling (minor units, 10× the cost estimate) a courier's COUNTER may not exceed on an auction (ADR-036); null on a fixed-price delivery. */
+            ceiling_minor?: number | null;
             /** @description Why the driver marked it failed; null unless status is `failed`. */
             failure_reason?: components["schemas"]["FailureReason"] | null;
             /** @description At-door proof-of-delivery PIN, generated at intake. **Tenant surfaces only** (create response, GET, list) — relay it to the recipient; it is never present in driver payloads or webhook bodies. The driver submits it on delivered for a verified (`otp`) handover. */
@@ -755,6 +759,17 @@ export interface components {
             created_at?: string;
             /** Format: date-time */
             updated_at?: string;
+        };
+        /** @description A courier's sealed bid on a customer-named auction (ADR-036). */
+        DeliveryBid: {
+            /** Format: uuid */
+            id?: string;
+            /** @description The bid price (minor units) — ACCEPT@opening, or the courier's counter. */
+            price_minor?: number;
+            /** @enum {string} */
+            bid_type?: "accept" | "counter";
+            /** Format: date-time */
+            expires_at?: string;
         };
         /** @enum {string} */
         FailureReason: "customer_unreachable" | "wrong_address" | "customer_refused" | "cash_refused" | "vehicle_problem" | "other";

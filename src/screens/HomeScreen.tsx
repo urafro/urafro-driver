@@ -24,6 +24,7 @@ import {
   markFailed,
   markInTransit,
   markPickedUp,
+  submitBid,
   updateLocation,
   type DriverDelivery,
   type Earnings,
@@ -85,6 +86,10 @@ export default function HomeScreen({ focused }: { focused: boolean }) {
   const [locating, setLocating] = useState(false);
   const [bgActive, setBgActive] = useState(false);
   const [claimingId, setClaimingId] = useState<string | null>(null);
+  // Auction offers this driver has bid on (ADR-036) — the card shows "offer sent" instead of the
+  // accept/counter buttons. Local-only: a bid doesn't assign the job (the customer/auto-clear does
+  // later), so until then the offer still lists; this stops a re-bid and clarifies the state.
+  const [bidSentIds, setBidSentIds] = useState<ReadonlySet<string>>(new Set());
   const [pending, setPending] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [earnings, setEarnings] = useState<Earnings | null>(null);
@@ -533,6 +538,40 @@ export default function HomeScreen({ focused }: { focused: boolean }) {
     [token, reconcileShift],
   );
 
+  // Bid on a customer-named auction (ADR-036): ACCEPT the customer's price or COUNTER your own.
+  // Unlike claim, a bid does NOT assign the job — it's sealed; the customer / auto-clear accepts a
+  // bid later, at which point the active-job reconcile surfaces the job. So on success we mark the
+  // offer "sent" (no navigation) and refresh; the offer keeps listing until it clears or expires.
+  const bid = useCallback(
+    async (id: string, type: 'accept' | 'counter', priceMinor?: number) => {
+      setClaimingId(id);
+      setError(null);
+      try {
+        await submitBid(token, id, { type, price_minor: priceMinor });
+        setBidSentIds((prev) => new Set(prev).add(id));
+        void loadOffers(true, 0, 'post-bid'); // sync the list (the offer stays until it clears)
+      } catch (e) {
+        console.warn('bid failed:', e instanceof ApiError ? `${e.status} ${e.message}` : e);
+        if (e instanceof ApiError && e.status === 409) {
+          if (e.message.includes('ceiling')) {
+            setError('That price is too high — offer less and try again.');
+          } else if (e.message.includes('not available') || e.message.includes('no active offer') || e.message.includes('offer')) {
+            setError('That offer is no longer available — the next one will pop up here.');
+          } else {
+            setError('That job is no longer open — try another.');
+          }
+        } else if (e instanceof ApiError) {
+          setError('Could not send your offer — please try again.');
+        } else {
+          setError('No connection — check your signal and try again.');
+        }
+      } finally {
+        setClaimingId(null);
+      }
+    },
+    [token, loadOffers],
+  );
+
   // Decline (ADR-002 B): optimistic removal — the server marks it `declined` and
   // never re-offers it to this driver. Best-effort: on a network failure the poll
   // re-lists it (already in the seen-set, so no duplicate notification).
@@ -777,8 +816,10 @@ export default function HomeScreen({ focused }: { focused: boolean }) {
                   <OffersList
                     offers={offers}
                     onClaim={claim}
+                    onBid={bid}
                     onDecline={decline}
-                    claimingId={claimingId}
+                    actingId={claimingId}
+                    bidSentIds={bidSentIds}
                   />
                 )
               ) : null}
