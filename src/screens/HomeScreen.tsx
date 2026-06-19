@@ -135,27 +135,41 @@ export default function HomeScreen({ focused }: { focused: boolean }) {
   // the offer fast instead of waiting for the poll, which is itself gated behind
   // reconcileShift flipping `online`) AND from the poll tick. Skipped on a job (the
   // offers list is hidden then, and we mustn't fire offer notifications mid-delivery).
-  const loadOffers = useCallback(async (silent = false) => {
-    if (!token || jobRef.current) return;
-    try {
-      const { data } = await listOffers(token);
-      const fresh = data ?? [];
-      setOffers(fresh);
-      // `silent` = refreshed because a push already notified the driver — just sync
-      // the seen-set so the next poll doesn't fire a DUPLICATE local notification.
-      if (silent) markOffersSeen(fresh);
-      else void maybeNotifyNewOffers(fresh, money);
-    } catch {
-      // transient (network) — the next poll tick retries
-    }
-  }, [token]);
+  const loadOffers = useCallback(
+    async (silent = false, retries = 0, reason = 'poll'): Promise<void> => {
+      if (!token || jobRef.current) return;
+      try {
+        const { data } = await listOffers(token);
+        const fresh = data ?? [];
+        setOffers(fresh);
+        // `silent` = refreshed because a push already notified the driver — just sync
+        // the seen-set so the next poll doesn't fire a DUPLICATE local notification.
+        if (silent) markOffersSeen(fresh);
+        else void maybeNotifyNewOffers(fresh, money);
+        // Diagnostic (offer-latency investigation): shows in `adb logcat` which trigger
+        // fetched and how many offers it saw — to confirm a push/resume refetch actually
+        // fires + succeeds on a real device. Cheap; remove once the latency is confirmed.
+        console.log(`[offers] ${reason}: loaded ${fresh.length}`);
+      } catch (e) {
+        console.log(`[offers] ${reason}: load failed (retries left ${retries}): ${(e as Error)?.message ?? e}`);
+        // An event-driven refetch (push / resume / focus) that failed on flaky 2G must NOT wait
+        // for the online-gated 8s poll — the offer the driver was just notified about would lag.
+        // Retry quickly a few times; the poll remains the final backstop. (Poll/mount pass 0.)
+        if (retries > 0) {
+          await new Promise((r) => setTimeout(r, 700));
+          return loadOffers(silent, retries - 1, reason);
+        }
+      }
+    },
+    [token],
+  );
 
   // A new-offer push arriving while the app is in the FOREGROUND should surface the
   // offer instantly, not wait for the next 8s poll. Refresh SILENTLY — the push
   // already notified the driver, so notifying again would double up.
   useEffect(() => {
     if (!token) return;
-    const sub = onNotificationReceived(() => void loadOffers(true));
+    const sub = onNotificationReceived(() => void loadOffers(true, 4, 'push'));
     return () => sub.remove();
   }, [token, loadOffers]);
 
@@ -164,7 +178,7 @@ export default function HomeScreen({ focused }: { focused: boolean }) {
   // back can show a stale/empty list until then. Refresh the instant Shift is focused
   // (silent — any arriving offer was already notified) so it's current on arrival.
   useEffect(() => {
-    if (focused) void loadOffers(true);
+    if (focused) void loadOffers(true, 2, 'focus');
   }, [focused, loadOffers]);
 
   // Battery-saver risk (ADR-001): true while the OS may freeze the app in the
@@ -191,13 +205,13 @@ export default function HomeScreen({ focused }: { focused: boolean }) {
     void reconcileShift().catch(() => {
       // non-critical — the driver can always toggle manually
     });
-    void loadOffers(); // race the offers fetch against reconcile — don't wait for it
+    void loadOffers(false, 4, 'mount'); // race the offers fetch against reconcile — don't wait for it
     refreshBatteryRisk();
     refreshNotifPermission();
     const sub = AppState.addEventListener('change', (state) => {
       if (state === 'active') {
         void reconcileShift().catch(() => {});
-        void loadOffers();
+        void loadOffers(false, 4, 'resume');
         refreshBatteryRisk();
         refreshNotifPermission();
       }
