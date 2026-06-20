@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Feather } from '@expo/vector-icons';
 import type { Offer } from '../lib/api';
 import { driverNetMinor, parseCounterMinor, isCounterWithinCeiling } from '../lib/auction';
 import { money, placeLabel, placeLabelDetailed, pickupDistanceLabel, tripLabel, secondsUntil } from '../lib/format';
@@ -154,7 +155,8 @@ function OfferCard({
         ) : bidSent ? (
           // Auction: this driver has bid — assigned later if the customer / auto-clear accepts it.
           <View style={styles.bidSent}>
-            <Text style={styles.bidSentText}>✓ Offer sent — waiting for the customer</Text>
+            <Feather name="check" size={16} color={colors.textMuted} />
+            <Text style={styles.bidSentText}>Offer sent — waiting for the customer</Text>
           </View>
         ) : countering ? (
           // Auction: name your own fare (≤ the ceiling).
@@ -171,6 +173,9 @@ function OfferCard({
                 autoFocus
               />
             </View>
+            {ceiling != null ? (
+              <Text style={styles.netHint}>Most you can offer {money(ceiling)}</Text>
+            ) : null}
             {counterValid && counterNet != null ? (
               <Text style={styles.netHint}>You earn ~{money(counterNet)}</Text>
             ) : null}
@@ -310,8 +315,10 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surfaceAlt,
     borderRadius: 12,
     minHeight: 48,
+    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
+    gap: 6,
     paddingHorizontal: 16,
   },
   bidSentText: { color: colors.textMuted, fontSize: 15, fontWeight: '700', textAlign: 'center' },
