@@ -18,15 +18,9 @@ export function driverNetMinor(
 }
 
 /** Parse a dollars string the driver typed into minor units (cents), or null if it isn't a
- *  positive amount (empty / non-numeric / ≤ 0). */
+ *  positive amount (empty / non-numeric / ≤ 0). The courier counters FREELY — the 10× technical
+ *  ceiling is a fraud guard the SERVER silently enforces (ADR-047), never a client-side price band. */
 export function parseCounterMinor(text: string): number | null {
   const n = Number.parseFloat(text);
   return Number.isFinite(n) && n > 0 ? Math.round(n * 100) : null;
-}
-
-/** Whether a counter (minor units) is acceptable: positive and within the fraud-guard ceiling.
- *  A null ceiling (missing on the offer) doesn't block — the server re-enforces it anyway. */
-export function isCounterWithinCeiling(counterMinor: number | null, ceilingMinor: number | null | undefined): boolean {
-  if (counterMinor == null || counterMinor <= 0) return false;
-  return ceilingMinor == null || counterMinor <= ceilingMinor;
 }

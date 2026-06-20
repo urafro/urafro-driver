@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { driverNetMinor, parseCounterMinor, isCounterWithinCeiling } from '../src/lib/auction';
+import { driverNetMinor, parseCounterMinor } from '../src/lib/auction';
 
 // Driver-side auction bid maths (ADR-036). These drive the prices a courier sees + counters with,
 // so they're the one part of the counter UI worth pinning precisely.
@@ -35,23 +35,5 @@ describe('parseCounterMinor', () => {
     expect(parseCounterMinor('abc')).toBeNull();
     expect(parseCounterMinor('0')).toBeNull();
     expect(parseCounterMinor('-5')).toBeNull();
-  });
-});
-
-describe('isCounterWithinCeiling', () => {
-  it('accepts a positive counter at or below the ceiling', () => {
-    expect(isCounterWithinCeiling(800, 5000)).toBe(true);
-    expect(isCounterWithinCeiling(5000, 5000)).toBe(true); // exactly the ceiling
-  });
-
-  it('rejects above the ceiling, or a null/zero counter', () => {
-    expect(isCounterWithinCeiling(5001, 5000)).toBe(false);
-    expect(isCounterWithinCeiling(null, 5000)).toBe(false);
-    expect(isCounterWithinCeiling(0, 5000)).toBe(false);
-  });
-
-  it('a missing ceiling does not block (the server re-enforces it)', () => {
-    expect(isCounterWithinCeiling(999999, null)).toBe(true);
-    expect(isCounterWithinCeiling(800, undefined)).toBe(true);
   });
 });

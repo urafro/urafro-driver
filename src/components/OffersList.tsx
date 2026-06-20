@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import type { Offer } from '../lib/api';
-import { driverNetMinor, parseCounterMinor, isCounterWithinCeiling } from '../lib/auction';
+import { driverNetMinor, parseCounterMinor } from '../lib/auction';
 import { money, placeLabel, placeLabelDetailed, pickupDistanceLabel, tripLabel, secondsUntil } from '../lib/format';
 import { colors, shadow, PILL } from '../theme';
 
@@ -87,7 +87,6 @@ function OfferCard({
   const expired = expires <= 0; // dead offer — server 409s a claim/bid; the next poll drops it
   const isAuction = offer.opening_price_minor != null;
   const opening = offer.opening_price_minor ?? 0;
-  const ceiling = offer.ceiling_minor ?? null;
 
   // The driver's NET share of a gross fare (auction shows real earnings, not the cost estimate);
   // null when no positive fee anchors the ratio (then we show gross only). See lib/auction.
@@ -101,12 +100,14 @@ function OfferCard({
   const drop = placeLabelDetailed(offer.dropoff);
   const meta = [pickupDistanceLabel(offer.pickup_distance_km), tripLabel(offer.trip_km)].filter(Boolean).join(' · ');
 
-  // Per-card counter state (an auction job lets the driver name their own fare).
+  // Per-card counter state (an auction job lets the driver name their own fare). The courier
+  // counters FREELY at any positive price — the CUSTOMER decides whether to accept (ADR-047). The
+  // 10× technical ceiling is a fraud guard, NOT a price band (ADR-036), so it is never shown or
+  // enforced client-side; the server silently rejects only an absurd typo.
   const [countering, setCountering] = useState(false);
   const [counterText, setCounterText] = useState('');
   const counterMinor = parseCounterMinor(counterText);
-  const counterValid = isCounterWithinCeiling(counterMinor, ceiling);
-  const counterTooHigh = counterMinor != null && ceiling != null && counterMinor > ceiling;
+  const counterValid = counterMinor != null;
   const counterNet = counterMinor != null ? netOf(counterMinor) : null;
 
   return (
@@ -173,14 +174,9 @@ function OfferCard({
                 autoFocus
               />
             </View>
-            {ceiling != null ? (
-              <Text style={styles.netHint}>Most you can offer {money(ceiling)}</Text>
-            ) : null}
+            <Text style={styles.netHint}>Name your price — the customer chooses whether to accept.</Text>
             {counterValid && counterNet != null ? (
               <Text style={styles.netHint}>You earn ~{money(counterNet)}</Text>
-            ) : null}
-            {counterTooHigh && ceiling != null ? (
-              <Text style={styles.errHint}>Too high — {money(ceiling)} or less.</Text>
             ) : null}
             <Pressable
               style={[styles.accept, (!counterValid || acting) && styles.disabled]}
@@ -253,7 +249,6 @@ const styles = StyleSheet.create({
   payout: { color: colors.textPrimary, fontSize: 24, fontWeight: '700' },
   offerLabel: { color: colors.textFaint, fontSize: 13, fontWeight: '700' },
   netHint: { color: colors.textMuted, fontSize: 13, marginTop: 2 },
-  errHint: { color: colors.warning, fontSize: 13, fontWeight: '700', marginTop: 2 },
 
   timerPill: {
     borderRadius: PILL,
