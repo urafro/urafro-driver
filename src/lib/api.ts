@@ -34,11 +34,12 @@ export function setUnauthorizedHandler(fn: (() => void) | null): void {
   onUnauthorized = fn;
 }
 
-// 2G safety net: abort a request that hangs on a dead/stalled socket so callers (the
-// offers poll, the action queue) actually fail-and-retry instead of stalling forever
-// — a real failure mode on the low-end/2G target, where a hung fetch left the offers
-// list frozen on "Checking for offers…" with no retry.
-const REQUEST_TIMEOUT_MS = 12000;
+// Abort a request that hangs on a dead/stalled socket so callers (the offers poll, the
+// action queue) actually fail-and-retry instead of stalling forever — a real failure mode
+// on the low-end target, where a hung fetch left the offers list frozen with no retry. 10s
+// on the 3G-primary baseline (tightened from 12s for faster fail-retry); still generous
+// enough to ride an EDGE/2G dropout without false aborts.
+const REQUEST_TIMEOUT_MS = 10000;
 
 async function request<T>(
   path: string,

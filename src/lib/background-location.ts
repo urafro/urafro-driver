@@ -18,9 +18,10 @@ export const LOCATION_TASK = 'urafro-driver-location';
 
 // Registered at module load (imported by HomeScreen, which the app entry imports),
 // so the task exists before the OS ever delivers a background fix.
-// Offers are only checked every so often from the task — a fix can arrive every
-// 15s and the check costs a network round-trip.
-const OFFERS_CHECK_MIN_MS = 20_000;
+// Offers are only checked every so often from the headless task — a fix can arrive every
+// 15s and the check costs a network round-trip. 15s on the 3G-primary baseline (eased from
+// 20s); kept at the fix cadence (not lower) because this path is battery-bound, not latency-bound.
+const OFFERS_CHECK_MIN_MS = 15_000;
 let lastOffersCheckMs = 0;
 
 TaskManager.defineTask(LOCATION_TASK, async ({ data, error }) => {

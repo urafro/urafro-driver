@@ -68,7 +68,10 @@ import OffersList from '../components/OffersList';
 import ActiveJob, { type LifecycleAction, type ActionExtra } from '../components/ActiveJob';
 import ShiftStatus from '../components/ShiftStatus';
 
-const POLL_MS = 8000;
+// Foreground offers+location poll (runs only while online and not on a job). 5s on the
+// 3G-primary baseline (tightened from 8s) so offers surface faster; remote push is the
+// primary accelerant, so this is the backstop. Floored above sub-second for battery/EDGE.
+const POLL_MS = 5000;
 const FLUSH_MS = 12000;
 
 // The shift controller: offline → go online (needs location) → online (poll offers)
