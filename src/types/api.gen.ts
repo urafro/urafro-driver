@@ -4,6 +4,26 @@
  */
 
 export interface paths {
+    "/quotes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Quote a delivery fare (no delivery created)
+         * @description The cost-only fixed delivery fare for a pickup→dropoff, using the SAME engine `POST /deliveries` charges at intake (road distance × the region's per-km + base), WITHOUT creating a delivery. Lets a storefront show the customer what delivery will cost before they order (the buyer-app fixed-quote spine). The fare is cost-only and symmetric — no supply/demand/surge term — so the same trip quotes the same fare to anyone. Degrades to a haversine estimate when road routing is unavailable (`distance_source`).
+         */
+        post: operations["quoteFare"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/deliveries": {
         parameters: {
             query?: never;
@@ -56,6 +76,66 @@ export interface paths {
          * @description Allowed while `pending`/`assigned`; rejected once `picked_up`.
          */
         post: operations["cancelDelivery"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/deliveries/{id}/bids": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List live courier bids on an auction delivery
+         * @description The live sealed bids on a customer-named auction (ADR-036), for the tenant to relay to the customer who picks one. Price + type only — no courier reputation (the selection surface stays behaviour-blind: the worker-classification firewall).
+         */
+        get: operations["listDeliveryBids"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/deliveries/{id}/accept-bid": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Accept a courier's bid on an auction (the customer's choice)
+         * @description Atomically assigns the chosen courier and locks in the agreed bid price as the delivery's final fare. The courier must still be available (a stale reader is a clean 409). Mediated by the tenant — no customer actor on the platform (ADR-029).
+         */
+        post: operations["acceptDeliveryBid"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/cod/reconciliation": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * COD reconciliation for the tenant's deliveries
+         * @description Per-order cash-on-delivery reconciliation — for each of the tenant's COD deliveries (collect_minor > 0), the cash expected vs collected at the door, with totals. Tenant-scoped. (Platform→merchant remittance/payout is not shown here — that rides the deferred payout rail.)
+         */
+        get: operations["codReconciliation"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -469,6 +549,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/driver/referrals": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The driver's referral code + stats
+         * @description The driver's own shareable referral code (minted on first read), how many drivers have applied it, the current per-side reward, and any unpaid referral credit owed to them (ADR-041 two-sided referral).
+         */
+        get: operations["driverReferrals"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/driver/referrals/apply": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Apply a referrer's code
+         * @description A new driver claims who referred them. Allowed ONLY before they verify (the reward fires on their own verification) and only once; self-referral and unknown codes are rejected.
+         */
+        post: operations["driverApplyReferral"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/driver/push-token": {
         parameters: {
             query?: never;
@@ -547,6 +667,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/driver/deliveries/{id}/bid": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Bid on a customer-named auction job (ADR-036)
+         * @description Submit a sealed bid on an auction this driver was offered — ACCEPT@opening or a COUNTER (rejected above the delivery's 10× ceiling). The auction path replaces /claim for auction deliveries; a courier sees only their own bid.
+         */
+        post: operations["driverSubmitBid"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/driver/deliveries/{id}/picked_up": {
         parameters: {
             query?: never;
@@ -618,6 +758,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/driver/deliveries/{id}/message": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Send the recipient a fixed coordination SMS
+         * @description Send the delivery recipient one of a fixed set of operational coordination messages (arriving / running late / can't find the address / have COD ready) over SMS, carrying the tracking link. Only the assigned courier, only while the job is active. There is no free-form body — the template is whitelisted. The SMS is advisory: a missing recipient phone (or the recipient-SMS cost gate being off) returns `{ "sent": false, "reason": ... }` rather than an error.
+         */
+        post: operations["driverSendMessage"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/driver/deliveries/{id}/pod-photo-url": {
         parameters: {
             query?: never;
@@ -629,7 +789,7 @@ export interface paths {
         put?: never;
         /**
          * Get a presigned URL to upload a proof-of-delivery photo
-         * @description Mint a short-lived presigned PUT URL so the assigned courier uploads a proof-of-delivery photo directly to private object storage. The driver then completes the job with `method: photo`. Only the assigned courier, only while the job is active. 503 when photo storage is not configured.
+         * @description Mint a short-lived presigned PUT URL so the assigned courier uploads a proof-of-delivery photo directly to private object storage (bytes never touch this API — same pattern as KYC documents). The key is deterministic per delivery; after uploading, the courier completes the job with `method: photo` and the tenant read then exposes a signed `pod_photo_url`. Only the assigned courier, only while the job is active. Returns 503 when photo storage is not configured.
          */
         post: operations["driverPodPhotoUploadUrl"];
         delete?: never;
@@ -706,6 +866,8 @@ export interface components {
             size: "envelope" | "small" | "medium" | "large";
             /** @description Declared value in minor currency units (cents). Optional. */
             value_minor?: number;
+            /** @description Package weight in grams (R2). Matched against the driver vehicle's rated capacity_kg in dispatch. Optional — absent/null = unmeasured, no weight constraint. */
+            weight_grams?: number;
         };
         DeliveryRequest: {
             /** @description The tenant's own order id (e.g. urafro order code) for correlation. */
@@ -718,9 +880,35 @@ export interface components {
             notes?: string;
             /** @description Cash-on-delivery amount in minor units (cents) the driver collects from the recipient on the merchant's behalf. Distinct from the platform delivery fee (`fee_minor`). Omit for prepaid orders. */
             collect_minor?: number;
+            /** @description Customer-named opening price (minor units) for a fare AUCTION (ADR-036). When set, the delivery is an auction: `fee_minor` stays the cost-only advisory, couriers ACCEPT@this or counter (≤ 10× the advisory), and the tenant accepts one via `/deliveries/{id}/accept-bid`. Omit for a fixed-price delivery. */
+            opening_price_minor?: number;
+            /** @description Buyer's pre-authorized MAX fare (minor units) for an auction (ADR-045). The auction auto-clears the cheapest bid ≤ this without the buyer present, so the job still clears in thin supply. Only meaningful with opening_price_minor; clamped server-side to [opening_price_minor, ceiling_minor]. The buyer's max is private — it is never echoed back on the Delivery (a courier who saw it would counter exactly at it). */
+            max_price_minor?: number;
         };
         /** @enum {string} */
         DeliveryStatus: "pending" | "assigned" | "picked_up" | "in_transit" | "delivered" | "failed" | "unassigned" | "cancelled";
+        DeliveryBid: {
+            /** Format: uuid */
+            id?: string;
+            /** @description The bid price (minor units) — ACCEPT@opening, or the courier's counter. */
+            price_minor?: number;
+            /** @enum {string} */
+            bid_type?: "accept" | "counter";
+            /** Format: date-time */
+            expires_at?: string;
+        };
+        CodReconciliationItem: {
+            /** Format: uuid */
+            delivery_id?: string;
+            external_ref?: string | null;
+            status?: components["schemas"]["DeliveryStatus"];
+            /** @description Full door COD the courier collects on this delivery (goods + the delivery fee). */
+            expected_minor?: number;
+            /** @description What the courier has actually collected at the door so far (0 until delivered). */
+            collected_minor?: number;
+            /** Format: date-time */
+            updated_at?: string;
+        };
         Driver: {
             /** Format: uuid */
             id?: string;
@@ -745,31 +933,22 @@ export interface components {
             fee_minor?: number | null;
             /** @description Cash-on-delivery amount (minor units); null = prepaid / nothing to collect. */
             collect_minor?: number | null;
-            /** @description Customer-named opening price (minor units) when this is an AUCTION (ADR-036); null on a fixed-price delivery. The offered courier ACCEPTs or COUNTERs against it (POST .../bid). */
+            /** @description Customer-named opening price (minor units) when this is an AUCTION (ADR-036); null on a fixed-price delivery. The offered courier ACCEPTs or COUNTERs against it. */
             opening_price_minor?: number | null;
-            /** @description Fraud-guard ceiling (minor units, 10× the cost estimate) a courier's COUNTER may not exceed on an auction (ADR-036); null on a fixed-price delivery. */
+            /** @description Fraud-guard ceiling (minor units, 10× the cost estimate) a courier's COUNTER may not exceed on an auction (ADR-036); null on a fixed-price delivery. NOT a price band — the buyer's private auto-accept max is never exposed here. */
             ceiling_minor?: number | null;
+            /** @description The agreed fare (minor units) once a courier's bid is accepted on an auction; settlement splits this (not `fee_minor`). Null until a bid clears. */
+            final_price_minor?: number | null;
             /** @description Why the driver marked it failed; null unless status is `failed`. */
             failure_reason?: components["schemas"]["FailureReason"] | null;
             /** @description At-door proof-of-delivery PIN, generated at intake. **Tenant surfaces only** (create response, GET, list) — relay it to the recipient; it is never present in driver payloads or webhook bodies. The driver submits it on delivered for a verified (`otp`) handover. */
             pod_pin?: string | null;
-            /** @description Short-lived signed URL to view the proof-of-delivery photo (present when completed with `method: photo`). **Tenant surfaces only**; null otherwise. */
+            /** @description A short-lived (≈2 min) signed URL to view the proof-of-delivery PHOTO, present when the job was completed with `method: photo`. **Tenant surfaces only**; minted fresh on each read (never cached — it expires fast) and only for the owning tenant. Null when there is no photo PoD on this delivery. */
             pod_photo_url?: string | null;
             /** Format: date-time */
             created_at?: string;
             /** Format: date-time */
             updated_at?: string;
-        };
-        /** @description A courier's sealed bid on a customer-named auction (ADR-036). */
-        DeliveryBid: {
-            /** Format: uuid */
-            id?: string;
-            /** @description The bid price (minor units) — ACCEPT@opening, or the courier's counter. */
-            price_minor?: number;
-            /** @enum {string} */
-            bid_type?: "accept" | "counter";
-            /** Format: date-time */
-            expires_at?: string;
         };
         /** @enum {string} */
         FailureReason: "customer_unreachable" | "wrong_address" | "customer_refused" | "cash_refused" | "vehicle_problem" | "other";
@@ -790,7 +969,7 @@ export interface components {
             /** Format: uuid */
             id: string;
             /** @enum {string} */
-            type: "bicycle" | "motorbike" | "car" | "van" | "foot";
+            type: "bicycle" | "motorbike" | "car" | "van" | "foot" | "large_truck";
             make?: string | null;
             model?: string | null;
             colour?: string | null;
@@ -929,7 +1108,7 @@ export interface components {
             /** Format: uuid */
             id: string;
             /** @enum {string} */
-            type: "delivery.created" | "delivery.assigned" | "delivery.picked_up" | "delivery.in_transit" | "delivery.completed" | "delivery.failed" | "delivery.unassigned" | "delivery.cancelled";
+            type: "delivery.created" | "delivery.assigned" | "delivery.picked_up" | "delivery.in_transit" | "delivery.completed" | "delivery.failed" | "delivery.unassigned" | "delivery.cancelled" | "delivery.auction_reverted" | "eta.updated" | "bid.updated";
             /** Format: date-time */
             created_at: string;
             data: {
@@ -1012,6 +1191,50 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    quoteFare: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    pickup: {
+                        lat: number;
+                        lng: number;
+                    };
+                    dropoff: {
+                        lat: number;
+                        lng: number;
+                    };
+                };
+            };
+        };
+        responses: {
+            /** @description The fixed-quote fare. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @description The fixed quote (minor units) */
+                        fee_minor: number;
+                        distance_m: number;
+                        /** @enum {string} */
+                        distance_source: "osrm" | "haversine";
+                        /** @description Fraud-guard ceiling (10× cost); never binds a real fare. */
+                        ceiling_minor: number;
+                        rationale: string;
+                    };
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+        };
+    };
     listDeliveries: {
         parameters: {
             query?: {
@@ -1115,6 +1338,99 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
             404: components["responses"]["NotFound"];
             409: components["responses"]["Conflict"];
+        };
+    };
+    listDeliveryBids: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The live bids. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data?: components["schemas"]["DeliveryBid"][];
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    acceptDeliveryBid: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** Format: uuid */
+                    bid_id: string;
+                    /** @description The customer explicitly authorizes paying ABOVE their private max M for this bid (ADR-048). When true, a bid above M is accepted by raising M to the bid price (still bounded by the fraud-guard ceiling) instead of being rejected. */
+                    authorize_above_max?: boolean;
+                };
+            };
+        };
+        responses: {
+            /** @description Assigned to the winning courier. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Delivery"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+        };
+    };
+    codReconciliation: {
+        parameters: {
+            query?: {
+                limit?: number;
+                /** @description Comma-separated delivery UUIDs to scope the reconciliation to (e.g. one merchant's own deliveries, joined by the core caller). When present, the id list bounds the result (no most-recent window) — still tenant-scoped, so ids of another tenant are ignored. */
+                delivery_id?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description COD reconciliation. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items?: components["schemas"]["CodReconciliationItem"][];
+                        totals?: {
+                            count?: number;
+                            expected_minor?: number;
+                            collected_minor?: number;
+                            uncollected_minor?: number;
+                        };
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
         };
     };
     listWebhookEndpoints: {
@@ -1447,7 +1763,7 @@ export interface operations {
             content: {
                 "application/json": {
                     /** @enum {string} */
-                    type: "bicycle" | "motorbike" | "car" | "van" | "foot";
+                    type: "bicycle" | "motorbike" | "car" | "van" | "foot" | "large_truck";
                     make?: string;
                     model?: string;
                     colour?: string;
@@ -1827,12 +2143,75 @@ export interface operations {
                         today_deliveries: number;
                         /** @description COD cash float currently in the driver's hands, owed onward. */
                         cod_owed_minor: number;
+                        /** @description Unpaid two-sided referral credit owed to this driver (ADR-041); 0 while the reward is dark. */
+                        referral_earned_minor: number;
                         /** @example USD */
                         currency: string;
                     };
                 };
             };
             401: components["responses"]["Unauthorized"];
+        };
+    };
+    driverReferrals: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Referral summary. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @description The driver's shareable referral code. */
+                        code: string;
+                        /** @description Drivers who have applied this code. */
+                        referred_count: number;
+                        /** @description Current per-side reward (REFERRAL_REWARD_MINOR; 0 = dark). */
+                        reward_minor: number;
+                        /** @description Unpaid referral credit owed to this driver. */
+                        referral_earned_minor: number;
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+        };
+    };
+    driverApplyReferral: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    code: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Applied. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        applied: boolean;
+                    };
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            409: components["responses"]["Conflict"];
         };
     };
     driverRegisterPushToken: {
@@ -1967,6 +2346,40 @@ export interface operations {
             409: components["responses"]["Conflict"];
         };
     };
+    driverSubmitBid: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @enum {string} */
+                    type: "accept" | "counter";
+                    /** @description Required for a counter (the courier's price); ignored for accept. */
+                    price_minor?: number;
+                };
+            };
+        };
+        responses: {
+            /** @description The submitted bid. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeliveryBid"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+        };
+    };
     driverMarkPickedUp: {
         parameters: {
             query?: never;
@@ -2077,6 +2490,46 @@ export interface operations {
             };
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+        };
+    };
+    driverSendMessage: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @enum {string} */
+                    template: "arriving" | "running_late" | "cant_find" | "cod_reminder";
+                };
+            };
+        };
+        responses: {
+            /** @description Processed. `sent` indicates whether an SMS actually went out. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        sent: boolean;
+                        /**
+                         * @description Present only when `sent` is false.
+                         * @enum {string}
+                         */
+                        reason?: "disabled" | "no_recipient_phone" | "send_failed";
+                    };
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
             404: components["responses"]["NotFound"];
             409: components["responses"]["Conflict"];
         };

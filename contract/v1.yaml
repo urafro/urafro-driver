@@ -30,6 +30,58 @@ tags:
     description: Supply-side — drivers go online, claim offered jobs, and run the lifecycle. Authenticated with a driver bearer token (not a tenant API key).
 
 paths:
+  /quotes:
+    post:
+      tags: [Deliveries]
+      summary: Quote a delivery fare (no delivery created)
+      description: >
+        The cost-only fixed delivery fare for a pickup→dropoff, using the SAME engine
+        `POST /deliveries` charges at intake (road distance × the region's per-km +
+        base), WITHOUT creating a delivery. Lets a storefront show the customer what
+        delivery will cost before they order (the buyer-app fixed-quote spine). The
+        fare is cost-only and symmetric — no supply/demand/surge term — so the same
+        trip quotes the same fare to anyone. Degrades to a haversine estimate when
+        road routing is unavailable (`distance_source`).
+      operationId: quoteFare
+      security:
+        - ApiKeyAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [pickup, dropoff]
+              properties:
+                pickup:
+                  type: object
+                  required: [lat, lng]
+                  properties:
+                    lat: { type: number, minimum: -90, maximum: 90 }
+                    lng: { type: number, minimum: -180, maximum: 180 }
+                dropoff:
+                  type: object
+                  required: [lat, lng]
+                  properties:
+                    lat: { type: number, minimum: -90, maximum: 90 }
+                    lng: { type: number, minimum: -180, maximum: 180 }
+      responses:
+        '200':
+          description: The fixed-quote fare.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [fee_minor, distance_m, distance_source, ceiling_minor, rationale]
+                properties:
+                  fee_minor: { type: integer, description: The fixed quote (minor units), cost-only. }
+                  distance_m: { type: integer }
+                  distance_source: { type: string, enum: [osrm, haversine] }
+                  ceiling_minor: { type: integer, description: Fraud-guard ceiling (10× cost); never binds a real fare. }
+                  rationale: { type: string }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
   /deliveries:
     post:
       tags: [Deliveries]
@@ -118,6 +170,116 @@ paths:
         '401': { $ref: '#/components/responses/Unauthorized' }
         '404': { $ref: '#/components/responses/NotFound' }
         '409': { $ref: '#/components/responses/Conflict' }
+
+  /deliveries/{id}/bids:
+    get:
+      tags: [Deliveries]
+      summary: List live courier bids on an auction delivery
+      description: >-
+        The live sealed bids on a customer-named auction (ADR-036), for the tenant to
+        relay to the customer who picks one. Price + type only — no courier reputation
+        (the selection surface stays behaviour-blind: the worker-classification firewall).
+      operationId: listDeliveryBids
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: The live bids.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/DeliveryBid' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /deliveries/{id}/accept-bid:
+    post:
+      tags: [Deliveries]
+      summary: Accept a courier's bid on an auction (the customer's choice)
+      description: >-
+        Atomically assigns the chosen courier and locks in the agreed bid price as the
+        delivery's final fare. The courier must still be available (a stale reader is a
+        clean 409). Mediated by the tenant — no customer actor on the platform (ADR-029).
+      operationId: acceptDeliveryBid
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [bid_id]
+              properties:
+                bid_id: { type: string, format: uuid }
+                authorize_above_max:
+                  type: boolean
+                  description: >-
+                    The customer explicitly authorizes paying ABOVE their private max M for this
+                    bid (ADR-048). When true, a bid above M is accepted by raising M to the bid
+                    price (still bounded by the fraud-guard ceiling) instead of being rejected.
+      responses:
+        '200':
+          description: Assigned to the winning courier.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Delivery' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /cod/reconciliation:
+    get:
+      tags: [Deliveries]
+      summary: COD reconciliation for the tenant's deliveries
+      description: >
+        Per-order cash-on-delivery reconciliation — for each of the tenant's COD
+        deliveries (collect_minor > 0), the cash expected vs collected at the door,
+        with totals. Tenant-scoped. (Platform→merchant remittance/payout is not shown
+        here — that rides the deferred payout rail.)
+      operationId: codReconciliation
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          schema: { type: integer, minimum: 1, maximum: 200, default: 50 }
+        - name: delivery_id
+          in: query
+          required: false
+          description: >
+            Comma-separated delivery UUIDs to scope the reconciliation to (e.g. one merchant's own
+            deliveries, joined by the core caller). When present, the id list bounds the result (no
+            most-recent window) — still tenant-scoped, so ids of another tenant are ignored.
+          schema: { type: string }
+      responses:
+        '200':
+          description: COD reconciliation.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: '#/components/schemas/CodReconciliationItem' }
+                  totals:
+                    type: object
+                    properties:
+                      count: { type: integer }
+                      expected_minor: { type: integer }
+                      collected_minor: { type: integer }
+                      uncollected_minor: { type: integer }
+        '401': { $ref: '#/components/responses/Unauthorized' }
 
   /webhook-endpoints:
     post:
@@ -411,7 +573,7 @@ paths:
               type: object
               required: [type]
               properties:
-                type: { type: string, enum: [bicycle, motorbike, car, van, foot] }
+                type: { type: string, enum: [bicycle, motorbike, car, van, foot, large_truck] }
                 make: { type: string, maxLength: 40 }
                 model: { type: string, maxLength: 40 }
                 colour: { type: string, maxLength: 30 }
@@ -757,7 +919,7 @@ paths:
             application/json:
               schema:
                 type: object
-                required: [payable_minor, today_minor, today_deliveries, cod_owed_minor, currency]
+                required: [payable_minor, today_minor, today_deliveries, cod_owed_minor, referral_earned_minor, currency]
                 properties:
                   payable_minor: { type: integer }
                   today_minor: { type: integer }
@@ -765,8 +927,71 @@ paths:
                   cod_owed_minor:
                     type: integer
                     description: COD cash float currently in the driver's hands, owed onward.
+                  referral_earned_minor:
+                    type: integer
+                    description: Unpaid two-sided referral credit owed to this driver (ADR-041); 0 while the reward is dark.
                   currency: { type: string, example: USD }
         '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /driver/referrals:
+    get:
+      tags: [Driver]
+      summary: The driver's referral code + stats
+      description: >
+        The driver's own shareable referral code (minted on first read), how many
+        drivers have applied it, the current per-side reward, and any unpaid referral
+        credit owed to them (ADR-041 two-sided referral).
+      operationId: driverReferrals
+      security:
+        - DriverBearerAuth: []
+      responses:
+        '200':
+          description: Referral summary.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [code, referred_count, reward_minor, referral_earned_minor]
+                properties:
+                  code: { type: string, description: The driver's shareable referral code. }
+                  referred_count: { type: integer, description: Drivers who have applied this code. }
+                  reward_minor: { type: integer, description: Current per-side reward (REFERRAL_REWARD_MINOR; 0 = dark). }
+                  referral_earned_minor: { type: integer, description: Unpaid referral credit owed to this driver. }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /driver/referrals/apply:
+    post:
+      tags: [Driver]
+      summary: Apply a referrer's code
+      description: >
+        A new driver claims who referred them. Allowed ONLY before they verify (the
+        reward fires on their own verification) and only once; self-referral and unknown
+        codes are rejected.
+      operationId: driverApplyReferral
+      security:
+        - DriverBearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [code]
+              properties:
+                code: { type: string, minLength: 4, maxLength: 16 }
+      responses:
+        '200':
+          description: Applied.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [applied]
+                properties:
+                  applied: { type: boolean }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '409': { $ref: '#/components/responses/Conflict' }
 
   /driver/push-token:
     post:
@@ -886,6 +1111,45 @@ paths:
         '404': { $ref: '#/components/responses/NotFound' }
         '409': { $ref: '#/components/responses/Conflict' }
 
+  /driver/deliveries/{id}/bid:
+    post:
+      tags: [Driver]
+      summary: Bid on a customer-named auction job (ADR-036)
+      description: >-
+        Submit a sealed bid on an auction this driver was offered — ACCEPT@opening or a
+        COUNTER (rejected above the delivery's 10× ceiling). The auction path replaces
+        /claim for auction deliveries; a courier sees only their own bid.
+      operationId: driverSubmitBid
+      security:
+        - DriverBearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [type]
+              properties:
+                type: { type: string, enum: [accept, counter] }
+                price_minor:
+                  type: integer
+                  minimum: 1
+                  description: Required for a counter (the courier's price); ignored for accept.
+      responses:
+        '200':
+          description: The submitted bid.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DeliveryBid' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
   /driver/deliveries/{id}/picked_up:
     post:
       tags: [Driver]
@@ -995,15 +1259,67 @@ paths:
         '404': { $ref: '#/components/responses/NotFound' }
         '409': { $ref: '#/components/responses/Conflict' }
 
+  /driver/deliveries/{id}/message:
+    post:
+      tags: [Driver]
+      summary: Send the recipient a fixed coordination SMS
+      description: >
+        Send the delivery recipient one of a fixed set of operational coordination
+        messages (arriving / running late / can't find the address / have COD ready)
+        over SMS, carrying the tracking link. Only the assigned courier, only while the
+        job is active. There is no free-form body — the template is whitelisted. The
+        SMS is advisory: a missing recipient phone (or the recipient-SMS cost gate
+        being off) returns `{ "sent": false, "reason": ... }` rather than an error.
+      operationId: driverSendMessage
+      security:
+        - DriverBearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [template]
+              properties:
+                template:
+                  type: string
+                  enum: [arriving, running_late, cant_find, cod_reminder]
+      responses:
+        '200':
+          description: Processed. `sent` indicates whether an SMS actually went out.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [sent]
+                properties:
+                  sent: { type: boolean }
+                  reason:
+                    type: string
+                    enum: [disabled, no_recipient_phone, send_failed]
+                    description: Present only when `sent` is false.
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
   /driver/deliveries/{id}/pod-photo-url:
     post:
       tags: [Driver]
       summary: Get a presigned URL to upload a proof-of-delivery photo
       description: >
         Mint a short-lived presigned PUT URL so the assigned courier uploads a
-        proof-of-delivery photo directly to private object storage. The driver then
-        completes the job with `method: photo`. Only the assigned courier, only while
-        the job is active. 503 when photo storage is not configured.
+        proof-of-delivery photo directly to private object storage (bytes never touch
+        this API — same pattern as KYC documents). The key is deterministic per
+        delivery; after uploading, the courier completes the job with
+        `method: photo` and the tenant read then exposes a signed `pod_photo_url`.
+        Only the assigned courier, only while the job is active. Returns 503 when
+        photo storage is not configured.
       operationId: driverPodPhotoUploadUrl
       security:
         - DriverBearerAuth: []
@@ -1136,6 +1452,13 @@ components:
         value_minor:
           type: integer
           description: Declared value in minor currency units (cents). Optional.
+        weight_grams:
+          type: integer
+          minimum: 0
+          description: >-
+            Package weight in grams (R2). Matched against the driver vehicle's rated
+            capacity_kg in dispatch. Optional — absent/null = unmeasured, no weight
+            constraint.
 
     DeliveryRequest:
       type: object
@@ -1158,10 +1481,55 @@ components:
             Cash-on-delivery amount in minor units (cents) the driver collects from
             the recipient on the merchant's behalf. Distinct from the platform
             delivery fee (`fee_minor`). Omit for prepaid orders.
+        opening_price_minor:
+          type: integer
+          minimum: 1
+          description: >-
+            Customer-named opening price (minor units) for a fare AUCTION (ADR-036). When
+            set, the delivery is an auction: `fee_minor` stays the cost-only advisory,
+            couriers ACCEPT@this or counter (≤ 10× the advisory), and the tenant accepts
+            one via `/deliveries/{id}/accept-bid`. Omit for a fixed-price delivery.
+        max_price_minor:
+          type: integer
+          minimum: 1
+          description: >-
+            Buyer's pre-authorized MAX fare (minor units) for an auction (ADR-045). The
+            auction auto-clears the cheapest bid ≤ this without the buyer present, so the
+            job still clears in thin supply. Only meaningful with opening_price_minor;
+            clamped server-side to [opening_price_minor, ceiling_minor]. The buyer's max
+            is private — it is never echoed back on the Delivery (a courier who saw it
+            would counter exactly at it).
 
     DeliveryStatus:
       type: string
       enum: [pending, assigned, picked_up, in_transit, delivered, failed, unassigned, cancelled]
+
+    DeliveryBid:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        price_minor:
+          type: integer
+          description: The bid price (minor units) — ACCEPT@opening, or the courier's counter.
+        bid_type: { type: string, enum: [accept, counter] }
+        expires_at: { type: string, format: date-time }
+
+    # Per-order COD reconciliation row (the GET /v1/cod/reconciliation `items[]`). Named
+    # so consumers (urafro core's /cod money view) can codegen it instead of hand-mirroring
+    # the shape — the inline definition drifted silently before.
+    CodReconciliationItem:
+      type: object
+      properties:
+        delivery_id: { type: string, format: uuid }
+        external_ref: { type: [string, "null"] }
+        status: { $ref: '#/components/schemas/DeliveryStatus' }
+        expected_minor:
+          type: integer
+          description: Full door COD the courier collects on this delivery (goods + the delivery fee).
+        collected_minor:
+          type: integer
+          description: What the courier has actually collected at the door so far (0 until delivered).
+        updated_at: { type: string, format: date-time }
 
     Driver:
       type: object
@@ -1204,13 +1572,19 @@ components:
         opening_price_minor:
           type: [integer, "null"]
           description: >-
-            Customer-named opening price (minor units) when this is an AUCTION (ADR-036); null on a
-            fixed-price delivery. The offered courier ACCEPTs or COUNTERs against it (POST .../bid).
+            Customer-named opening price (minor units) when this is an AUCTION (ADR-036);
+            null on a fixed-price delivery. The offered courier ACCEPTs or COUNTERs against it.
         ceiling_minor:
           type: [integer, "null"]
           description: >-
             Fraud-guard ceiling (minor units, 10× the cost estimate) a courier's COUNTER may not
-            exceed on an auction (ADR-036); null on a fixed-price delivery.
+            exceed on an auction (ADR-036); null on a fixed-price delivery. NOT a price band — the
+            buyer's private auto-accept max is never exposed here.
+        final_price_minor:
+          type: [integer, "null"]
+          description: >-
+            The agreed fare (minor units) once a courier's bid is accepted on an auction;
+            settlement splits this (not `fee_minor`). Null until a bid clears.
         failure_reason:
           oneOf:
             - { $ref: '#/components/schemas/FailureReason' }
@@ -1227,21 +1601,12 @@ components:
         pod_photo_url:
           type: [string, "null"]
           description: >-
-            Short-lived signed URL to view the proof-of-delivery photo (present when
-            completed with `method: photo`). **Tenant surfaces only**; null otherwise.
+            A short-lived (≈2 min) signed URL to view the proof-of-delivery PHOTO,
+            present when the job was completed with `method: photo`. **Tenant surfaces
+            only**; minted fresh on each read (never cached — it expires fast) and only
+            for the owning tenant. Null when there is no photo PoD on this delivery.
         created_at: { type: string, format: date-time }
         updated_at: { type: string, format: date-time }
-
-    DeliveryBid:
-      type: object
-      description: A courier's sealed bid on a customer-named auction (ADR-036).
-      properties:
-        id: { type: string, format: uuid }
-        price_minor:
-          type: integer
-          description: The bid price (minor units) — ACCEPT@opening, or the courier's counter.
-        bid_type: { type: string, enum: [accept, counter] }
-        expires_at: { type: string, format: date-time }
 
     FailureReason:
       type: string
@@ -1273,7 +1638,7 @@ components:
       required: [id, type]
       properties:
         id: { type: string, format: uuid }
-        type: { type: string, enum: [bicycle, motorbike, car, van, foot] }
+        type: { type: string, enum: [bicycle, motorbike, car, van, foot, large_truck] }
         make: { type: [string, "null"] }
         model: { type: [string, "null"] }
         colour: { type: [string, "null"] }
@@ -1484,6 +1849,9 @@ components:
             - delivery.failed
             - delivery.unassigned
             - delivery.cancelled
+            - delivery.auction_reverted  # ADR-036 T3: a no-clear customer-named auction reverted to a fixed-price delivery (fee_minor now the standard fare)
+            - eta.updated
+            - bid.updated
         created_at: { type: string, format: date-time }
         data:
           type: object
