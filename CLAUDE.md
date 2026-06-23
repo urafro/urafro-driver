@@ -42,7 +42,7 @@ token storage (`src/lib/session.ts`), a session-gated root, the **OTP login flow
 — online/offline + a foreground location/offer poll, the offers list
 (`src/components/OffersList.tsx`), claim, and the **active-job lifecycle**
 (`src/components/ActiveJob.tsx`: picked_up → in_transit → delivered + failed; PoD =
-at-door 4-digit code → verified `otp`, with a manual fallback). **2G offline resilience is done** — lifecycle actions
+at-door 4-digit code → verified `otp`, with a manual fallback). **Offline/EDGE resilience is done** — lifecycle actions
 that fail transiently are persisted (`src/lib/queue.ts`) and a background flush
 retries them until they land (retry on network/5xx, drop on 4xx), with a
 "waiting to sync" indicator. **Background GPS is built** (`src/lib/background-location.ts`
@@ -69,7 +69,9 @@ delivery). It is a **pure client of the `/v1/driver/*` API** — no delivery dom
 logic lives here; the platform owns all of that.
 
 **Operating context (hard constraints, outweigh generic best practice):** low-end
-Android, **intermittent 2G-grade networks** (offline tolerance is mandatory),
+Android, a **3G-primary network that degrades to 2G/EDGE/no-data** (tune the modal
+path to 3G — poll cadences, timeouts — but offline tolerance + graceful degradation
+stay mandatory: never *require* more than EDGE, never *break* on it),
 informal addressing (a GPS pin + landmark is authoritative). The hardest part of
 this app is **reliable background GPS on low-end Android** (ADR-001 risk).
 
