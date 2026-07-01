@@ -63,6 +63,7 @@ import {
 } from '../lib/queue';
 import { useSession } from '../state/session';
 import { useActiveJob } from '../state/activeJob';
+import { REALTIME_ENABLED, connectDriverStream } from '../lib/realtime';
 import { colors, shadow, PILL } from '../theme';
 import OffersList from '../components/OffersList';
 import ActiveJob, { type LifecycleAction, type ActionExtra } from '../components/ActiveJob';
@@ -418,6 +419,20 @@ export default function HomeScreen({ focused }: { focused: boolean }) {
       clearInterval(interval);
     };
   }, [online, job, token, bgActive, loadOffers, reconcileShift]);
+
+  // C4: live offer socket over the push+poll floor. Only while on shift + waiting
+  // for work (online, no active job). On `offer.new` it re-fetches offers at once
+  // (silent:false → maybeNotifyNewOffers, deduped by seenOfferIds so a socket +
+  // poll + push can't triple-notify). The 5s poll above stays the floor — a dropped
+  // or disabled socket never costs an offer. Flag-gated: off = no socket at all.
+  useEffect(() => {
+    if (!REALTIME_ENABLED || !token || !online || job) return;
+    const disconnect = connectDriverStream({
+      token,
+      onOffer: () => void loadOffers(false, 4, 'socket'),
+    });
+    return disconnect;
+  }, [token, online, job, loadOffers]);
 
   const performAction = useCallback(
     async (a: QueuedAction): Promise<void> => {
