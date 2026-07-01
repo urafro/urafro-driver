@@ -194,4 +194,23 @@ describe('api client', () => {
     await expect(verifyOtp('+263772749678', '000000')).rejects.toBeInstanceOf(ApiError);
     expect(onUnauth).toHaveBeenCalledTimes(1);
   });
+
+  // Contract expand/contract tolerance (ADR-004 / urafro-next docs/contract-change-protocol.md):
+  // this app ships via EAS and can't be force-updated, so the server may add response fields an
+  // old client doesn't model. request<T>() must pass them through untouched — the client never
+  // strips to a schema. This test guards against a future regression that adds response-body
+  // validation and silently drops unknown fields.
+  it('passes through unknown/unmodeled response fields (forward-compat)', async () => {
+    stubFetch(200, {
+      token: 'udr_live_x',
+      driver_id: 'd1',
+      unmodeled_future_field: { nested: true },
+      another_new_field: 42,
+    });
+    const res = (await verifyOtp('+263772749678', '123456')) as Record<string, unknown>;
+    expect(res).toMatchObject({ token: 'udr_live_x', driver_id: 'd1' });
+    // the extra fields survive the client untouched (no schema stripping)
+    expect(res.unmodeled_future_field).toEqual({ nested: true });
+    expect(res.another_new_field).toBe(42);
+  });
 });

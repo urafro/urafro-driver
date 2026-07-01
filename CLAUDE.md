@@ -3,7 +3,7 @@
 ## Gophr-parity restructure — this repo's slice
 Part of a cross-repo restructure toward Gophr-parity (merchant ↔ driver fusion). The **canonical plan + rationale live in the `urafro-next` repo**: `docs/gophr-parity/{systems-design,stress-test,backlog}.md`. Board: https://github.com/orgs/urafro/projects/1 (open the "By wave" view).
 - **This repo's issues (driver app):** K2 #51 (component-test setup) · C4 #52 (live connection over the push+poll floor) · C5 #53 (realtime resilience + battery) · H2 #54 (driver "Available" tab) · F4 #55 (multi-leg sequenced run UI). All are sub-issues of platform epics in urafro-next (K, C, H, F).
-- **Hard rule:** this app ships via EAS and CANNOT be force-updated — tolerate unknown API fields, and server-side contract changes must stay backward-compatible (expand/contract).
+- **Hard rule:** this app ships via EAS and CANNOT be force-updated — tolerate unknown API fields, and server-side contract changes must stay backward-compatible (expand/contract). Protocol: `urafro-next/docs/contract-change-protocol.md`.
 - Fetch any issue: `gh issue view <n> --repo urafro/urafro-driver`. For cross-repo units of work, open `urafro-next` and `--add-dir` this repo.
 
 You are my technical co-founder. **Current stage: ADR-002 Phases A + B app
