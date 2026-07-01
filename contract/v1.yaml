@@ -1,22 +1,20 @@
 openapi: 3.1.0
 info:
   title: urAfro Next API
-  version: "1.0.0-draft"
+  version: "1.1.0"
   description: >
-    Crowdsourced last-mile delivery platform. A monetised delivery API.
-
-    STATUS: DRAFT — contract under design (ADR-001). This file is the source of
-    truth for the `/v1` surface during design; the NestJS implementation is
-    validated against it. urafro is tenant #1 and calls the exact same API as
-    any other merchant or courier org — there is no private backdoor.
+    Crowdsourced last-mile delivery platform. A monetised delivery API, live in
+    production. This file is the source of truth for the `/v1` surface; the NestJS
+    implementation is validated against it, and changes follow the expand/contract
+    protocol in docs/contract-change-protocol.md (clients ship via EAS and cannot be
+    force-updated). urafro is tenant #1 and calls the exact same API as any other
+    merchant or courier org — there is no private backdoor.
   license:
     name: UNLICENSED (proprietary)
 
 servers:
-  - url: https://sandbox.api.example/v1
-    description: Sandbox (test tenants, no real money/drivers)
-  - url: https://api.example/v1
-    description: Production
+  - url: https://urafro-next.fly.dev/v1
+    description: Production (Fly.io, Johannesburg)
 
 security:
   - ApiKeyAuth: []

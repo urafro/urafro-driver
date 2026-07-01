@@ -34,5 +34,16 @@ npm run gen:types
 
 ## Status
 
-Foundation (Phase 6.1): scaffold + typed API client + secure token storage + CI.
-Next: OTP login + the "shift" home screen (Phase 6.2).
+**Device-verified and running the full loop on real Android hardware.** OTP login →
+go online + background GPS (streams foreground and screen-locked) → offers (FCM push
++ poll) → claim → `picked_up → in_transit → delivered` with at-door PIN and photo
+proof-of-delivery, plus an offline/EDGE action queue, earnings + Jobs history,
+profile editing, offer decline, and a battery-optimisation guard. It is a **pure
+client** of urafro-next's `/v1/driver/*` API — the platform owns all delivery logic.
+See **[`CLAUDE.md`](CLAUDE.md)** for the always-current build stage.
+
+Part of the cross-repo **Gophr-parity fusion** roadmap (plan in
+`urafro-next/docs/gophr-parity/`; board:
+https://github.com/orgs/urafro/projects/1). Because this app ships via EAS and
+**cannot be force-updated**, the platform's `/v1` contract only ever changes
+backward-compatibly — see `urafro-next/docs/contract-change-protocol.md`.

@@ -33,7 +33,14 @@ jobs:
             exit 1
           fi
           echo '✓ All colours live in src/theme.ts.'
-      # NOTE: a "contract types in sync" check was tried here but openapi-typescript's
-      # floating sub-deps make `npx` output non-reproducible across machines (and the
-      # TS6 peer conflict blocks pinning it as a locked devDep). The committed types
-      # typecheck cleanly; regenerate with `npm run gen:types` when the contract changes.
+      - name: Contract types in sync
+        # src/types/api.gen.ts is GENERATED from the vendored contract/v1.yaml. Regenerate
+        # with the PINNED openapi-typescript devDep (so `npm ci` locks its output — reproducible,
+        # unlike the old floating `npx`) and fail if it drifts: a hand-edit of the generated file,
+        # or a vendored-contract bump without re-running `npm run gen:types`. (The tool declares a
+        # typescript ^5.x peer while this app runs TS 6.x; .npmrc sets legacy-peer-deps=true and the
+        # generated output is verified byte-identical regardless of the TypeScript version.)
+        run: |
+          npm run gen:types
+          git diff --exit-code -- src/types/api.gen.ts \
+            || { echo '✗ src/types/api.gen.ts is stale vs contract/v1.yaml — run `npm run gen:types` and commit.'; exit 1; }
