@@ -21,6 +21,9 @@ jobs:
         run: npm run typecheck
       - name: Unit tests
         run: npm test
+
+      - name: Component tests (jest-expo)
+        run: npm run test:component
       - name: Design-token gate (urafro ADR-034)
         # Every colour lives in src/theme.ts — the single Brand V1 token module
         # (this repo is public; the gate keeps forks/contributors from
