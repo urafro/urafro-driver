@@ -884,6 +884,16 @@ export interface components {
             opening_price_minor?: number;
             /** @description Buyer's pre-authorized MAX fare (minor units) for an auction (ADR-045). The auction auto-clears the cheapest bid ≤ this without the buyer present, so the job still clears in thin supply. Only meaningful with opening_price_minor; clamped server-side to [opening_price_minor, ceiling_minor]. The buyer's max is private — it is never echoed back on the Delivery (a courier who saw it would counter exactly at it). */
             max_price_minor?: number;
+            /**
+             * @description Which drivers to offer this delivery to (Epic B). `open` (default) — the whole pool; `fleet_first` — the tenant's `preferred_fleet_id` first for a short window, then widen to the pool; `fleet_only` — that fleet only (never widens). Requires `preferred_fleet_id` for the fleet_* policies. This is the "favourite courier sees it first" control.
+             * @enum {string}
+             */
+            dispatch_policy?: "open" | "fleet_first" | "fleet_only";
+            /**
+             * Format: uuid
+             * @description A fleet (owned by this tenant) to prefer under `dispatch_policy`.
+             */
+            preferred_fleet_id?: string;
         };
         /** @enum {string} */
         DeliveryStatus: "pending" | "assigned" | "picked_up" | "in_transit" | "delivered" | "failed" | "unassigned" | "cancelled";
