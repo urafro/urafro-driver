@@ -7,6 +7,7 @@ import { ApiError, getPodPhotoUrl, type DriverDelivery, type FailureReason } fro
 import { watchLocation, type Coords } from '../lib/location';
 import { metersBetween } from '../lib/geo';
 import { money, placeLabel } from '../lib/format';
+import { runStops } from '../lib/run';
 import { mapsUrl, telUrl, waUrl } from '../lib/links';
 import { colors, shadow, PILL } from '../theme';
 import RouteMap from './RouteMap';
@@ -92,6 +93,9 @@ export default function ActiveJob({
   // #66: the run is "batched" only with more than one in-flight leg. One leg (or none)
   // ⇒ the plain single-job screen (parity), so cap=1 renders exactly as before.
   const runLegs = run && run.length > 1 ? run : null;
+  // The ordered remaining route for the strip: every pickup, then every drop. The first
+  // is the stop being worked now (== `job`, chosen by currentStopLeg on the HomeScreen).
+  const stops = runLegs ? runStops(runLegs) : null;
 
   // Two-step confirms: "Can't complete" needs a reason; "Delivered" captures the
   // at-door delivery code (verified handover) + PoD note + (on COD jobs) the cash
@@ -223,50 +227,66 @@ export default function ActiveJob({
 
   return (
     <View style={styles.container}>
-      {/* 4-segment progress stepper */}
-      <View style={styles.stepper}>
-        {STEPS.map((s, i) => {
-          const isDone = i < stepsDone;
-          const isCurrent = i === stepsDone;
-          return (
-            <View key={s} style={styles.step}>
-              <View
-                style={[
-                  styles.stepBar,
-                  isDone && styles.stepBarDone,
-                  isCurrent && styles.stepBarCurrent,
-                ]}
-              />
-              <Text
-                style={[styles.stepLabel, (isDone || isCurrent) && styles.stepLabelActive]}
-                numberOfLines={1}
-              >
-                {s}
-              </Text>
-            </View>
-          );
-        })}
-      </View>
+      {/* 4-segment progress stepper — for a SINGLE job. In a pooled run it would reset
+          per leg (confusing: pick up A → "Claimed" for B), so the run strip below is the
+          progress indicator instead and the per-leg stepper is hidden. */}
+      {stops ? null : (
+        <View style={styles.stepper}>
+          {STEPS.map((s, i) => {
+            const isDone = i < stepsDone;
+            const isCurrent = i === stepsDone;
+            return (
+              <View key={s} style={styles.step}>
+                <View
+                  style={[
+                    styles.stepBar,
+                    isDone && styles.stepBarDone,
+                    isCurrent && styles.stepBarCurrent,
+                  ]}
+                />
+                <Text
+                  style={[styles.stepLabel, (isDone || isCurrent) && styles.stepLabelActive]}
+                  numberOfLines={1}
+                >
+                  {s}
+                </Text>
+              </View>
+            );
+          })}
+        </View>
+      )}
 
       {/* #66 (batching): the stop-by-stop run strip — every drop in the pooled run, the
           one being worked highlighted "Now". Advances automatically: a completed leg
           drops out on the next run refresh and the next becomes current. Falls back to
           the F4 single-leg banner when only this leg is known (batch_id, no run list). */}
-      {runLegs ? (
+      {stops ? (
         <View style={styles.runStrip}>
           <View style={styles.runHead}>
             <Feather name="layers" size={15} color={colors.textMuted} aria-hidden />
-            <Text style={styles.runHeadText}>Pooled run · {runLegs.length} stops</Text>
+            <Text style={styles.runHeadText}>
+              Pooled run · {runLegs?.length} orders · {stops.length} stops
+            </Text>
           </View>
-          {runLegs.map((leg, i) => {
-            const current = leg.id === job.id;
+          {stops.map((stop, i) => {
+            const current = i === 0; // the first remaining stop is the one being worked
+            const isPickup = stop.type === 'pickup';
+            const label = placeLabel(isPickup ? stop.leg.pickup : stop.leg.dropoff);
             return (
-              <View key={(leg.id as string) ?? i} style={[styles.runLeg, current && styles.runLegCurrent]}>
+              <View
+                key={`${stop.leg.id as string}-${stop.type}`}
+                style={[styles.runLeg, current && styles.runLegCurrent]}
+              >
                 <View style={[styles.runDot, current && styles.runDotCurrent]}>
-                  <Text style={[styles.runNum, current && styles.runNumCurrent]}>{i + 1}</Text>
+                  <Feather
+                    name={isPickup ? 'package' : 'flag'}
+                    size={12}
+                    color={current ? colors.btnPrimaryText : colors.textMuted}
+                    aria-hidden
+                  />
                 </View>
                 <Text style={[styles.runLegText, current && styles.runLegTextCurrent]} numberOfLines={1}>
-                  {placeLabel(leg.dropoff)}
+                  {isPickup ? 'Pick up' : 'Deliver'} · {label}
                 </Text>
                 {current ? <Text style={styles.runNow}>Now</Text> : null}
               </View>
