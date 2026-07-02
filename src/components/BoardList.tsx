@@ -1,17 +1,23 @@
-import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import type { BoardJob } from '../lib/api';
 import { money } from '../lib/format';
 import { colors, shadow, PILL } from '../theme';
 
-// H2 — the open job board ("Available" tab), phase 1: a BROWSE view of nearby demand.
-// Coarse cards (the driver's cut / distance / COD y/n) — NO address/contact (revealed
-// only on claim) and NO countdown (a board job isn't a time-boxed offer). This is
-// read-only for now: grabbing an un-offered board job needs a server self-assign path
-// that re-checks COD + capacity under the claim lock (a money-path slice, tracked
-// separately). Until then the board tells a driver WHERE the work is so they stay
-// online / reposition; a job that fits them is still pushed to the Offers tab.
-export default function BoardList({ board }: { board: BoardJob[] | null }) {
+// H2 + board grab (issue 170) — the open job board ("Available" tab). Coarse cards (the
+// driver's cut / distance / COD y/n) — NO address/contact (revealed only on GRAB). Grab
+// claims an un-offered board job via the server self-assign path (grabFromBoard re-checks
+// verification + capacity + the COD cap under lock). A job that fits a driver is also
+// still pushed to the Offers tab.
+export default function BoardList({
+  board,
+  onGrab,
+  grabbingId,
+}: {
+  board: BoardJob[] | null;
+  onGrab: (id: string) => void;
+  grabbingId: string | null;
+}) {
   if (board === null) {
     return (
       <View style={styles.checkingCard}>
@@ -28,9 +34,10 @@ export default function BoardList({ board }: { board: BoardJob[] | null }) {
       </View>
     );
   }
+  const grabbing = grabbingId != null;
   return (
     <View style={styles.list}>
-      <Text style={styles.caption}>Nearby demand — jobs that fit you arrive on the Offers tab.</Text>
+      <Text style={styles.caption}>Grab an open job, or wait — jobs that fit you also arrive on Offers.</Text>
       {board.map((job) => {
         const km = job.pickup_distance_km != null ? `${job.pickup_distance_km} km to pickup` : 'Distance unknown';
         return (
@@ -47,6 +54,15 @@ export default function BoardList({ board }: { board: BoardJob[] | null }) {
               <Feather name="map-pin" size={14} color={colors.textMuted} />
               <Text style={styles.pickup}>{km}</Text>
             </View>
+            <Pressable
+              style={[styles.grab, grabbing && styles.disabled]}
+              onPress={() => onGrab(job.delivery_id)}
+              disabled={grabbing}
+            >
+              <Text style={styles.grabText}>
+                {grabbingId === job.delivery_id ? 'Grabbing…' : `Grab — ${money(job.driver_fee_minor)}`}
+              </Text>
+            </Pressable>
           </View>
         );
       })}
@@ -64,6 +80,17 @@ const styles = StyleSheet.create({
   pickup: { color: colors.textMuted, fontSize: 15, fontWeight: '600' },
   codChip: { backgroundColor: colors.batteryBg, borderRadius: PILL, paddingHorizontal: 12, paddingVertical: 4 },
   codText: { color: colors.cod, fontSize: 13, fontWeight: '700' },
+  grab: {
+    marginTop: 4,
+    backgroundColor: colors.btnPrimaryBg,
+    borderRadius: PILL,
+    minHeight: 48,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 24,
+  },
+  grabText: { color: colors.btnPrimaryText, fontSize: 16, fontWeight: '700' },
+  disabled: { opacity: 0.6 },
   checkingCard: { marginTop: 24, alignItems: 'center', gap: 12, padding: 24 },
   checkingText: { color: colors.textFaint, fontSize: 15, fontWeight: '600' },
   emptyCard: { marginTop: 24, backgroundColor: colors.surface, borderRadius: 20, padding: 24, gap: 8, ...shadow.card },
