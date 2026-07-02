@@ -929,6 +929,39 @@ paths:
         '409': { description: The offer cannot be reset (already reset, lapsed, or claimed). }
         '401': { $ref: '#/components/responses/Unauthorized' }
 
+  /driver/board:
+    get:
+      tags: [Driver]
+      summary: The open job board (coarse, PII-scoped)
+      description: >
+        H1. The pending deliveries a VERIFIED driver could grab, as COARSE cards
+        only — distance-to-pickup, the driver's cut, and COD y/n. NO exact address,
+        landmark, or contact pre-claim; full detail is revealed only on claim. Flag +
+        supply gated: an empty list when the board is off or the driver is unverified.
+        Bounded to the 50 most recent pending jobs.
+      operationId: driverBoard
+      security:
+        - DriverBearerAuth: []
+      responses:
+        '200':
+          description: Coarse open-board cards (possibly empty).
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      required: [delivery_id, driver_fee_minor, cod]
+                      properties:
+                        delivery_id: { type: string, format: uuid }
+                        pickup_distance_km: { type: [number, "null"], description: "Straight-line km to pickup from the driver's last position; null if unknown." }
+                        driver_fee_minor: { type: integer, description: The driver's cut (minor units). }
+                        cod: { type: boolean, description: Whether the job carries cash-on-delivery. }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
   /driver/earnings:
     get:
       tags: [Driver]

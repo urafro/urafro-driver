@@ -549,6 +549,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/driver/board": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The open job board (coarse, PII-scoped)
+         * @description H1. The pending deliveries a VERIFIED driver could grab, as COARSE cards only — distance-to-pickup, the driver's cut, and COD y/n. NO exact address, landmark, or contact pre-claim; full detail is revealed only on claim. Flag + supply gated: an empty list when the board is off or the driver is unverified. Bounded to the 50 most recent pending jobs.
+         */
+        get: operations["driverBoard"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/driver/earnings": {
         parameters: {
             query?: never;
@@ -2183,6 +2203,38 @@ export interface operations {
                 };
                 content?: never;
             };
+        };
+    };
+    driverBoard: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Coarse open-board cards (possibly empty). */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data?: {
+                            /** Format: uuid */
+                            delivery_id: string;
+                            /** @description Straight-line km to pickup from the driver's last position; null if unknown. */
+                            pickup_distance_km?: number | null;
+                            /** @description The driver's cut (minor units). */
+                            driver_fee_minor: number;
+                            /** @description Whether the job carries cash-on-delivery. */
+                            cod: boolean;
+                        }[];
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
         };
     };
     driverEarnings: {
