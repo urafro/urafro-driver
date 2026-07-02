@@ -61,4 +61,20 @@ describe('ActiveJob (component)', () => {
     expect(textOf(single.root)).not.toContain('Pooled run');
     unmount(single);
   });
+
+  it('#66: a multi-leg run renders the pickup-first route strip (all pickups, then all drops)', () => {
+    const legA = assignedJob({ id: 'A', status: 'assigned' });
+    const legB = assignedJob({ id: 'B', status: 'assigned' });
+    const r = render(
+      <ActiveJob job={legA} run={[legA, legB]} token="tok" onAction={jest.fn()} busy={false} />,
+    );
+    const text = textOf(r.root);
+    expect(text).toContain('Pooled run');
+    expect(text).toContain('2 orders'); // both legs
+    expect(text).toContain('4 stops'); // 2 pickups + 2 drops
+    expect(text).toContain('Pick up'); // the collection phase
+    expect(text).toContain('Deliver'); // the delivery phase
+    expect(text).toContain('Now'); // the current stop (pick up A) is flagged
+    unmount(r);
+  });
 });

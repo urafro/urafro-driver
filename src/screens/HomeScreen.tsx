@@ -37,6 +37,7 @@ import {
   type FailureReason,
   type Offer,
 } from '../lib/api';
+import { currentStopLeg } from '../lib/run';
 import { getCurrentLocation, ensureForegroundPermission } from '../lib/location';
 import {
   isBackgroundActive,
@@ -137,6 +138,11 @@ export default function HomeScreen({ focused }: { focused: boolean }) {
   const [completed, setCompleted] = useState<{ earnedMinor: number | null; codMinor: number } | null>(
     null,
   );
+  // #66 (batching): a pooled run pays out per leg, but the driver should see ONE payday at
+  // the end of the whole run, not after every drop. Accumulate the run's takings here and
+  // show the total when the last leg lands. Reset when a fresh run starts / completes.
+  const runEarnedRef = useRef(0);
+  const runCodRef = useRef(0);
   // Go-offline asks first, showing the shift's tally — the motivating end-of-day
   // total + a COD hand-in reminder before the driver clocks out.
   const [confirmingOffline, setConfirmingOffline] = useState(false);
@@ -377,9 +383,10 @@ export default function HomeScreen({ focused }: { focused: boolean }) {
         if (canBatch) {
           const legs = await getActiveLegs(token);
           if (cancelled) return;
-          if (legs.length > 0) {
+          const cur = currentStopLeg(legs); // the next stop (pickups first, then dropoffs)
+          if (cur) {
             setRunLegs(legs);
-            setJob(legs[0]);
+            setJob(cur);
           } else {
             setRunLegs(null);
             setJob(null);
@@ -641,7 +648,11 @@ export default function HomeScreen({ focused }: { focused: boolean }) {
       try {
         const delivery = await claimDelivery(token, id);
         setJob(delivery);
-        if (canBatch) setRunLegs([delivery]); // #66: a fresh run of one; the poll keeps it current
+        if (canBatch) {
+          setRunLegs([delivery]); // #66: a fresh run of one; the poll keeps it current
+          runEarnedRef.current = 0; // fresh run — reset the payday accumulator
+          runCodRef.current = 0;
+        }
         setOffers(null);
       } catch (e) {
         // Friendly copy by failure class. Keep the technical detail in the log so a
@@ -669,16 +680,17 @@ export default function HomeScreen({ focused }: { focused: boolean }) {
         setClaimingId(null);
       }
     },
-    [token, reconcileShift],
+    [token, canBatch, reconcileShift],
   );
 
   // #66 (batching): pull the driver's whole active RUN. Keeps runLegs fresh and points
   // `job` at the leg being worked (the first in-flight one). Empty ⇒ the run is done.
   const refreshRun = useCallback(async () => {
     const legs = await getActiveLegs(token);
-    setRunLegs(legs);
-    if (legs.length > 0) {
-      setJob(legs[0]);
+    const cur = currentStopLeg(legs); // pickups first, then dropoffs — the stop to work now
+    if (cur) {
+      setRunLegs(legs);
+      setJob(cur);
     } else {
       setJob(null);
       setRunLegs(null);
@@ -737,6 +749,11 @@ export default function HomeScreen({ focused }: { focused: boolean }) {
       try {
         const delivery = await grabDelivery(token, id);
         setJob(delivery);
+        if (canBatch) {
+          setRunLegs([delivery]); // #66: a fresh run of one
+          runEarnedRef.current = 0; // fresh run — reset the payday accumulator
+          runCodRef.current = 0;
+        }
         setOffers(null);
       } catch (e) {
         console.warn('grab failed:', e instanceof ApiError ? `${e.status} ${e.message}` : e);
@@ -758,7 +775,7 @@ export default function HomeScreen({ focused }: { focused: boolean }) {
         setClaimingId(null);
       }
     },
-    [token, reconcileShift],
+    [token, canBatch, reconcileShift],
   );
 
   // Bid on a customer-named auction (ADR-036): ACCEPT the customer's price or COUNTER your own.
@@ -880,15 +897,39 @@ export default function HomeScreen({ focused }: { focused: boolean }) {
             ...(extra?.podPin ? { pod_pin: extra.podPin } : {}),
           });
         else updated = await markFailed(token, id, extra?.reason);
-        // A confirmed delivery earns the payday screen (the earnings effect below
-        // refetches today's running total as soon as the job clears).
-        if (to === 'delivered') {
-          setCompleted({
-            earnedMinor: job?.driver_fee_minor ?? null,
-            codMinor: extra?.codCollectedMinor ?? 0,
-          });
+        // #66 (batching): in a POOLED run every lifecycle tap advances the run to its next
+        // STOP, not just this leg — a picked-up parcel means "head to the next pickup", a
+        // delivered one means "head to the next drop", and the run only ENDS (payday) once
+        // nothing's left in flight. A run of one behaves exactly like a single job.
+        if (canBatch) {
+          if (to === 'delivered') {
+            // bank this leg's takings toward the single end-of-run payday
+            runEarnedRef.current += job?.driver_fee_minor ?? 0;
+            runCodRef.current += extra?.codCollectedMinor ?? 0;
+          }
+          const legs = await getActiveLegs(token); // authoritative post-transition run
+          const next = currentStopLeg(legs);
+          if (next) {
+            setRunLegs(legs);
+            setJob(next); // advance — no payday until the run is done
+          } else {
+            setCompleted({ earnedMinor: runEarnedRef.current || null, codMinor: runCodRef.current });
+            runEarnedRef.current = 0;
+            runCodRef.current = 0;
+            setRunLegs(null);
+            setJob(null);
+            await clearActiveJob();
+          }
+        } else {
+          // Single-leg path — byte-for-byte the original: payday on delivery, clear on end.
+          if (to === 'delivered') {
+            setCompleted({
+              earnedMinor: job?.driver_fee_minor ?? null,
+              codMinor: extra?.codCollectedMinor ?? 0,
+            });
+          }
+          setJob(to === 'delivered' || to === 'failed' ? null : updated);
         }
-        setJob(to === 'delivered' || to === 'failed' ? null : updated);
       } catch (e) {
         if (shouldRetry(e)) {
           const q = await enqueueAction(queued);
@@ -910,7 +951,7 @@ export default function HomeScreen({ focused }: { focused: boolean }) {
         setBusy(false);
       }
     },
-    [job, token],
+    [job, token, canBatch],
   );
 
   return (
