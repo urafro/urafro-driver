@@ -110,6 +110,20 @@ export function listOffers(token: string): Promise<{ data: Offer[] }> {
   return request('/driver/offers', { method: 'GET', token });
 }
 
+// H2: the open job board — COARSE pending jobs a verified driver could grab (distance,
+// the driver's cut, COD y/n; NO address/contact pre-claim). Full detail is revealed only
+// on claim (reuses claimDelivery). Empty when the board flag is off / the driver's
+// unverified. Mirrors the contract's inline board item (no named component).
+export interface BoardJob {
+  delivery_id: string;
+  pickup_distance_km?: number | null;
+  driver_fee_minor: number;
+  cod: boolean;
+}
+export function getBoard(token: string): Promise<{ data: BoardJob[] }> {
+  return request('/driver/board', { method: 'GET', token });
+}
+
 export function getDelivery(token: string, id: string): Promise<DriverDelivery> {
   return request(`/driver/deliveries/${id}`, { method: 'GET', token });
 }

@@ -15,6 +15,8 @@ import {
   claimDelivery,
   declineOffer,
   resetOffer,
+  getBoard,
+  type BoardJob,
   getDelivery,
   getEarnings,
   getProfile,
@@ -67,6 +69,7 @@ import { useActiveJob } from '../state/activeJob';
 import { REALTIME_ENABLED, connectDriverStream } from '../lib/realtime';
 import { colors, shadow, PILL } from '../theme';
 import OffersList from '../components/OffersList';
+import BoardList from '../components/BoardList';
 import ActiveJob, { type LifecycleAction, type ActionExtra } from '../components/ActiveJob';
 import ShiftStatus from '../components/ShiftStatus';
 
@@ -109,6 +112,11 @@ export default function HomeScreen({ focused }: { focused: boolean }) {
   // "Need more time?" button after use so a driver can't tap it twice (the server
   // enforces once-only too, but this keeps the UI honest between polls).
   const [resetOfferIds, setResetOfferIds] = useState<ReadonlySet<string>>(new Set());
+  // H2: the "Offers | Available" segmented view. 'offers' = the pushed offers list;
+  // 'available' = the pulled open-board (a manual browse, not a poll). null board = not
+  // yet loaded for this session.
+  const [boardTab, setBoardTab] = useState<'offers' | 'available'>('offers');
+  const [board, setBoard] = useState<BoardJob[] | null>(null);
   // Debounce the resume handler against Samsung's flurry of AppState 'active' transitions.
   const lastResumeRef = useRef(0);
   const [pending, setPending] = useState(0);
@@ -705,6 +713,18 @@ export default function HomeScreen({ focused }: { focused: boolean }) {
     [token],
   );
 
+  // H2: pull the open board on demand (a manual browse — NOT a background poll, so it
+  // adds no battery/data cost). Best-effort; on failure fall back to an empty board.
+  const loadBoard = useCallback(async () => {
+    try {
+      const { data } = await getBoard(token);
+      setBoard(data);
+    } catch (e) {
+      console.warn('board load failed:', e instanceof ApiError ? `${e.status}` : e);
+      setBoard((prev) => prev ?? []);
+    }
+  }, [token]);
+
   const act = useCallback(
     async (to: LifecycleAction, extra?: ActionExtra) => {
       const id = job?.id;
@@ -923,23 +943,50 @@ export default function HomeScreen({ focused }: { focused: boolean }) {
                 )}
               </Pressable>
               {online ? (
-                offers === null ? (
-                  <View style={styles.checkingCard}>
-                    <ActivityIndicator color={colors.textFaint} />
-                    <Text style={styles.checkingText}>Checking for offers…</Text>
+                <>
+                  {/* H2: Offers (pushed) vs Available (the pulled open board). A segmented
+                      view inside Home — NOT a 5th top-level tab, so the shift heartbeat
+                      poll keeps running. */}
+                  <View style={styles.segment}>
+                    <Pressable
+                      style={[styles.segmentBtn, boardTab === 'offers' && styles.segmentBtnActive]}
+                      onPress={() => setBoardTab('offers')}
+                    >
+                      <Text style={[styles.segmentText, boardTab === 'offers' && styles.segmentTextActive]}>Offers</Text>
+                    </Pressable>
+                    <Pressable
+                      style={[styles.segmentBtn, boardTab === 'available' && styles.segmentBtnActive]}
+                      onPress={() => {
+                        setBoardTab('available');
+                        setBoard(null);
+                        void loadBoard();
+                      }}
+                    >
+                      <Text style={[styles.segmentText, boardTab === 'available' && styles.segmentTextActive]}>Available</Text>
+                    </Pressable>
                   </View>
-                ) : (
-                  <OffersList
-                    offers={offers}
-                    onClaim={claim}
-                    onBid={bid}
-                    onDecline={decline}
-                    onReset={resetTimer}
-                    resetOfferIds={resetOfferIds}
-                    actingId={claimingId}
-                    bidSentIds={bidSentIds}
-                  />
-                )
+                  {boardTab === 'offers' ? (
+                    offers === null ? (
+                      <View style={styles.checkingCard}>
+                        <ActivityIndicator color={colors.textFaint} />
+                        <Text style={styles.checkingText}>Checking for offers…</Text>
+                      </View>
+                    ) : (
+                      <OffersList
+                        offers={offers}
+                        onClaim={claim}
+                        onBid={bid}
+                        onDecline={decline}
+                        onReset={resetTimer}
+                        resetOfferIds={resetOfferIds}
+                        actingId={claimingId}
+                        bidSentIds={bidSentIds}
+                      />
+                    )
+                  ) : (
+                    <BoardList board={board} />
+                  )}
+                </>
               ) : null}
             </>
           )}
@@ -1029,6 +1076,19 @@ const styles = StyleSheet.create({
     ...shadow.card,
   },
   checkingText: { color: colors.textFaint, fontSize: 15 },
+  // H2 segmented Offers | Available control.
+  segment: {
+    flexDirection: 'row',
+    marginTop: 24,
+    backgroundColor: colors.surfaceAlt,
+    borderRadius: PILL,
+    padding: 4,
+    gap: 4,
+  },
+  segmentBtn: { flex: 1, minHeight: 40, alignItems: 'center', justifyContent: 'center', borderRadius: PILL },
+  segmentBtnActive: { backgroundColor: colors.surface, ...shadow.card },
+  segmentText: { color: colors.textMuted, fontSize: 15, fontWeight: '700' },
+  segmentTextActive: { color: colors.textPrimary },
   batteryBanner: {
     backgroundColor: colors.batteryBg,
     borderColor: colors.batteryBorder,
