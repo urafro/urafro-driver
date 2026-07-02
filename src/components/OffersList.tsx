@@ -16,6 +16,8 @@ export default function OffersList({
   onClaim,
   onBid,
   onDecline,
+  onReset,
+  resetOfferIds,
   actingId,
   bidSentIds,
 }: {
@@ -23,6 +25,8 @@ export default function OffersList({
   onClaim: (id: string) => void;
   onBid: (id: string, type: 'accept' | 'counter', priceMinor?: number) => void;
   onDecline: (id: string) => void;
+  onReset: (id: string) => void;
+  resetOfferIds: ReadonlySet<string>;
   actingId: string | null;
   bidSentIds: ReadonlySet<string>;
 }) {
@@ -52,6 +56,8 @@ export default function OffersList({
             onClaim={onClaim}
             onBid={onBid}
             onDecline={onDecline}
+            onReset={onReset}
+            hasReset={resetOfferIds.has(offer.id)}
             acting={actingId != null}
             actingThis={actingId === offer.id}
             bidSent={bidSentIds.has(offer.id)}
@@ -68,6 +74,8 @@ function OfferCard({
   onClaim,
   onBid,
   onDecline,
+  onReset,
+  hasReset,
   acting,
   actingThis,
   bidSent,
@@ -77,6 +85,8 @@ function OfferCard({
   onClaim: (id: string) => void;
   onBid: (id: string, type: 'accept' | 'counter', priceMinor?: number) => void;
   onDecline: (id: string) => void;
+  onReset: (id: string) => void;
+  hasReset: boolean;
   acting: boolean;
   actingThis: boolean;
   bidSent: boolean;
@@ -85,6 +95,9 @@ function OfferCard({
   const expires = secondsUntil(offer.offer_expires_at, now);
   const urgent = expires < 60;
   const expired = expires <= 0; // dead offer — server 409s a claim/bid; the next poll drops it
+  // H4: offer the one-time countdown reset only once it's genuinely running low, not
+  // yet spent, still live, and not mid-bid — a subtle "Need more time?" nudge.
+  const showReset = onReset != null && !hasReset && !expired && !bidSent && expires < 90;
   const isAuction = offer.opening_price_minor != null;
   const opening = offer.opening_price_minor ?? 0;
 
@@ -216,6 +229,19 @@ function OfferCard({
           </>
         )}
 
+        {/* H4: one-time "Need more time?" — extends this offer's countdown once, no
+            penalty. Only while the timer's running low and the reset is unspent. */}
+        {showReset && !(isAuction && countering) ? (
+          <Pressable
+            style={[styles.needTime, acting && styles.disabled]}
+            onPress={() => onReset(id)}
+            disabled={acting}
+          >
+            <Feather name="clock" size={14} color={colors.textMuted} />
+            <Text style={styles.needTimeText}>Need more time?</Text>
+          </Pressable>
+        ) : null}
+
         {/* Decline (ADR-002 B): the job is never re-offered to this driver. Hidden while
             countering (the "Back" button covers returning); shown in every other state. */}
         {!(isAuction && countering) ? (
@@ -304,6 +330,17 @@ const styles = StyleSheet.create({
     paddingHorizontal: 24,
   },
   passText: { color: colors.textMuted, fontSize: 16, fontWeight: '700' },
+  // H4: the "Need more time?" nudge — quieter than Pass (a row, small type) so it
+  // reads as a gentle option, not a primary action.
+  needTime: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    minHeight: 40,
+    paddingHorizontal: 24,
+  },
+  needTimeText: { color: colors.textMuted, fontSize: 14, fontWeight: '700' },
   disabled: { opacity: 0.6 },
 
   bidSent: {

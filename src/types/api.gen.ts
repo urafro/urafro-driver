@@ -529,6 +529,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/driver/offers/{id}/reset": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Reset (extend) an offer countdown once
+         * @description Gophr-parity resettable timer. Pushes this driver's OWN live offer countdown forward once, with no acceptance-rate penalty. Only a still-offered, unexpired, never-reset offer qualifies; anything else (already reset, lapsed, claimed, or not this driver's) returns 409. `id` is the delivery id.
+         */
+        post: operations["driverResetOffer"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/driver/earnings": {
         parameters: {
             query?: never;
@@ -2130,6 +2150,39 @@ export interface operations {
                 content?: never;
             };
             401: components["responses"]["Unauthorized"];
+        };
+    };
+    driverResetOffer: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Offer countdown reset; returns the new expiry. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** Format: date-time */
+                        offer_expires_at: string;
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            /** @description The offer cannot be reset (already reset */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
         };
     };
     driverEarnings: {

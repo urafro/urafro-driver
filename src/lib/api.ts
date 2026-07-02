@@ -325,6 +325,13 @@ export function declineOffer(token: string, id: string): Promise<void> {
   return request(`/driver/offers/${id}/decline`, { method: 'POST', token });
 }
 
+// H4: reset (extend) this driver's own live offer countdown once. Returns the new
+// expiry so the card's countdown jumps forward. 409 if it can't be reset (already
+// used, lapsed, claimed) — the caller treats that as "reset spent" and hides the button.
+export function resetOffer(token: string, id: string): Promise<{ offer_expires_at: string }> {
+  return request(`/driver/offers/${id}/reset`, { method: 'POST', token });
+}
+
 // ── Earnings + push (ADR-002 A.1/A.4) ────────────────────────────────────────
 export interface Earnings {
   payable_minor: number;

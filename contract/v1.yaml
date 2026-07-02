@@ -899,6 +899,36 @@ paths:
         '204': { description: Declined (or already moot). }
         '401': { $ref: '#/components/responses/Unauthorized' }
 
+  /driver/offers/{id}/reset:
+    post:
+      tags: [Driver]
+      summary: Reset (extend) an offer countdown once
+      description: >
+        Gophr-parity resettable timer. Pushes this driver's OWN live offer countdown
+        forward once, with no acceptance-rate penalty. Only a still-offered, unexpired,
+        never-reset offer qualifies; anything else (already reset, lapsed, claimed, or
+        not this driver's) returns 409. `id` is the delivery id.
+      operationId: driverResetOffer
+      security:
+        - DriverBearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '201':
+          description: Offer countdown reset; returns the new expiry.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [offer_expires_at]
+                properties:
+                  offer_expires_at: { type: string, format: date-time }
+        '409': { description: The offer cannot be reset (already reset, lapsed, or claimed). }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
   /driver/earnings:
     get:
       tags: [Driver]

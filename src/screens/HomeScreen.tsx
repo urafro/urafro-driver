@@ -14,6 +14,7 @@ import {
   ApiError,
   claimDelivery,
   declineOffer,
+  resetOffer,
   getDelivery,
   getEarnings,
   getProfile,
@@ -104,6 +105,10 @@ export default function HomeScreen({ focused }: { focused: boolean }) {
   // accept/counter buttons. Local-only: a bid doesn't assign the job (the customer/auto-clear does
   // later), so until then the offer still lists; this stops a re-bid and clarifies the state.
   const [bidSentIds, setBidSentIds] = useState<ReadonlySet<string>>(new Set());
+  // H4: offers whose one-time countdown reset has been spent (locally). Hides the
+  // "Need more time?" button after use so a driver can't tap it twice (the server
+  // enforces once-only too, but this keeps the UI honest between polls).
+  const [resetOfferIds, setResetOfferIds] = useState<ReadonlySet<string>>(new Set());
   // Debounce the resume handler against Samsung's flurry of AppState 'active' transitions.
   const lastResumeRef = useRef(0);
   const [pending, setPending] = useState(0);
@@ -674,6 +679,32 @@ export default function HomeScreen({ focused }: { focused: boolean }) {
     [token, loadOffers],
   );
 
+  // H4: reset (extend) this offer's countdown once. Optimistically hide the button,
+  // then on success jump the local countdown to the new expiry. A 409 means the reset
+  // is genuinely spent (already used / lapsed / claimed) — keep it hidden. Any OTHER
+  // failure (flaky 3G, 5xx) likely didn't apply, so restore the button to allow a
+  // retry; the server enforces once-only, so a retry that actually landed just 409s.
+  const resetTimer = useCallback(
+    async (id: string) => {
+      setResetOfferIds((prev) => new Set(prev).add(id));
+      try {
+        const { offer_expires_at } = await resetOffer(token, id);
+        setOffers((prev) =>
+          (prev ?? []).map((o) => (o.id === id ? { ...o, offer_expires_at } : o)),
+        );
+      } catch (e) {
+        if (!(e instanceof ApiError && e.status === 409)) {
+          setResetOfferIds((prev) => {
+            const next = new Set(prev);
+            next.delete(id);
+            return next;
+          });
+        }
+      }
+    },
+    [token],
+  );
+
   const act = useCallback(
     async (to: LifecycleAction, extra?: ActionExtra) => {
       const id = job?.id;
@@ -903,6 +934,8 @@ export default function HomeScreen({ focused }: { focused: boolean }) {
                     onClaim={claim}
                     onBid={bid}
                     onDecline={decline}
+                    onReset={resetTimer}
+                    resetOfferIds={resetOfferIds}
                     actingId={claimingId}
                     bidSentIds={bidSentIds}
                   />
