@@ -180,18 +180,21 @@ export default function HomeScreen({ focused }: { focused: boolean }) {
 
   // Fetch offers NOW — called eagerly on open/resume (so a notification tap paints
   // the offer fast instead of waiting for the poll, which is itself gated behind
-  // reconcileShift flipping `online`) AND from the poll tick. Skipped on a job (the
-  // offers list is hidden then, and we mustn't fire offer notifications mid-delivery).
+  // reconcileShift flipping `online`) AND from the poll tick. Normally skipped on a job
+  // (the offers list is hidden then). #66 (batching): when batching is on, a busy driver
+  // KEEPS fetching so the on-route batch offers surface in the "On your route" section —
+  // but we still suppress offer NOTIFICATIONS mid-delivery (populate the list silently).
   const loadOffers = useCallback(
     async (silent = false, retries = 0, reason = 'poll'): Promise<void> => {
-      if (!token || jobRef.current) return;
+      if (!token || (jobRef.current && !canBatch)) return;
       try {
         const { data } = await listOffers(token);
         const fresh = data ?? [];
         setOffers(fresh);
         // `silent` = refreshed because a push already notified the driver — just sync
         // the seen-set so the next poll doesn't fire a DUPLICATE local notification.
-        if (silent) markOffersSeen(fresh);
+        // On a job (batch mode) also stay silent — don't buzz mid-run.
+        if (silent || jobRef.current) markOffersSeen(fresh);
         else void maybeNotifyNewOffers(fresh, money);
         // Diagnostic (offer-latency investigation): shows in `adb logcat` which trigger
         // fetched and how many offers it saw — to confirm a push/resume refetch actually
@@ -208,7 +211,7 @@ export default function HomeScreen({ focused }: { focused: boolean }) {
         }
       }
     },
-    [token],
+    [token, canBatch],
   );
 
   // Fetch + open a job the driver just WON via a bid (ADR-036). The auction accept is async with
