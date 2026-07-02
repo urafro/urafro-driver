@@ -13,12 +13,14 @@ import { Feather } from '@expo/vector-icons';
 import {
   ApiError,
   claimDelivery,
+  appendDelivery,
   grabDelivery,
   declineOffer,
   resetOffer,
   getBoard,
   type BoardJob,
   getDelivery,
+  getActiveLegs,
   getEarnings,
   getProfile,
   goOffline,
@@ -99,6 +101,13 @@ export default function HomeScreen({ focused }: { focused: boolean }) {
   // null = not fetched yet (show "Checking for offers…"); [] = fetched, none nearby.
   const [offers, setOffers] = useState<Offer[] | null>(null);
   const [job, setJob] = useState<DriverDelivery | null>(null);
+  // #66 (batching): does the platform allow concurrent runs (profile.max_concurrent_jobs>1)?
+  // Default false ⇒ every batch path below is dormant and the app behaves byte-for-byte as a
+  // single-job app (never polls offers while busy, never routes to /append, no run strip).
+  const [canBatch, setCanBatch] = useState(false);
+  // #66: the driver's whole in-flight RUN (all legs, primary-first) when batching is on.
+  // `job` stays the leg being worked (runLegs[0]); this drives the multi-stop run strip.
+  const [runLegs, setRunLegs] = useState<DriverDelivery[] | null>(null);
   const [busy, setBusy] = useState(false);
   const [locating, setLocating] = useState(false);
   const [bgActive, setBgActive] = useState(false);
@@ -154,6 +163,9 @@ export default function HomeScreen({ focused }: { focused: boolean }) {
     const p = await getProfile(token);
     const onShift = p.status === 'available' || p.status === 'busy';
     setOnline(onShift);
+    // #66 (batching): the platform capability gate. >1 unlocks the batch paths; at the
+    // default 1 (or an old server that omits it) canBatch stays false — fully inert.
+    setCanBatch((p.max_concurrent_jobs ?? 1) > 1);
     if (onShift) {
       const alreadyStreaming = await isBackgroundActive();
       setBgActive(alreadyStreaming || (await startBackgroundLocation()));
@@ -356,6 +368,22 @@ export default function HomeScreen({ focused }: { focused: boolean }) {
     let cancelled = false;
     async function check() {
       try {
+        // #66 (batching): refresh the whole run — a completed leg drops out, an appended
+        // leg joins, and the worked leg (runLegs[0]) stays fresh. Empty ⇒ the run is done.
+        // At cap=1 canBatch is false ⇒ the single-leg getDelivery path below, unchanged.
+        if (canBatch) {
+          const legs = await getActiveLegs(token);
+          if (cancelled) return;
+          if (legs.length > 0) {
+            setRunLegs(legs);
+            setJob(legs[0]);
+          } else {
+            setRunLegs(null);
+            setJob(null);
+            await clearActiveJob();
+          }
+          return;
+        }
         const fresh = await getDelivery(token, id as string);
         if (cancelled) return;
         const s = fresh.status;
@@ -381,7 +409,7 @@ export default function HomeScreen({ focused }: { focused: boolean }) {
       cancelled = true;
       clearInterval(interval);
     };
-  }, [token, job?.id]);
+  }, [token, job?.id, canBatch]);
 
   // Earnings summary (ADR-002 A.4): refresh whenever we're on the shift screen.
   useEffect(() => {
@@ -406,7 +434,10 @@ export default function HomeScreen({ focused }: { focused: boolean }) {
   // THIS poll only covers the app-open case; the location task covers
   // screen-locked, and remote push covers everything once Firebase is wired.)
   useEffect(() => {
-    if (!online || job) return;
+    // #66 (batching): normally the poll stops once on a job. When batching is on, a busy
+    // driver keeps polling so the on-route batch offers the server fans them (to ADD via
+    // /append) actually surface. At cap=1 canBatch is false ⇒ byte-for-byte the old gate.
+    if (!online || (job && !canBatch)) return;
     let cancelled = false;
     let ticks = 0;
     // ALWAYS ping location from the foreground poll — the background stream does NOT
@@ -442,7 +473,7 @@ export default function HomeScreen({ focused }: { focused: boolean }) {
       cancelled = true;
       clearInterval(interval);
     };
-  }, [online, job, token, bgActive, socketHealthy, loadOffers, reconcileShift]);
+  }, [online, job, canBatch, token, bgActive, socketHealthy, loadOffers, reconcileShift]);
 
   // C4: live offer socket over the push+poll floor. Only while on shift + waiting
   // for work (online, no active job). On `offer.new` it re-fetches offers at once
@@ -607,6 +638,7 @@ export default function HomeScreen({ focused }: { focused: boolean }) {
       try {
         const delivery = await claimDelivery(token, id);
         setJob(delivery);
+        if (canBatch) setRunLegs([delivery]); // #66: a fresh run of one; the poll keeps it current
         setOffers(null);
       } catch (e) {
         // Friendly copy by failure class. Keep the technical detail in the log so a
@@ -635,6 +667,61 @@ export default function HomeScreen({ focused }: { focused: boolean }) {
       }
     },
     [token, reconcileShift],
+  );
+
+  // #66 (batching): pull the driver's whole active RUN. Keeps runLegs fresh and points
+  // `job` at the leg being worked (the first in-flight one). Empty ⇒ the run is done.
+  const refreshRun = useCallback(async () => {
+    const legs = await getActiveLegs(token);
+    setRunLegs(legs);
+    if (legs.length > 0) {
+      setJob(legs[0]);
+    } else {
+      setJob(null);
+      setRunLegs(null);
+      await clearActiveJob();
+    }
+  }, [token]);
+
+  // #66 (batching): ADD an on-route batch offer to the current run via /append (the
+  // driver stays on their current leg; the run grows by one). Only ever reached for an
+  // `appendable` offer, which the server marks only when batching is on. A 409 says why
+  // it can't join (run full / won't fit the vehicle / over the combined cash limit).
+  const append = useCallback(
+    async (id: string) => {
+      setClaimingId(id);
+      setError(null);
+      try {
+        await appendDelivery(token, id);
+        await refreshRun(); // the new leg joins; keep working the current one
+        void loadOffers(true); // drop the accepted offer from the list
+      } catch (e) {
+        console.warn('append failed:', e instanceof ApiError ? `${e.status} ${e.message}` : e);
+        if (e instanceof ApiError && e.status === 409) {
+          if (e.message.includes('concurrent-job limit')) {
+            setError('Your run is full — finish a drop first.');
+          } else if (e.message.includes('capacity')) {
+            setError("That job won't fit your vehicle — try another.");
+          } else if (e.message.includes('COD')) {
+            setError("That job's cash is over your limit for this run — try another.");
+          } else if (e.message.includes('not available')) {
+            setError("You're off shift — go online again to take jobs.");
+            void reconcileShift().catch(() => {});
+          } else if (e.message.includes('no active offer')) {
+            setError('That offer expired — the next one will pop up here.');
+          } else {
+            setError('That job was just taken — try another.');
+          }
+        } else if (e instanceof ApiError) {
+          setError('Could not add that job — please try again.');
+        } else {
+          setError('No connection — check your signal and try again.');
+        }
+      } finally {
+        setClaimingId(null);
+      }
+    },
+    [token, refreshRun, loadOffers, reconcileShift],
   );
 
   // board grab (issue 170): claim an un-offered job straight off the Available board. On success
@@ -892,7 +979,27 @@ export default function HomeScreen({ focused }: { focused: boolean }) {
               tap, so it renders INSIDE the card next to what they touched (layer-1
               action feedback) — not at the bottom of the scroll where the keyboard
               hides it. */}
-          <ActiveJob job={job} token={token} onAction={act} busy={busy} actionError={error} />
+          <ActiveJob job={job} run={runLegs} token={token} onAction={act} busy={busy} actionError={error} />
+          {/* #66 (batching): on-route jobs the driver can ADD to this run, surfaced ON the
+              active-job screen (the offers list is otherwise hidden while on a job). Only
+              the appendable ones, only when batching is on — empty/absent at cap=1. */}
+          {canBatch && offers && offers.some((o) => o.appendable) ? (
+            <View style={styles.batchOffers}>
+              <Text style={styles.batchOffersTitle}>On your route</Text>
+              <Text style={styles.batchOffersSub}>Add a nearby job to your current run.</Text>
+              <OffersList
+                offers={offers.filter((o) => o.appendable)}
+                onClaim={claim}
+                onAppend={append}
+                onBid={bid}
+                onDecline={decline}
+                onReset={resetTimer}
+                resetOfferIds={resetOfferIds}
+                actingId={claimingId}
+                bidSentIds={bidSentIds}
+              />
+            </View>
+          ) : null}
           {/* Availability stays visible but locked mid-delivery — going offline on a
               job isn't allowed, and hiding the control read as "where did it go?". */}
           <View style={[styles.toggle, styles.offBtn, styles.busy, styles.toggleRow]}>
@@ -1010,6 +1117,7 @@ export default function HomeScreen({ focused }: { focused: boolean }) {
                       <OffersList
                         offers={offers}
                         onClaim={claim}
+                        onAppend={append}
                         onBid={bid}
                         onDecline={decline}
                         onReset={resetTimer}
@@ -1053,6 +1161,10 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.bg },
   content: { padding: 24, paddingTop: 72, flexGrow: 1 },
   title: { color: colors.textPrimary, fontSize: 28, fontWeight: '700' },
+  // #66 (batching): the "add to your run" section on the active-job screen.
+  batchOffers: { marginTop: 20 },
+  batchOffersTitle: { color: colors.textPrimary, fontSize: 18, fontWeight: '700' },
+  batchOffersSub: { color: colors.textMuted, fontSize: 14, marginTop: 2 },
   earnCard: {
     backgroundColor: colors.surface,
     borderRadius: 12,

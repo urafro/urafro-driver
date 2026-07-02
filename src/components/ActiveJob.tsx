@@ -67,12 +67,17 @@ const STEP_DONE: Record<string, number> = {
 // Call), the other stop for context, and the next lifecycle step(s).
 export default function ActiveJob({
   job,
+  run,
   token,
   onAction,
   busy,
   actionError,
 }: {
   job: DriverDelivery;
+  /** #66 (batching): every in-flight leg of the driver's run (primary-first), or null
+   *  when batching is off / a run of one. `job` is the leg being worked (run[0]); this
+   *  drives the multi-stop run strip. Only rendered when there is more than one leg. */
+  run?: DriverDelivery[] | null;
   /** Driver bearer token — needed to mint the PoD-photo upload URL directly. */
   token: string;
   onAction: (to: LifecycleAction, extra?: ActionExtra) => void;
@@ -84,6 +89,9 @@ export default function ActiveJob({
 }) {
   const status = job.status ?? 'assigned';
   const actions = ACTIONS[status] ?? [];
+  // #66: the run is "batched" only with more than one in-flight leg. One leg (or none)
+  // ⇒ the plain single-job screen (parity), so cap=1 renders exactly as before.
+  const runLegs = run && run.length > 1 ? run : null;
 
   // Two-step confirms: "Can't complete" needs a reason; "Delivered" captures the
   // at-door delivery code (verified handover) + PoD note + (on COD jobs) the cash
@@ -240,10 +248,32 @@ export default function ActiveJob({
         })}
       </View>
 
-      {/* F4: when this delivery is one leg of a pooled run (batching), tell the driver so
-          — they're carrying more than one drop. Full stop-by-stop run navigation is a
-          follow-up; this surfaces the run + this leg's position. */}
-      {job.batch_id ? (
+      {/* #66 (batching): the stop-by-stop run strip — every drop in the pooled run, the
+          one being worked highlighted "Now". Advances automatically: a completed leg
+          drops out on the next run refresh and the next becomes current. Falls back to
+          the F4 single-leg banner when only this leg is known (batch_id, no run list). */}
+      {runLegs ? (
+        <View style={styles.runStrip}>
+          <View style={styles.runHead}>
+            <Feather name="layers" size={15} color={colors.textMuted} aria-hidden />
+            <Text style={styles.runHeadText}>Pooled run · {runLegs.length} stops</Text>
+          </View>
+          {runLegs.map((leg, i) => {
+            const current = leg.id === job.id;
+            return (
+              <View key={(leg.id as string) ?? i} style={[styles.runLeg, current && styles.runLegCurrent]}>
+                <View style={[styles.runDot, current && styles.runDotCurrent]}>
+                  <Text style={[styles.runNum, current && styles.runNumCurrent]}>{i + 1}</Text>
+                </View>
+                <Text style={[styles.runLegText, current && styles.runLegTextCurrent]} numberOfLines={1}>
+                  {placeLabel(leg.dropoff)}
+                </Text>
+                {current ? <Text style={styles.runNow}>Now</Text> : null}
+              </View>
+            );
+          })}
+        </View>
+      ) : job.batch_id ? (
         <View style={styles.runBanner}>
           <Feather name="layers" size={15} color={colors.textMuted} aria-hidden />
           <Text style={styles.runBannerText}>Pooled run · stop {job.batch_sequence ?? 1}</Text>
@@ -494,6 +524,41 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   runBannerText: { color: colors.textPrimary, fontSize: 14, fontWeight: '700' },
+
+  // #66 pooled-run stop strip.
+  runStrip: {
+    backgroundColor: colors.surfaceAlt,
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    marginBottom: 12,
+    gap: 8,
+  },
+  runHead: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 2 },
+  runHeadText: { color: colors.textPrimary, fontSize: 14, fontWeight: '700' },
+  runLeg: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingVertical: 6,
+    paddingHorizontal: 8,
+    borderRadius: 10,
+  },
+  runLegCurrent: { backgroundColor: colors.surface },
+  runDot: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: colors.surface,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  runDotCurrent: { backgroundColor: colors.tabActive },
+  runNum: { color: colors.textMuted, fontSize: 12, fontWeight: '800' },
+  runNumCurrent: { color: colors.btnPrimaryText },
+  runLegText: { flex: 1, color: colors.textMuted, fontSize: 14, fontWeight: '600' },
+  runLegTextCurrent: { color: colors.textPrimary, fontWeight: '700' },
+  runNow: { color: colors.tabActive, fontSize: 12, fontWeight: '800' },
 
   // Card
   card: {

@@ -14,6 +14,7 @@ import { colors, shadow, PILL } from '../theme';
 export default function OffersList({
   offers,
   onClaim,
+  onAppend,
   onBid,
   onDecline,
   onReset,
@@ -23,6 +24,9 @@ export default function OffersList({
 }: {
   offers: Offer[];
   onClaim: (id: string) => void;
+  // #66 (batching): accept an `appendable` offer — ADD it to the current run via /append
+  // instead of /claim. Only reached when the server marks the offer appendable (cap>1).
+  onAppend: (id: string) => void;
   onBid: (id: string, type: 'accept' | 'counter', priceMinor?: number) => void;
   onDecline: (id: string) => void;
   onReset: (id: string) => void;
@@ -54,6 +58,7 @@ export default function OffersList({
             offer={offer}
             now={now}
             onClaim={onClaim}
+            onAppend={onAppend}
             onBid={onBid}
             onDecline={onDecline}
             onReset={onReset}
@@ -72,6 +77,7 @@ function OfferCard({
   offer,
   now,
   onClaim,
+  onAppend,
   onBid,
   onDecline,
   onReset,
@@ -83,6 +89,7 @@ function OfferCard({
   offer: Offer;
   now: number;
   onClaim: (id: string) => void;
+  onAppend: (id: string) => void;
   onBid: (id: string, type: 'accept' | 'counter', priceMinor?: number) => void;
   onDecline: (id: string) => void;
   onReset: (id: string) => void;
@@ -100,6 +107,9 @@ function OfferCard({
   const showReset = onReset != null && !hasReset && !expired && !bidSent && expires < 90;
   const isAuction = offer.opening_price_minor != null;
   const opening = offer.opening_price_minor ?? 0;
+  // #66 (batching): a batch/APPEND offer — the driver is mid-run and this on-route job
+  // would ADD to it via /append. Server marks it (cap>1); always false for a fresh claim.
+  const appendable = !isAuction && offer.appendable === true;
 
   // The driver's NET share of a gross fare (auction shows real earnings, not the cost estimate);
   // null when no positive fee anchors the ratio (then we show gross only). See lib/auction.
@@ -148,6 +158,17 @@ function OfferCard({
       <Text style={styles.pickup} numberOfLines={1}>Pickup · {placeLabel(offer.pickup)}</Text>
       {meta ? <Text style={styles.trip}>{meta}</Text> : null}
 
+      {/* #66 (batching): flag an on-route ADD so the driver knows this joins their run,
+          not replaces it. */}
+      {appendable ? (
+        <View style={styles.routeRow}>
+          <View style={styles.routeChip}>
+            <Feather name="git-merge" size={13} color={colors.textMuted} />
+            <Text style={styles.routeText}>On your route — adds to this run</Text>
+          </View>
+        </View>
+      ) : null}
+
       {offer.collect_minor ? (
         <View style={styles.codRow}>
           <View style={styles.codChip}>
@@ -158,13 +179,23 @@ function OfferCard({
 
       <View style={styles.actions}>
         {!isAuction ? (
-          // Fixed-price: claim = instant assign.
+          // Fixed-price: claim = instant assign. #66: an APPEND offer ADDs to the run.
           <Pressable
             style={[styles.accept, (acting || expired) && styles.disabled]}
-            onPress={() => onClaim(id)}
+            onPress={() => (appendable ? onAppend(id) : onClaim(id))}
             disabled={acting || expired}
           >
-            <Text style={styles.acceptText}>{expired ? 'Expired' : actingThis ? 'Claiming…' : `Accept — ${fixedPayout}`}</Text>
+            <Text style={styles.acceptText}>
+              {expired
+                ? 'Expired'
+                : actingThis
+                  ? appendable
+                    ? 'Adding…'
+                    : 'Claiming…'
+                  : appendable
+                    ? `Add to run — ${fixedPayout}`
+                    : `Accept — ${fixedPayout}`}
+            </Text>
           </Pressable>
         ) : bidSent ? (
           // Auction: this driver has bid — assigned later if the customer / auto-clear accepts it.
@@ -301,6 +332,19 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
   },
   codText: { color: colors.cod, fontSize: 14, fontWeight: '700' },
+
+  // #66 (batching): the "on your route" add-to-run hint.
+  routeRow: { marginTop: 10, flexDirection: 'row' },
+  routeChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: colors.surfaceAlt,
+    borderRadius: PILL,
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+  },
+  routeText: { color: colors.textMuted, fontSize: 13, fontWeight: '700' },
 
   actions: { marginTop: 16, gap: 8 },
   accept: {
