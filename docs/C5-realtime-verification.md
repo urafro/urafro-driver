@@ -38,8 +38,18 @@ deliveries.
    replacement for push**. Document that conclusion here; don't let it read as a
    regression of the push floor.
 
-## Fill this in after the run
-- Date / build / device:
-- Battery (socket on vs off):
-- Missed offers (scenarios 2 & 3):
-- Verdict (flag on for pilot? tuning changes?):
+## Run results
+**2026-07-02 · EAS preview build (flag on) · Samsung SM-G998U (Galaxy S21 Ultra), Android 14 · prod urafro-next (Fly v66, REALTIME_ENABLED=true).**
+
+- **Scenario 1 (happy path) — ✅ PASS.** A single real offer, delivered by all three paths; the **socket won**:
+  - `09:43:35.051  [offers] socket: loaded 1`  ← socket delivered first
+  - `09:43:35.132  [offers] push:   loaded 1`  ← FCM push, +81 ms
+  - `09:43:37.282  [offers] poll:   loaded 1`  ← poll caught up, +2.2 s
+  So `matching.offer()` → broadcast `driver:{id}` → the phone's socket → `loadOffers('socket')` works end-to-end, ~2.2 s ahead of the poll.
+- **No triple-notify — ✅ PASS.** The socket loaded the offer first; the later push/poll fetches found it already in `seenOfferIds`, so only one local notification fired.
+- **Floor intact — ✅ PASS.** Push and poll delivered the same offer redundantly — the socket is additive, not a replacement.
+- **C5 poll-slowdown — ✅ PASS.** With the socket healthy the poll dropped 5 s → **20 s** and held it exactly (six ticks 09:47:52 / 09:48:12 / 09:48:32 / 09:48:52 / 09:49:12 / 09:49:32).
+- **Scenario 2 (flaky reconnect):** not explicitly toggled this run; the capped-backoff + 60 s-staleness reconnect is unit-covered (`realtime.test.ts`).
+- **Scenario 5 (battery, socket-on vs off over a shift): STILL OWED** — needs an *unplugged* multi-hour shift (charging masks drain). The mechanism (20 s poll when healthy) is verified working; this is the budget-confirmation number, not a code gate. Optional: wireless adb (`adb tcpip 5555` + connect over WiFi, then unplug) to capture `batterystats` unplugged.
+
+**Verdict so far:** the socket + poll-slowdown + push/poll floor all work on real hardware. Functionally green. Keep the flags **off in prod** until the battery-shift number confirms the budget; then flip on for the pilot.
