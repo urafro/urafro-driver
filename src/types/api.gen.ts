@@ -727,6 +727,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/driver/deliveries/{id}/grab": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Grab a pending job from the open board
+         * @description GRAB a pending job off the open board — one the driver was NOT offered. Like /claim but re-checks verification + vehicle capacity + the COD cap. 409 if the board is closed, the job is gone / an auction, or the driver is ineligible. Additive (A3).
+         */
+        post: operations["driverGrabDelivery"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/driver/deliveries/{id}/bid": {
         parameters: {
             query?: never;
@@ -2500,6 +2520,31 @@ export interface operations {
         requestBody?: never;
         responses: {
             /** @description Appended — now also `assigned` to this driver. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DriverDelivery"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+        };
+    };
+    driverGrabDelivery: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Grabbed — now `assigned` to this driver. */
             200: {
                 headers: {
                     [name: string]: unknown;

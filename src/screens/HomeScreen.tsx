@@ -13,6 +13,7 @@ import { Feather } from '@expo/vector-icons';
 import {
   ApiError,
   claimDelivery,
+  grabDelivery,
   declineOffer,
   resetOffer,
   getBoard,
@@ -636,6 +637,40 @@ export default function HomeScreen({ focused }: { focused: boolean }) {
     [token, reconcileShift],
   );
 
+  // #170 (board grab): claim an un-offered job straight off the Available board. On success
+  // the job takes over the screen (like claim); a 409 tells the driver why (board closed /
+  // gone / over their cash-or-vehicle limit). Reuses claimingId for the acting state.
+  const grab = useCallback(
+    async (id: string) => {
+      setClaimingId(id);
+      setError(null);
+      try {
+        const delivery = await grabDelivery(token, id);
+        setJob(delivery);
+        setOffers(null);
+      } catch (e) {
+        console.warn('grab failed:', e instanceof ApiError ? `${e.status} ${e.message}` : e);
+        if (e instanceof ApiError && e.status === 409) {
+          if (e.message.includes('not available') || e.message.includes('not verified')) {
+            setError("You're off shift — go online again to grab jobs.");
+            void reconcileShift().catch(() => {});
+          } else if (e.message.includes('COD') || e.message.includes('capacity')) {
+            setError("That job's too big for your cash limit or vehicle — try another.");
+          } else {
+            setError('That job was just taken — try another.');
+          }
+        } else if (e instanceof ApiError) {
+          setError('Could not grab that job — please try again.');
+        } else {
+          setError('No connection — check your signal and try again.');
+        }
+      } finally {
+        setClaimingId(null);
+      }
+    },
+    [token, reconcileShift],
+  );
+
   // Bid on a customer-named auction (ADR-036): ACCEPT the customer's price or COUNTER your own.
   // Unlike claim, a bid does NOT assign the job — it's sealed; the customer / auto-clear accepts a
   // bid later, at which point the active-job reconcile surfaces the job. So on success we mark the
@@ -984,7 +1019,7 @@ export default function HomeScreen({ focused }: { focused: boolean }) {
                       />
                     )
                   ) : (
-                    <BoardList board={board} />
+                    <BoardList board={board} onGrab={grab} grabbingId={claimingId} />
                   )}
                 </>
               ) : null}

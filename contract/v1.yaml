@@ -1199,6 +1199,32 @@ paths:
         '404': { $ref: '#/components/responses/NotFound' }
         '409': { $ref: '#/components/responses/Conflict' }
 
+  /driver/deliveries/{id}/grab:
+    post:
+      tags: [Driver]
+      summary: Grab a pending job from the open board
+      description: >
+        GRAB a pending job off the open board — one the driver was NOT offered. Like /claim
+        but re-checks verification + vehicle capacity + the COD cap. 409 if the board is
+        closed, the job is gone / an auction, or the driver is ineligible. Additive (A3).
+      operationId: driverGrabDelivery
+      security:
+        - DriverBearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Grabbed — now `assigned` to this driver.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DriverDelivery' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
   /driver/deliveries/{id}/bid:
     post:
       tags: [Driver]

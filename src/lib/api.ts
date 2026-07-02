@@ -139,6 +139,13 @@ export function appendDelivery(token: string, id: string): Promise<DriverDeliver
   return request(`/driver/deliveries/${id}/append`, { method: 'POST', token });
 }
 
+// #170 (board grab): claim a pending job straight off the open board — one the driver
+// was NOT offered. Re-checks verification + capacity + the COD cap under lock. 409 if the
+// board's closed / the job's gone or an auction / the driver's ineligible.
+export function grabDelivery(token: string, id: string): Promise<DriverDelivery> {
+  return request(`/driver/deliveries/${id}/grab`, { method: 'POST', token });
+}
+
 // Bid on a customer-named auction (ADR-036): ACCEPT the customer's opening price, or COUNTER with
 // the courier's own price (rejected by the server above the delivery's 10× ceiling). Sealed — the
 // courier sees only their own bid. Unlike claim, this does NOT assign the job; the buyer/auto-clear
