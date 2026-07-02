@@ -707,6 +707,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/driver/deliveries/{id}/append": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Add a compatible job to the current run (batching)
+         * @description Claim a compatible job to ADD to the driver's in-progress run. Same result as /claim but bounded to the concurrent-job limit and re-checks the combined COD across all in-flight legs. 409 if at the limit, over the cap, on an auction, or not claimable. Additive (A3) — old clients never call it.
+         */
+        post: operations["driverAppendDelivery"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/driver/deliveries/{id}/bid": {
         parameters: {
             query?: never;
@@ -989,6 +1009,13 @@ export interface components {
             ceiling_minor?: number | null;
             /** @description The agreed fare (minor units) once a courier's bid is accepted on an auction; settlement splits this (not `fee_minor`). Null until a bid clears. */
             final_price_minor?: number | null;
+            /**
+             * Format: uuid
+             * @description F5 (batching): the legs of one driver's pooled run share this id; null on a single-leg delivery. Additive — clients that ignore it treat each delivery as its own run.
+             */
+            batch_id?: string | null;
+            /** @description This leg's position (1, 2, …) within its batch; null when not batched. */
+            batch_sequence?: number | null;
             /** @description Why the driver marked it failed; null unless status is `failed`. */
             failure_reason?: components["schemas"]["FailureReason"] | null;
             /** @description At-door proof-of-delivery PIN, generated at intake. **Tenant surfaces only** (create response, GET, list) — relay it to the recipient; it is never present in driver payloads or webhook bodies. The driver submits it on delivered for a verified (`otp`) handover. */
@@ -2448,6 +2475,31 @@ export interface operations {
         requestBody?: never;
         responses: {
             /** @description Claimed — now `assigned` to this driver. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DriverDelivery"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+        };
+    };
+    driverAppendDelivery: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Appended — now also `assigned` to this driver. */
             200: {
                 headers: {
                     [name: string]: unknown;

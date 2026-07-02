@@ -240,6 +240,16 @@ export default function ActiveJob({
         })}
       </View>
 
+      {/* F4: when this delivery is one leg of a pooled run (batching), tell the driver so
+          — they're carrying more than one drop. Full stop-by-stop run navigation is a
+          follow-up; this surfaces the run + this leg's position. */}
+      {job.batch_id ? (
+        <View style={styles.runBanner}>
+          <Feather name="layers" size={15} color={colors.textMuted} aria-hidden />
+          <Text style={styles.runBannerText}>Pooled run · stop {job.batch_sequence ?? 1}</Text>
+        </View>
+      ) : null}
+
       {/* Primary leg-aware contact card */}
       <View style={styles.card}>
         <Text style={styles.eyebrow}>{goingToPickup ? 'Pick up from' : 'Deliver to'}</Text>
@@ -471,6 +481,19 @@ const styles = StyleSheet.create({
   stepBarCurrent: { borderColor: colors.tabActive },
   stepLabel: { fontSize: 12, color: colors.textFaint, textAlign: 'center' },
   stepLabelActive: { color: colors.tabActive, fontWeight: '700' },
+
+  // F4 pooled-run banner.
+  runBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: colors.surfaceAlt,
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    marginBottom: 12,
+  },
+  runBannerText: { color: colors.textPrimary, fontSize: 14, fontWeight: '700' },
 
   // Card
   card: {

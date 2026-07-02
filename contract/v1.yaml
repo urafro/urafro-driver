@@ -1172,6 +1172,33 @@ paths:
         '404': { $ref: '#/components/responses/NotFound' }
         '409': { $ref: '#/components/responses/Conflict' }
 
+  /driver/deliveries/{id}/append:
+    post:
+      tags: [Driver]
+      summary: Add a compatible job to the current run (batching)
+      description: >
+        Claim a compatible job to ADD to the driver's in-progress run. Same result as
+        /claim but bounded to the concurrent-job limit and re-checks the combined COD across
+        all in-flight legs. 409 if at the limit, over the cap, on an auction, or not
+        claimable. Additive (A3) — old clients never call it.
+      operationId: driverAppendDelivery
+      security:
+        - DriverBearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Appended — now also `assigned` to this driver.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DriverDelivery' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
   /driver/deliveries/{id}/bid:
     post:
       tags: [Driver]
@@ -1659,6 +1686,16 @@ components:
           description: >-
             The agreed fare (minor units) once a courier's bid is accepted on an auction;
             settlement splits this (not `fee_minor`). Null until a bid clears.
+        batch_id:
+          type: [string, "null"]
+          format: uuid
+          description: >-
+            F5 (batching): the legs of one driver's pooled run share this id; null on a
+            single-leg delivery. Additive — clients that ignore it treat each delivery as its
+            own run.
+        batch_sequence:
+          type: [integer, "null"]
+          description: This leg's position (1, 2, …) within its batch; null when not batched.
         failure_reason:
           oneOf:
             - { $ref: '#/components/schemas/FailureReason' }

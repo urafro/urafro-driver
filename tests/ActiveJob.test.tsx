@@ -47,4 +47,18 @@ describe('ActiveJob (component)', () => {
     expect(onAction).toHaveBeenCalledWith('picked_up');
     unmount(r);
   });
+
+  it('F4: shows a pooled-run banner (with the leg position) only when the job is batched', () => {
+    const batched = render(
+      <ActiveJob job={assignedJob({ batch_id: 'batch-1', batch_sequence: 2 })} token="tok" onAction={jest.fn()} busy={false} />,
+    );
+    const text = textOf(batched.root);
+    expect(text).toContain('Pooled run');
+    expect(text).toContain('stop 2');
+    unmount(batched);
+
+    const single = render(<ActiveJob job={assignedJob()} token="tok" onAction={jest.fn()} busy={false} />);
+    expect(textOf(single.root)).not.toContain('Pooled run');
+    unmount(single);
+  });
 });
