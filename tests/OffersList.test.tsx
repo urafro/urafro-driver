@@ -17,18 +17,22 @@ function fixedOffer(overrides: Partial<Offer> = {}): Offer {
   } as Offer;
 }
 
-function renderList(offer: Offer, onClaim = jest.fn()) {
+function renderList(offer: Offer, opts: { onClaim?: () => void; onReset?: () => void; resetOfferIds?: Set<string> } = {}) {
+  const onClaim = opts.onClaim ?? jest.fn();
+  const onReset = opts.onReset ?? jest.fn();
   const r = render(
     <OffersList
       offers={[offer]}
       onClaim={onClaim}
       onBid={jest.fn()}
       onDecline={jest.fn()}
+      onReset={onReset}
+      resetOfferIds={opts.resetOfferIds ?? new Set<string>()}
       actingId={null}
       bidSentIds={new Set<string>()}
     />,
   );
-  return { r, onClaim };
+  return { r, onClaim, onReset };
 }
 
 describe('OffersList (component)', () => {
@@ -57,6 +61,30 @@ describe('OffersList (component)', () => {
     const { r } = renderList(fixedOffer({ offer_expires_at: new Date(Date.now() - 1_000).toISOString() }));
     const btn = pressableWithText(r.root, 'Expired');
     expect(btn.props.disabled).toBe(true);
+    unmount(r);
+  });
+
+  // H4 — resettable offer timer.
+  it('shows "Need more time?" on a low-timer offer and fires onReset with the id', () => {
+    const onReset = jest.fn();
+    const { r } = renderList(fixedOffer({ offer_expires_at: new Date(Date.now() + 60_000).toISOString() }), { onReset });
+    const btn = pressableWithText(r.root, 'Need more time?');
+    press(btn);
+    expect(onReset).toHaveBeenCalledWith('off-1');
+    unmount(r);
+  });
+
+  it('hides "Need more time?" once the reset is spent (id in resetOfferIds)', () => {
+    const { r } = renderList(fixedOffer({ offer_expires_at: new Date(Date.now() + 60_000).toISOString() }), {
+      resetOfferIds: new Set(['off-1']),
+    });
+    expect(() => pressableWithText(r.root, 'Need more time?')).toThrow();
+    unmount(r);
+  });
+
+  it('does not show "Need more time?" on a fresh, long-timer offer', () => {
+    const { r } = renderList(fixedOffer()); // +300s default — above the 90s low-timer threshold
+    expect(() => pressableWithText(r.root, 'Need more time?')).toThrow();
     unmount(r);
   });
 });
