@@ -109,6 +109,18 @@ export default function ActiveJob({
   const [uploading, setUploading] = useState(false);
   const [photoError, setPhotoError] = useState<string | null>(null);
 
+  // #66 (batching): when a pooled run advances to the NEXT leg (job id changes), reset the
+  // deliver/fail panel + its inputs. Otherwise the previous stop's open panel and typed
+  // code carry over — seen on-device: a stale PoD PIN pre-filled the next drop's panel.
+  // No-op on the single-job flow (job.id is stable for the life of one delivery).
+  useEffect(() => {
+    setPanel(null);
+    setNote('');
+    setCodInput('');
+    setPinInput('');
+    setPhotoError(null);
+  }, [job.id]);
+
   // The driver's own position for the route map. Watched HERE (this screen only shows
   // on shift, so location permission is granted) rather than threaded from HomeScreen,
   // keeping the map self-contained. A live stream — not a one-shot fetch — so the dot
