@@ -4,9 +4,9 @@ import type { BoardJob } from '../lib/api';
 import { money } from '../lib/format';
 import { colors, shadow, PILL } from '../theme';
 
-// H2 + #170 — the open job board ("Available" tab). Coarse cards (the driver's cut /
-// distance / COD y/n) — NO address/contact (revealed only on GRAB). Grab claims an
-// un-offered board job via the server self-assign path (#170 grabFromBoard: re-checks
+// H2 + board grab (issue 170) — the open job board ("Available" tab). Coarse cards (the
+// driver's cut / distance / COD y/n) — NO address/contact (revealed only on GRAB). Grab
+// claims an un-offered board job via the server self-assign path (grabFromBoard re-checks
 // verification + capacity + the COD cap under lock). A job that fits a driver is also
 // still pushed to the Offers tab.
 export default function BoardList({

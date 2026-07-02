@@ -139,7 +139,7 @@ export function appendDelivery(token: string, id: string): Promise<DriverDeliver
   return request(`/driver/deliveries/${id}/append`, { method: 'POST', token });
 }
 
-// #170 (board grab): claim a pending job straight off the open board — one the driver
+// board grab (issue 170): claim a pending job straight off the open board — one the driver
 // was NOT offered. Re-checks verification + capacity + the COD cap under lock. 409 if the
 // board's closed / the job's gone or an auction / the driver's ineligible.
 export function grabDelivery(token: string, id: string): Promise<DriverDelivery> {

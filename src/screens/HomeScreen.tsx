@@ -637,7 +637,7 @@ export default function HomeScreen({ focused }: { focused: boolean }) {
     [token, reconcileShift],
   );
 
-  // #170 (board grab): claim an un-offered job straight off the Available board. On success
+  // board grab (issue 170): claim an un-offered job straight off the Available board. On success
   // the job takes over the screen (like claim); a 409 tells the driver why (board closed /
   // gone / over their cash-or-vehicle limit). Reuses claimingId for the acting state.
   const grab = useCallback(
