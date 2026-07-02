@@ -132,6 +132,13 @@ export function claimDelivery(token: string, id: string): Promise<DriverDelivery
   return request(`/driver/deliveries/${id}/claim`, { method: 'POST', token });
 }
 
+// F2/F4 (batching): claim a compatible job to ADD to the current run (the driver is
+// already busy). Routed to /append, which bounds the concurrent-job limit and re-checks
+// the combined COD under lock. 409 if at the limit / over the cap / on an auction.
+export function appendDelivery(token: string, id: string): Promise<DriverDelivery> {
+  return request(`/driver/deliveries/${id}/append`, { method: 'POST', token });
+}
+
 // Bid on a customer-named auction (ADR-036): ACCEPT the customer's opening price, or COUNTER with
 // the courier's own price (rejected by the server above the delivery's 10× ceiling). Sealed — the
 // courier sees only their own bid. Unlike claim, this does NOT assign the job; the buyer/auto-clear
