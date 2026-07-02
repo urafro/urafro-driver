@@ -73,6 +73,12 @@ import ShiftStatus from '../components/ShiftStatus';
 // 3G-primary baseline (tightened from 8s) so offers surface faster; remote push is the
 // primary accelerant, so this is the backstop. Floored above sub-second for battery/EDGE.
 const POLL_MS = 5000;
+// C5: when the live socket is healthy (C4), the poll drops to a slow backstop —
+// the socket delivers offers in ~real time, so 5s polling is wasted battery/data.
+// Safe by construction: any socket drop/staleness flips socketHealthy false and the
+// poll snaps back to POLL_MS, so a dead socket never leaves the driver on the slow
+// cadence. Battery budget for this is what C5 measures on-device.
+const SLOW_POLL_MS = 20000;
 const FLUSH_MS = 12000;
 
 // The shift controller: offline → go online (needs location) → online (poll offers)
@@ -91,6 +97,8 @@ export default function HomeScreen({ focused }: { focused: boolean }) {
   const [busy, setBusy] = useState(false);
   const [locating, setLocating] = useState(false);
   const [bgActive, setBgActive] = useState(false);
+  // C5: is the C4 live socket currently healthy? Drives the poll cadence below.
+  const [socketHealthy, setSocketHealthy] = useState(false);
   const [claimingId, setClaimingId] = useState<string | null>(null);
   // Auction offers this driver has bid on (ADR-036) — the card shows "offer sent" instead of the
   // accept/counter buttons. Local-only: a bid doesn't assign the job (the customer/auto-clear does
@@ -413,12 +421,14 @@ export default function HomeScreen({ focused }: { focused: boolean }) {
       await Promise.all(ops);
     }
     void tick();
-    const interval = setInterval(() => void tick(), POLL_MS);
+    // C5: slow the poll to a backstop while the live socket is healthy; snap back
+    // to the fast cadence the moment it drops (socketHealthy flips false).
+    const interval = setInterval(() => void tick(), socketHealthy ? SLOW_POLL_MS : POLL_MS);
     return () => {
       cancelled = true;
       clearInterval(interval);
     };
-  }, [online, job, token, bgActive, loadOffers, reconcileShift]);
+  }, [online, job, token, bgActive, socketHealthy, loadOffers, reconcileShift]);
 
   // C4: live offer socket over the push+poll floor. Only while on shift + waiting
   // for work (online, no active job). On `offer.new` it re-fetches offers at once
@@ -426,12 +436,20 @@ export default function HomeScreen({ focused }: { focused: boolean }) {
   // poll + push can't triple-notify). The 5s poll above stays the floor — a dropped
   // or disabled socket never costs an offer. Flag-gated: off = no socket at all.
   useEffect(() => {
-    if (!REALTIME_ENABLED || !token || !online || job) return;
+    if (!REALTIME_ENABLED || !token || !online || job) {
+      setSocketHealthy(false);
+      return;
+    }
     const disconnect = connectDriverStream({
       token,
       onOffer: () => void loadOffers(false, 4, 'socket'),
+      // C5: socket health drives the poll cadence (slow when up, fast when down).
+      onHealth: setSocketHealthy,
     });
-    return disconnect;
+    return () => {
+      setSocketHealthy(false);
+      disconnect();
+    };
   }, [token, online, job, loadOffers]);
 
   const performAction = useCallback(
