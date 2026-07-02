@@ -650,6 +650,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/driver/deliveries/active": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The driver's active run (all in-flight legs)
+         * @description #66 (batching). Every in-flight leg the driver currently holds (assigned/picked_up/in_transit), ordered primary-first (the leg claimed via /claim, then legs appended via /append by batch_sequence). At MAX_CONCURRENT_JOBS=1 this is a run of one — the same single job GET /driver/deliveries/{id} returns. The run-aware active screen shows all stops. Additive (A3).
+         */
+        get: operations["driverActiveLegs"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/driver/deliveries/{id}": {
         parameters: {
             query?: never;
@@ -1108,6 +1128,8 @@ export interface components {
             cod_headroom_minor: number;
             /** @enum {string} */
             status: "available" | "offline" | "busy";
+            /** @description #66 (batching). How many jobs the driver may run at once (platform config). 1 (default) ⇒ no batching — the app never polls offers while busy. >1 ⇒ the app surfaces on-route batch offers (added via /append) and the multi-leg run screen. Additive (A3) — omit-safe for old clients. */
+            max_concurrent_jobs?: number;
             /** @enum {string} */
             preferred_language: "en" | "sn" | "nd";
             emergency_contact?: {
@@ -1180,6 +1202,8 @@ export interface components {
             driver_fee_minor?: number | null;
             /** @description Straight-line distance in km (1 dp) from the driver's last known location to the pickup — how far they'd travel to start the run (ADR-002 Phase B "distance-to-pickup"). Straight-line, not road distance. Null if the driver's position is unknown. */
             pickup_distance_km?: number | null;
+            /** @description #66 (batching). True when this is a batch/APPEND offer — the driver is mid-run and would ADD this leg to their current run via POST /driver/deliveries/{id}/append (NOT /claim). Only ever true when concurrent runs are enabled (MAX_CONCURRENT_JOBS>1); always false for a free driver's fresh offer. Additive (A3) — omit-safe for old clients. */
+            appendable?: boolean;
         };
         /** @description A delivery as seen by its **assigned driver** — the public Delivery plus the contacts needed to coordinate the run and the driver's own cut of the fee. Returned only on the driver's own endpoints after claiming; contacts never appear in tenant, offer, or webhook payloads. */
         DriverDelivery: components["schemas"]["Delivery"] & {
@@ -2425,6 +2449,29 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            401: components["responses"]["Unauthorized"];
+        };
+    };
+    driverActiveLegs: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The driver's in-flight legs (possibly empty when idle). */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data?: components["schemas"]["DriverDelivery"][];
+                    };
+                };
             };
             401: components["responses"]["Unauthorized"];
         };

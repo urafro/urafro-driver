@@ -17,13 +17,18 @@ function fixedOffer(overrides: Partial<Offer> = {}): Offer {
   } as Offer;
 }
 
-function renderList(offer: Offer, opts: { onClaim?: () => void; onReset?: () => void; resetOfferIds?: Set<string> } = {}) {
+function renderList(
+  offer: Offer,
+  opts: { onClaim?: () => void; onAppend?: () => void; onReset?: () => void; resetOfferIds?: Set<string> } = {},
+) {
   const onClaim = opts.onClaim ?? jest.fn();
+  const onAppend = opts.onAppend ?? jest.fn();
   const onReset = opts.onReset ?? jest.fn();
   const r = render(
     <OffersList
       offers={[offer]}
       onClaim={onClaim}
+      onAppend={onAppend}
       onBid={jest.fn()}
       onDecline={jest.fn()}
       onReset={onReset}
@@ -32,7 +37,7 @@ function renderList(offer: Offer, opts: { onClaim?: () => void; onReset?: () => 
       bidSentIds={new Set<string>()}
     />,
   );
-  return { r, onClaim, onReset };
+  return { r, onClaim, onAppend, onReset };
 }
 
 describe('OffersList (component)', () => {
@@ -52,6 +57,24 @@ describe('OffersList (component)', () => {
     expect(accept.props.disabled).toBe(false);
     press(accept);
     expect(onClaim).toHaveBeenCalledWith('off-1');
+    unmount(r);
+  });
+
+  // #66 (batching): an APPEND offer accepts into the current run via onAppend, not onClaim.
+  it('an appendable offer shows "Add to run" and fires onAppend (not onClaim)', () => {
+    const { r, onClaim, onAppend } = renderList(fixedOffer({ appendable: true }));
+    const add = pressableWithText(r.root, 'Add to run');
+    press(add);
+    expect(onAppend).toHaveBeenCalledWith('off-1');
+    expect(onClaim).not.toHaveBeenCalled();
+    unmount(r);
+  });
+
+  it('a normal (non-appendable) offer still fires onClaim, not onAppend', () => {
+    const { r, onClaim, onAppend } = renderList(fixedOffer());
+    press(pressableWithText(r.root, 'Accept'));
+    expect(onClaim).toHaveBeenCalledWith('off-1');
+    expect(onAppend).not.toHaveBeenCalled();
     unmount(r);
   });
 

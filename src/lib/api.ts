@@ -128,6 +128,14 @@ export function getDelivery(token: string, id: string): Promise<DriverDelivery> 
   return request(`/driver/deliveries/${id}`, { method: 'GET', token });
 }
 
+// #66 (batching): the driver's whole active RUN — every in-flight leg, primary-first
+// (the /claim leg, then /append legs by sequence). One leg at MAX_CONCURRENT_JOBS=1
+// (parity with getDelivery). The run-aware active screen shows all stops.
+export async function getActiveLegs(token: string): Promise<DriverDelivery[]> {
+  const { data } = await request<{ data: DriverDelivery[] }>('/driver/deliveries/active', { method: 'GET', token });
+  return data;
+}
+
 export function claimDelivery(token: string, id: string): Promise<DriverDelivery> {
   return request(`/driver/deliveries/${id}/claim`, { method: 'POST', token });
 }
