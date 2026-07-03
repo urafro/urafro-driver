@@ -4,6 +4,7 @@ import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-nati
 import { Feather } from '@expo/vector-icons';
 import { SessionProvider, useSession } from './src/state/session';
 import { ActiveJobProvider, useActiveJob } from './src/state/activeJob';
+import { ToastProvider } from './src/components/ui';
 import { getProfile, type DriverProfile } from './src/lib/api';
 import { onNotificationResponse } from './src/lib/notifications';
 import { colors } from './src/theme';
@@ -138,8 +139,10 @@ export default function App() {
   return (
     <SessionProvider>
       <ActiveJobProvider>
-        <Root />
-        <StatusBar style="dark" />
+        <ToastProvider>
+          <Root />
+          <StatusBar style="dark" />
+        </ToastProvider>
       </ActiveJobProvider>
     </SessionProvider>
   );
