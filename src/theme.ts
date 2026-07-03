@@ -78,3 +78,66 @@ export const shadow = {
 // Brand V1 pill radius for primary action buttons (the original's pill
 // language); cards/inputs keep their soft 10–14 radii.
 export const PILL = 999;
+
+// ---------------------------------------------------------------------------
+// Non-colour design tokens (added in the UX redesign — see docs/design-system.md).
+// Same philosophy as `colors`: name what the token DOES, not its raw value, so
+// every screen reads from one scale and the system can be retuned wholesale.
+// Consumed via the `src/components/ui` primitives — screens never hand-type these.
+// ---------------------------------------------------------------------------
+
+// Type scale (role-named). fontFamily is intentionally UNSET → the platform
+// system font (Roboto on Android) renders. This is the safest default for
+// low-end devices; bundling the web's Lato-style family (expo-font + asset) is
+// a deliberate, isolated follow-up — swap a single `fontFamily` in here and the
+// whole app changes. Weights kept to 400/500/600/700 (crisp on Android Roboto).
+export const typography = {
+  display: { fontSize: 28, lineHeight: 34, fontWeight: '700' },
+  title: { fontSize: 22, lineHeight: 28, fontWeight: '700' },
+  heading: { fontSize: 18, lineHeight: 24, fontWeight: '700' },
+  subheading: { fontSize: 16, lineHeight: 22, fontWeight: '600' },
+  body: { fontSize: 15, lineHeight: 22, fontWeight: '400' },
+  bodyStrong: { fontSize: 15, lineHeight: 22, fontWeight: '600' },
+  callout: { fontSize: 14, lineHeight: 20, fontWeight: '400' },
+  label: { fontSize: 13, lineHeight: 18, fontWeight: '600', letterSpacing: 0.2 },
+  caption: { fontSize: 12, lineHeight: 16, fontWeight: '400' },
+  micro: { fontSize: 11, lineHeight: 14, fontWeight: '700', letterSpacing: 0.4 },
+} as const;
+
+export type TypeVariant = keyof typeof typography;
+
+// 4-pt spacing grid — replaces the ad-hoc 4/8/12/16/20/24 literals the audit found.
+export const space = {
+  xs: 4,
+  sm: 8,
+  md: 12,
+  lg: 16,
+  xl: 20,
+  xxl: 24,
+  xxxl: 32,
+} as const;
+
+// Corner radii — standardises the 10/11/12/14 drift down to one scale (+ PILL).
+export const radius = {
+  sm: 8,
+  md: 12,
+  lg: 16,
+  pill: PILL,
+} as const;
+
+// Icon sizes — collapses the 14/15/16 near-duplicates the audit flagged.
+export const iconSize = {
+  sm: 16,
+  md: 20,
+  lg: 24,
+} as const;
+
+// Motion timings (ms). The "loud vs light" policy: routine, high-frequency steps
+// use `fast`/`base` so a 20-stop run never accumulates friction; a new offer is
+// the only thing that earns `slow` + the audio/haptic channel.
+export const duration = {
+  instant: 120,
+  fast: 180,
+  base: 240,
+  slow: 320,
+} as const;
