@@ -6,7 +6,6 @@ import {
   Pressable,
   ScrollView,
   StyleSheet,
-  Text,
   TextInput,
   View,
 } from 'react-native';
@@ -17,7 +16,10 @@ import { ensureForegroundPermission } from '../lib/location';
 import { waUrl } from '../lib/links';
 import { OPS_WHATSAPP } from '../config';
 import { useSession } from '../state/session';
-import { colors, shadow, PILL } from '../theme';
+import { colors, shadow, typography, space, radius } from '../theme';
+import { Text } from '../components/ui';
+import { animateNext } from '../lib/motion';
+import { haptics } from '../lib/haptics';
 
 type Step = 'welcome' | 'permissions' | 'profile' | 'waiting';
 
@@ -98,12 +100,14 @@ export default function Onboarding({
       // best-effort — never trap onboarding on a permission outcome
     } finally {
       setBusy(false);
+      animateNext('base'); // B3: step swap cross-fades, not a silent pop
       setStep('profile');
     }
   }, []);
 
   const saveDetails = useCallback(async () => {
     if (name.trim().length < 2) {
+      haptics.error();
       setError('Enter your name so ops can recognise you.');
       return;
     }
@@ -115,9 +119,12 @@ export default function Onboarding({
         token,
         vType === 'foot' ? { type: vType } : { type: vType, make: vDetail.trim() || undefined },
       );
+      haptics.success(); // details are in — moving to the verification gate
+      animateNext('base');
       setStep('waiting');
       onReload();
     } catch {
+      haptics.error();
       setError('Could not save — check your connection and try again.');
     } finally {
       setBusy(false);
@@ -164,7 +171,13 @@ export default function Onboarding({
             <Bullet icon="navigation" title="Pick up & deliver" body="Landmarks and a one-tap call get you to the door." />
             <Bullet icon="dollar-sign" title="Get paid in USD" body="Your cut of every delivery, paid out to your EcoCash." />
           </View>
-          <PrimaryButton label="Get started" onPress={() => setStep('permissions')} />
+          <PrimaryButton
+            label="Get started"
+            onPress={() => {
+              animateNext('base');
+              setStep('permissions');
+            }}
+          />
         </View>
       ) : step === 'permissions' ? (
         <View style={styles.section}>
@@ -211,7 +224,12 @@ export default function Onboarding({
                 <Pressable
                   key={v.id}
                   style={[styles.chip, vType === v.id && styles.chipActive]}
-                  onPress={() => setVType(v.id)}
+                  onPress={() => {
+                    haptics.tap(); // selection tick
+                    // the make/model field shows/hides across the 'foot' boundary
+                    if ((vType === 'foot') !== (v.id === 'foot')) animateNext('base');
+                    setVType(v.id);
+                  }}
                 >
                   <Text style={[styles.chipText, vType === v.id && styles.chipTextActive]}>{v.label}</Text>
                 </Pressable>
@@ -247,7 +265,14 @@ export default function Onboarding({
 
           {blocked ? null : <VerificationCard token={token} onChange={onReload} />}
 
-          <Pressable style={styles.editRow} onPress={() => setStep('profile')} hitSlop={8}>
+          <Pressable
+            style={styles.editRow}
+            onPress={() => {
+              animateNext('base');
+              setStep('profile');
+            }}
+            hitSlop={8}
+          >
             <Feather name="edit-2" size={16} strokeWidth={1.5} color={colors.textMuted} />
             <Text style={styles.editText}>Edit your name or vehicle</Text>
           </Pressable>
@@ -318,34 +343,35 @@ function PrimaryButton({ label, onPress, busy }: { label: string; onPress: () =>
   );
 }
 
+// Text styles from the shared type scale (typography.*); spacing/radii from tokens.
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.bg },
-  content: { padding: 24, paddingTop: 64, paddingBottom: 40, gap: 24 },
+  content: { padding: space.xxl, paddingTop: 64, paddingBottom: 40, gap: space.xxl },
 
-  header: { flexDirection: 'row', alignItems: 'center', gap: 16 },
+  header: { flexDirection: 'row', alignItems: 'center', gap: space.lg },
   brandMark: {
     width: 48,
     height: 48,
-    borderRadius: 12,
+    borderRadius: radius.md,
     backgroundColor: colors.notificationAccent,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  brandMarkText: { color: colors.surface, fontSize: 24, fontWeight: '700' },
+  brandMarkText: { ...typography.title, fontSize: 24, lineHeight: 30, color: colors.surface },
   brandTitleGroup: { flex: 1 },
-  brandTitle: { color: colors.textPrimary, fontSize: 22, fontWeight: '700' },
-  brandSub: { color: colors.textMuted, fontSize: 14, marginTop: 2 },
+  brandTitle: { ...typography.title, color: colors.textPrimary },
+  brandSub: { ...typography.callout, color: colors.textMuted, marginTop: 2 },
 
-  dots: { flexDirection: 'row', gap: 8 },
+  dots: { flexDirection: 'row', gap: space.sm },
   dot: { width: 8, height: 8, borderRadius: 4, backgroundColor: colors.border },
   dotActive: { width: 24, backgroundColor: colors.tabActive },
   dotDone: { backgroundColor: colors.tabActive },
 
-  section: { gap: 16 },
-  title: { color: colors.textPrimary, fontSize: 24, fontWeight: '700' },
-  lead: { color: colors.textMuted, fontSize: 16, lineHeight: 23 },
+  section: { gap: space.lg },
+  title: { ...typography.title, fontSize: 24, lineHeight: 30, color: colors.textPrimary },
+  lead: { ...typography.subheading, fontWeight: '400', lineHeight: 23, color: colors.textMuted },
 
-  bullets: { gap: 16, marginTop: 4 },
+  bullets: { gap: space.lg, marginTop: space.xs },
   bullet: { flexDirection: 'row', alignItems: 'flex-start', gap: 14 },
   bulletIcon: {
     width: 44,
@@ -356,40 +382,40 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   bulletTextWrap: { flex: 1 },
-  bulletTitle: { color: colors.textPrimary, fontSize: 16, fontWeight: '700' },
-  bulletBody: { color: colors.textMuted, fontSize: 15, lineHeight: 21, marginTop: 2 },
+  bulletTitle: { ...typography.subheading, fontWeight: '700', color: colors.textPrimary },
+  bulletBody: { ...typography.body, lineHeight: 21, color: colors.textMuted, marginTop: 2 },
 
-  card: { backgroundColor: colors.surface, borderRadius: 12, padding: 16, ...shadow.card },
+  card: { backgroundColor: colors.surface, borderRadius: radius.md, padding: space.lg, ...shadow.card },
   permHead: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  permTitle: { color: colors.textPrimary, fontSize: 16, fontWeight: '700' },
-  permBody: { color: colors.textMuted, fontSize: 15, lineHeight: 21, marginTop: 8 },
+  permTitle: { ...typography.subheading, fontWeight: '700', color: colors.textPrimary },
+  permBody: { ...typography.body, lineHeight: 21, color: colors.textMuted, marginTop: space.sm },
 
-  label: { color: colors.textPrimary, fontSize: 14, fontWeight: '700' },
-  labelGap: { marginTop: 16 },
-  chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 8 },
+  label: { ...typography.callout, fontWeight: '700', color: colors.textPrimary },
+  labelGap: { marginTop: space.lg },
+  chips: { flexDirection: 'row', flexWrap: 'wrap', gap: space.sm, marginTop: space.sm },
   chip: {
-    borderRadius: PILL,
+    borderRadius: radius.pill,
     borderWidth: 1,
     borderColor: colors.border,
-    paddingHorizontal: 14,
-    paddingVertical: 8,
+    paddingHorizontal: 14, // non-grid literal, kept exact
+    paddingVertical: space.sm,
     backgroundColor: colors.surface,
   },
   chipActive: { backgroundColor: colors.tabActive, borderColor: colors.tabActive },
-  chipText: { color: colors.textMuted, fontSize: 14, fontWeight: '700' },
+  chipText: { ...typography.callout, fontWeight: '700', color: colors.textMuted },
   chipTextActive: { color: colors.surface },
-  detailGap: { marginTop: 8 },
+  detailGap: { marginTop: space.sm },
   input: {
     minHeight: 48,
     backgroundColor: colors.inputBg,
     color: colors.textPrimary,
     fontSize: 16,
-    borderRadius: 8,
+    borderRadius: radius.sm,
     borderWidth: 1,
     borderColor: colors.border,
     paddingHorizontal: 14,
-    paddingVertical: 12,
-    marginTop: 8,
+    paddingVertical: space.md,
+    marginTop: space.sm,
   },
 
   reviewBadge: {
@@ -401,29 +427,25 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignSelf: 'center',
   },
-  checkRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 12, paddingVertical: 8 },
-  checkTextWrap: { flex: 1 },
-  checkLabel: { color: colors.textPrimary, fontSize: 16, fontWeight: '600' },
-  checkSub: { color: colors.textFaint, fontSize: 14, marginTop: 2 },
-  editRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 4 },
-  editText: { color: colors.textMuted, fontSize: 15, textDecorationLine: 'underline' },
+  editRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: space.xs },
+  editText: { ...typography.body, color: colors.textMuted, textDecorationLine: 'underline' },
 
   button: {
     backgroundColor: colors.btnPrimaryBg,
-    borderRadius: PILL,
+    borderRadius: radius.pill,
     minHeight: 48,
     paddingVertical: 14,
     alignItems: 'center',
     justifyContent: 'center',
-    marginTop: 4,
+    marginTop: space.xs,
   },
   buttonBusy: { opacity: 0.6 },
-  buttonText: { color: colors.btnPrimaryText, fontSize: 16, fontWeight: '700' },
+  buttonText: { ...typography.subheading, fontWeight: '700', color: colors.btnPrimaryText },
 
-  error: { color: colors.danger, fontSize: 15, fontWeight: '700', lineHeight: 21 },
-  notice: { color: colors.textMuted, fontSize: 14, lineHeight: 20, textAlign: 'center' },
+  error: { ...typography.body, fontWeight: '700', lineHeight: 21, color: colors.danger },
+  notice: { ...typography.callout, color: colors.textMuted, textAlign: 'center' },
 
-  footer: { marginTop: 8, gap: 16, alignItems: 'center' },
-  opsRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  link: { color: colors.textMuted, fontSize: 15 },
+  footer: { marginTop: space.sm, gap: space.lg, alignItems: 'center' },
+  opsRow: { flexDirection: 'row', alignItems: 'center', gap: space.sm },
+  link: { ...typography.body, color: colors.textMuted },
 });

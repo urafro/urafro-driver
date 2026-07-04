@@ -5,7 +5,6 @@ import {
   Platform,
   Pressable,
   StyleSheet,
-  Text,
   TextInput,
   View,
 } from 'react-native';
@@ -13,7 +12,10 @@ import { ApiError, requestOtp, verifyOtp } from '../lib/api';
 import { shouldRetry } from '../lib/queue';
 import { toE164 } from '../lib/phone';
 import { useSession } from '../state/session';
-import { colors, PILL } from '../theme';
+import { colors, typography, space, radius } from '../theme';
+import { Text } from '../components/ui';
+import { animateNext } from '../lib/motion';
+import { haptics } from '../lib/haptics';
 
 // Two-step OTP login: enter phone → request code → enter the 6-digit code →
 // verify → mint a driver token and sign in. The session change re-renders the
@@ -32,6 +34,7 @@ export default function LoginScreen() {
   async function sendCode(): Promise<void> {
     const e164 = toE164(phoneInput);
     if (!e164) {
+      haptics.error();
       setError('Enter a valid phone number');
       return;
     }
@@ -52,8 +55,11 @@ export default function LoginScreen() {
       }
       setError(null);
       setPhone(e164);
+      haptics.success(); // tactile "code's on its way"
+      animateNext('base'); // B3: phone → code step cross-fades, not a silent pop
       setStep('code');
     } catch (e) {
+      haptics.error();
       if (e instanceof ApiError && e.status === 429) {
         setError('Too many attempts — wait a minute and try again.');
       } else if (e instanceof ApiError) {
@@ -68,6 +74,7 @@ export default function LoginScreen() {
 
   async function confirmCode(): Promise<void> {
     if (!/^\d{6}$/.test(code)) {
+      haptics.error();
       setError('Enter the 6-digit code');
       return;
     }
@@ -75,8 +82,10 @@ export default function LoginScreen() {
     setError(null);
     try {
       const { token, driver_id } = await verifyOtp(phone, code);
+      haptics.success(); // verified — the session change swaps the app to Home
       await signIn({ token, driverId: driver_id });
     } catch (e) {
+      haptics.error();
       setError(
         e instanceof ApiError && e.status === 401
           ? 'Incorrect or expired code — try again or request a new one.'
@@ -151,6 +160,7 @@ export default function LoginScreen() {
           <View style={styles.linkRow}>
             <Pressable
               onPress={() => {
+                animateNext('base');
                 setStep('phone');
                 setCode('');
                 setError(null);
@@ -199,54 +209,55 @@ function SubmitButton({
   );
 }
 
+// Text styles from the shared type scale (typography.*); spacing/radii from tokens.
 const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: colors.bg,
     justifyContent: 'center',
-    padding: 24,
-    gap: 24,
+    padding: space.xxl,
+    gap: space.xxl,
   },
   // Branded "u." header — purple mark + title + tagline.
-  header: { flexDirection: 'row', alignItems: 'center', gap: 16 },
+  header: { flexDirection: 'row', alignItems: 'center', gap: space.lg },
   brandMark: {
     width: 48,
     height: 48,
-    borderRadius: 12,
+    borderRadius: radius.md,
     backgroundColor: colors.notificationAccent,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  brandMarkText: { color: colors.surface, fontSize: 24, fontWeight: '700' },
+  brandMarkText: { ...typography.title, fontSize: 24, lineHeight: 30, color: colors.surface },
   brandTitleGroup: { flex: 1 },
-  title: { color: colors.textPrimary, fontSize: 24, fontWeight: '700' },
-  subtitle: { color: colors.textMuted, fontSize: 14, marginTop: 2, lineHeight: 20 },
+  title: { ...typography.title, fontSize: 24, lineHeight: 30, color: colors.textPrimary },
+  subtitle: { ...typography.callout, color: colors.textMuted, marginTop: 2 },
 
-  section: { gap: 16 },
-  label: { color: colors.textPrimary, fontSize: 14, fontWeight: '700' },
-  helper: { color: colors.textMuted, fontSize: 14, lineHeight: 20 },
+  section: { gap: space.lg },
+  label: { ...typography.callout, fontWeight: '700', color: colors.textPrimary },
+  helper: { ...typography.callout, color: colors.textMuted },
 
-  inputRow: { flexDirection: 'row', gap: 8 },
+  inputRow: { flexDirection: 'row', gap: space.sm },
   prefix: {
     justifyContent: 'center',
-    paddingHorizontal: 16,
+    paddingHorizontal: space.lg,
     backgroundColor: colors.surfaceAlt,
     borderWidth: 1,
     borderColor: colors.border,
-    borderRadius: 8,
+    borderRadius: radius.sm,
   },
-  prefixText: { color: colors.textPrimary, fontSize: 16, fontWeight: '700' },
+  prefixText: { ...typography.subheading, fontWeight: '700', color: colors.textPrimary },
 
   input: {
     minHeight: 48,
     backgroundColor: colors.inputBgRaised,
     color: colors.textPrimary,
     fontSize: 16,
-    borderRadius: 8,
+    borderRadius: radius.sm,
     borderWidth: 1,
     borderColor: colors.border,
-    paddingVertical: 12,
-    paddingHorizontal: 16,
+    paddingVertical: space.md,
+    paddingHorizontal: space.lg,
   },
   inputFlex: { flex: 1, minWidth: 0 },
   codeInput: {
@@ -256,29 +267,28 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
 
-  stepHeading: { color: colors.textPrimary, fontSize: 20, fontWeight: '700' },
-  stepSub: { color: colors.textMuted, fontSize: 16, marginTop: 4, lineHeight: 22 },
+  stepHeading: { ...typography.heading, fontSize: 20, lineHeight: 26, color: colors.textPrimary },
+  stepSub: { ...typography.subheading, fontWeight: '400', color: colors.textMuted, marginTop: space.xs },
 
   button: {
     // Brand V1: the gold pill CTA (black text — never white on gold).
     backgroundColor: colors.btnPrimaryBg,
-    borderRadius: PILL,
+    borderRadius: radius.pill,
     minHeight: 48,
-    paddingVertical: 14,
+    paddingVertical: 14, // non-grid literal, kept exact (no space token equals 14)
     alignItems: 'center',
     justifyContent: 'center',
   },
   buttonDisabled: { opacity: 0.6 },
-  buttonText: { color: colors.btnPrimaryText, fontSize: 16, fontWeight: '700' },
+  buttonText: { ...typography.subheading, fontWeight: '700', color: colors.btnPrimaryText },
 
-  linkRow: { flexDirection: 'row', gap: 16, alignItems: 'center' },
-  link: { color: colors.textMuted, fontSize: 15, textDecorationLine: 'underline' },
+  linkRow: { flexDirection: 'row', gap: space.lg, alignItems: 'center' },
+  link: { ...typography.body, color: colors.textMuted, textDecorationLine: 'underline' },
   linkDisabled: { opacity: 0.5 },
 
   error: {
-    color: colors.danger,
-    fontSize: 16,
+    ...typography.subheading,
     fontWeight: '700',
-    lineHeight: 23,
+    color: colors.danger,
   },
 });

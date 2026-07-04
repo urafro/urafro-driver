@@ -5,7 +5,6 @@ import {
   RefreshControl,
   ScrollView,
   StyleSheet,
-  Text,
   View,
 } from 'react-native';
 import { Feather } from '@expo/vector-icons';
@@ -13,7 +12,9 @@ import { listMyDeliveries, type HistoryItem } from '../lib/api';
 import { dayLabel, money, placeLabel, timeLabel } from '../lib/format';
 import { isActiveJob, REASON_LABEL, statusMeta } from '../lib/jobs';
 import { useSession } from '../state/session';
-import { colors, PILL, shadow } from '../theme';
+import { colors, shadow, typography, space, radius } from '../theme';
+import { Text, Skeleton } from '../components/ui';
+import { animateNext } from '../lib/motion';
 import JobDetail from '../components/JobDetail';
 
 // The Jobs tab: the driver's run history — what they did, where, the outcome, and
@@ -101,6 +102,7 @@ export default function HistoryScreen({
 
   const changeFilter = (f: 'all' | 'delivered' | 'failed') => {
     if (f === filter) return;
+    animateNext('base'); // B3: the list cross-fades to the skeleton, not a silent pop
     setItems(null); // show the loading state while the new filter fetches
     setNextBefore(null);
     setFilter(f);
@@ -142,7 +144,16 @@ export default function HistoryScreen({
         </View>
 
         {items == null ? (
-          <Text style={styles.empty}>Loading…</Text>
+          // Skeleton job cards over a slow 3G link — structure, not a dead spinner.
+          <View style={styles.skeletonList}>
+            {[0, 1, 2, 3].map((i) => (
+              <View key={i} style={styles.card}>
+                <Skeleton width={92} height={20} rounded={radius.pill} />
+                <Skeleton width="70%" height={16} style={styles.skelGapMd} />
+                <Skeleton width="45%" height={12} style={styles.skelGapSm} />
+              </View>
+            ))}
+          </View>
         ) : items.length === 0 ? (
           <Text style={styles.empty}>
             {filter === 'all'
@@ -231,84 +242,89 @@ export default function HistoryScreen({
   );
 }
 
+// Text styles from the shared type scale (typography.*); spacing/radii from tokens.
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.bg },
-  content: { padding: 16, paddingTop: 72, paddingBottom: 32, gap: 8 },
+  content: { padding: space.lg, paddingTop: 72, paddingBottom: space.xxxl, gap: space.sm },
 
   header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  title: { color: colors.textPrimary, fontSize: 24, fontWeight: '700' },
+  title: { ...typography.title, fontSize: 24, lineHeight: 30, color: colors.textPrimary },
   earningsLink: { flexDirection: 'row', alignItems: 'center', gap: 2 },
-  earningsLinkText: { color: colors.textMuted, fontSize: 15, fontWeight: '700' },
+  earningsLinkText: { ...typography.body, fontWeight: '700', color: colors.textMuted },
 
-  filters: { flexDirection: 'row', gap: 8, marginTop: 4, marginBottom: 4 },
+  filters: { flexDirection: 'row', gap: space.sm, marginTop: space.xs, marginBottom: space.xs },
   chip: {
-    borderRadius: PILL,
+    borderRadius: radius.pill,
     paddingVertical: 6,
-    paddingHorizontal: 14,
+    paddingHorizontal: 14, // non-grid literal, kept exact
     backgroundColor: colors.surfaceAlt,
     minHeight: 36,
     justifyContent: 'center',
   },
   chipOn: { backgroundColor: colors.tabActive },
-  chipText: { color: colors.textMuted, fontSize: 14, fontWeight: '700' },
+  chipText: { ...typography.callout, fontWeight: '700', color: colors.textMuted },
   chipTextOn: { color: colors.badgeText },
 
-  empty: { color: colors.textFaint, fontSize: 15, marginTop: 24, textAlign: 'center' },
+  empty: { ...typography.body, color: colors.textFaint, marginTop: space.xxl, textAlign: 'center' },
+
+  skeletonList: { gap: space.sm },
+  skelGapMd: { marginTop: space.md },
+  skelGapSm: { marginTop: space.sm },
 
   dayHeading: {
-    color: colors.textFaint,
-    fontSize: 13,
+    ...typography.label,
     fontWeight: '700',
     letterSpacing: 0.5,
     textTransform: 'uppercase',
-    marginTop: 12,
+    color: colors.textFaint,
+    marginTop: space.md,
     marginBottom: 2,
   },
 
   card: {
     backgroundColor: colors.surface,
-    borderRadius: 12,
+    borderRadius: radius.md,
     borderWidth: 1,
     borderColor: colors.border,
-    padding: 16,
+    padding: space.lg,
     ...shadow.card,
   },
   cardTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   badge: {
     alignSelf: 'flex-start',
     borderWidth: 1,
-    borderRadius: PILL,
-    paddingVertical: 4,
+    borderRadius: radius.pill,
+    paddingVertical: space.xs,
     paddingHorizontal: 10,
     backgroundColor: colors.surfaceAlt,
   },
-  badgeText: { fontSize: 12, fontWeight: '700', letterSpacing: 0.5, textTransform: 'uppercase' },
-  time: { color: colors.textFaint, fontSize: 12, marginLeft: 8 },
+  badgeText: { ...typography.caption, fontWeight: '700', letterSpacing: 0.5, textTransform: 'uppercase' },
+  time: { ...typography.caption, color: colors.textFaint, marginLeft: space.sm },
 
-  dropoff: { color: colors.textPrimary, fontSize: 16, fontWeight: '700', lineHeight: 22, marginTop: 8 },
-  from: { color: colors.textMuted, fontSize: 14, marginTop: 2 },
+  dropoff: { ...typography.subheading, fontWeight: '700', color: colors.textPrimary, marginTop: space.sm },
+  from: { ...typography.callout, color: colors.textMuted, marginTop: 2 },
 
-  metaRow: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 8, marginTop: 8 },
-  earn: { color: colors.money, fontSize: 16, fontWeight: '700' },
-  reason: { color: colors.danger, fontSize: 16, fontWeight: '700' },
-  cancelledNote: { color: colors.textMuted, fontSize: 16 },
+  metaRow: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: space.sm, marginTop: space.sm },
+  earn: { ...typography.subheading, fontWeight: '700', color: colors.money },
+  reason: { ...typography.subheading, fontWeight: '700', color: colors.danger },
+  cancelledNote: { ...typography.subheading, fontWeight: '400', color: colors.textMuted },
   chev: { marginLeft: 'auto' },
 
   resumeRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 10 },
-  resume: { color: colors.tabActive, fontSize: 15, fontWeight: '700' },
+  resume: { ...typography.body, fontWeight: '700', color: colors.tabActive },
 
-  codBadge: { borderRadius: PILL, paddingVertical: 4, paddingHorizontal: 10, backgroundColor: colors.batteryBg },
-  codBadgeText: { color: colors.cod, fontSize: 12, fontWeight: '700', letterSpacing: 0.5, textTransform: 'uppercase' },
+  codBadge: { borderRadius: radius.pill, paddingVertical: space.xs, paddingHorizontal: 10, backgroundColor: colors.batteryBg },
+  codBadgeText: { ...typography.caption, fontWeight: '700', letterSpacing: 0.5, textTransform: 'uppercase', color: colors.cod },
 
   loadMore: {
     minHeight: 48,
-    borderRadius: PILL,
+    borderRadius: radius.pill,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: colors.surfaceAlt,
-    marginTop: 12,
+    marginTop: space.md,
   },
-  loadMoreText: { color: colors.textMuted, fontSize: 15, fontWeight: '700' },
+  loadMoreText: { ...typography.body, fontWeight: '700', color: colors.textMuted },
 
-  error: { color: colors.danger, fontSize: 14, marginTop: 16, textAlign: 'center' },
+  error: { ...typography.callout, color: colors.danger, marginTop: space.lg, textAlign: 'center' },
 });

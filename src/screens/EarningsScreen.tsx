@@ -1,10 +1,12 @@
 import { useEffect, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { getEarnings, type Earnings } from '../lib/api';
 import { money } from '../lib/format';
 import { useSession } from '../state/session';
-import { colors, shadow, PILL } from '../theme';
+import { colors, shadow, typography, space, radius } from '../theme';
+import { Text } from '../components/ui';
+import { animateNext } from '../lib/motion';
 import PayoutScreen from './PayoutScreen';
 
 // A dedicated earnings view (the prototype's Earnings tab). The numbers are the
@@ -48,7 +50,16 @@ export default function EarningsScreen() {
   const max = Math.max(1, ...week.map(w => w.minor));
 
   if (showPayout) {
-    return <PayoutScreen token={token} earnings={earnings} onBack={() => setShowPayout(false)} />;
+    return (
+      <PayoutScreen
+        token={token}
+        earnings={earnings}
+        onBack={() => {
+          animateNext('base');
+          setShowPayout(false);
+        }}
+      />
+    );
   }
 
   return (
@@ -115,7 +126,13 @@ export default function EarningsScreen() {
         </Text>
       </View>
 
-      <Pressable style={styles.payoutCard} onPress={() => setShowPayout(true)}>
+      <Pressable
+        style={styles.payoutCard}
+        onPress={() => {
+          animateNext('base');
+          setShowPayout(true);
+        }}
+      >
         <View style={styles.payoutText}>
           <Text style={styles.eyebrow}>Cash out to EcoCash</Text>
           <Text style={styles.muted}>
@@ -128,53 +145,54 @@ export default function EarningsScreen() {
   );
 }
 
+// Text styles built from the shared type scale (typography.*); spacing/radii from
+// the space/radius tokens. Variants carry their own lineHeight so the money heroes
+// render correctly through the <Text> primitive.
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.bg },
-  content: { padding: 24, paddingTop: 72, paddingBottom: 32 },
-  title: { color: colors.textPrimary, fontSize: 28, fontWeight: '700' },
-  subtitle: { color: colors.textFaint, fontSize: 14, marginTop: 2 },
+  content: { padding: space.xxl, paddingTop: 72, paddingBottom: space.xxxl },
+  title: { ...typography.display, color: colors.textPrimary },
+  subtitle: { ...typography.callout, color: colors.textFaint, marginTop: 2 },
   card: {
     backgroundColor: colors.surface,
-    borderRadius: 12,
-    padding: 16,
-    marginTop: 16,
+    borderRadius: radius.md,
+    padding: space.lg,
+    marginTop: space.lg,
     ...shadow.card,
   },
   eyebrow: {
-    color: colors.tabActive,
-    fontSize: 12,
+    ...typography.caption,
     fontWeight: '700',
     letterSpacing: 0.6,
     textTransform: 'uppercase',
+    color: colors.tabActive,
   },
-  hero: { color: colors.money, fontSize: 32, fontWeight: '700', marginTop: 4 },
-  muted: { color: colors.textFaint, fontSize: 14, marginTop: 6, lineHeight: 20 },
+  hero: { ...typography.display, fontSize: 32, lineHeight: 38, color: colors.money, marginTop: space.xs },
+  muted: { ...typography.callout, color: colors.textFaint, marginTop: 6 },
   rowBetween: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline' },
-  cardLabel: { color: colors.textPrimary, fontSize: 16, fontWeight: '700' },
-  cardValue: { color: colors.money, fontSize: 20, fontWeight: '700' },
+  cardLabel: { ...typography.subheading, fontWeight: '700', color: colors.textPrimary },
+  cardValue: { ...typography.heading, fontSize: 20, lineHeight: 26, color: colors.money },
   codCard: { backgroundColor: colors.batteryBg },
-  codTitle: { color: colors.textPrimary, fontSize: 16, fontWeight: '700' },
-  chartHead: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  sampleBadge: { backgroundColor: colors.surfaceAlt, borderRadius: PILL, paddingHorizontal: 10, paddingVertical: 3 },
-  sampleBadgeText: { color: colors.textMuted, fontSize: 11, fontWeight: '700', letterSpacing: 0.6 },
-  chart: { flexDirection: 'row', alignItems: 'flex-end', gap: 8, height: 120, marginTop: 16 },
-  barCol: { flex: 1, alignItems: 'center', gap: 4 },
-  barValue: { color: colors.textFaint, fontSize: 11 },
-  barValueToday: { color: colors.textPrimary, fontWeight: '700' },
+  codTitle: { ...typography.subheading, fontWeight: '700', color: colors.textPrimary },
+  chartHead: { flexDirection: 'row', alignItems: 'center', gap: space.sm },
+  sampleBadge: { backgroundColor: colors.surfaceAlt, borderRadius: radius.pill, paddingHorizontal: 10, paddingVertical: 3 },
+  sampleBadgeText: { ...typography.micro, letterSpacing: 0.6, color: colors.textMuted },
+  chart: { flexDirection: 'row', alignItems: 'flex-end', gap: space.sm, height: 120, marginTop: space.lg },
+  barCol: { flex: 1, alignItems: 'center', gap: space.xs },
   bar: { width: '100%', borderTopLeftRadius: 6, borderTopRightRadius: 6 },
   barToday: { backgroundColor: colors.tabActive },
   barOther: { backgroundColor: colors.btnPrimaryBg },
-  barDay: { color: colors.textFaint, fontSize: 11 },
+  barDay: { ...typography.caption, fontSize: 11, lineHeight: 14, color: colors.textFaint },
   barDayToday: { color: colors.tabActive, fontWeight: '700' },
-  sampleNote: { color: colors.textFaint, fontSize: 12, marginTop: 12 },
+  sampleNote: { ...typography.caption, color: colors.textFaint, marginTop: space.md },
   payoutCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
+    gap: space.md,
     backgroundColor: colors.surface,
-    borderRadius: 12,
-    padding: 16,
-    marginTop: 16,
+    borderRadius: radius.md,
+    padding: space.lg,
+    marginTop: space.lg,
     ...shadow.card,
   },
   payoutText: { flex: 1 },

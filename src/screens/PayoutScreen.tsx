@@ -1,11 +1,13 @@
 import { useEffect, useState } from 'react';
-import { Linking, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Linking, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { getProfile, type Earnings } from '../lib/api';
 import { money } from '../lib/format';
 import { waUrl } from '../lib/links';
 import { OPS_WHATSAPP } from '../config';
-import { colors, shadow, PILL } from '../theme';
+import { colors, shadow, typography, space, radius } from '../theme';
+import { Text } from '../components/ui';
+import { haptics } from '../lib/haptics';
 import PayoutMethods from '../components/PayoutMethods';
 
 // Cash-out screen — the prototype's Payout flow (#12), built HONEST.
@@ -53,7 +55,9 @@ export default function PayoutScreen({
     `Hi urAfro — I'd like to cash out my driver balance${payable > 0 ? ` of ${money(payable)}` : ''}` +
     ` to my EcoCash${phone ? ` (${phone})` : ''}.`;
   const messageOps = () => {
-    if (OPS_WHATSAPP) void Linking.openURL(waUrl(OPS_WHATSAPP, opsMessage));
+    if (!OPS_WHATSAPP) return;
+    haptics.tap(); // light ack — the tap is handing off to WhatsApp
+    void Linking.openURL(waUrl(OPS_WHATSAPP, opsMessage));
   };
 
   return (
@@ -123,76 +127,75 @@ export default function PayoutScreen({
   );
 }
 
+// Text styles from the shared type scale (typography.*); spacing/radii from tokens.
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.bg },
-  content: { padding: 24, paddingTop: 64, paddingBottom: 40 },
+  content: { padding: space.xxl, paddingTop: 64, paddingBottom: 40 },
 
-  back: { flexDirection: 'row', alignItems: 'center', gap: 4, minHeight: 32 },
-  backText: { color: colors.textMuted, fontSize: 14, fontWeight: '700' },
+  back: { flexDirection: 'row', alignItems: 'center', gap: space.xs, minHeight: 32 },
+  backText: { ...typography.callout, fontWeight: '700', color: colors.textMuted },
 
-  titleRow: { flexDirection: 'row', alignItems: 'center', gap: 12, marginTop: 8 },
-  title: { color: colors.textPrimary, fontSize: 28, fontWeight: '700' },
+  titleRow: { flexDirection: 'row', alignItems: 'center', gap: space.md, marginTop: space.sm },
+  title: { ...typography.display, color: colors.textPrimary },
   previewPill: {
     backgroundColor: colors.surfaceAlt,
-    borderRadius: PILL,
-    paddingHorizontal: 12,
+    borderRadius: radius.pill,
+    paddingHorizontal: space.md,
     paddingVertical: 6,
   },
-  previewPillText: { color: colors.textMuted, fontSize: 12, fontWeight: '700' },
+  previewPillText: { ...typography.caption, fontWeight: '700', color: colors.textMuted },
 
   card: {
     backgroundColor: colors.surface,
-    borderRadius: 12,
-    padding: 16,
-    marginTop: 16,
+    borderRadius: radius.md,
+    padding: space.lg,
+    marginTop: space.lg,
     ...shadow.card,
   },
   eyebrow: {
-    color: colors.tabActive,
-    fontSize: 12,
+    ...typography.caption,
     fontWeight: '700',
     letterSpacing: 0.6,
     textTransform: 'uppercase',
+    color: colors.tabActive,
   },
-  hero: { color: colors.money, fontSize: 32, fontWeight: '700', marginTop: 4 },
-  muted: { color: colors.textFaint, fontSize: 14, marginTop: 6, lineHeight: 20 },
-  rowHead: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  cardLabel: { color: colors.textPrimary, fontSize: 16, fontWeight: '700' },
-  destValue: { color: colors.textPrimary, fontSize: 20, fontWeight: '700', marginTop: 8 },
+  hero: { ...typography.display, fontSize: 32, lineHeight: 38, color: colors.money, marginTop: space.xs },
+  muted: { ...typography.callout, color: colors.textFaint, marginTop: 6 },
+  cardLabel: { ...typography.subheading, fontWeight: '700', color: colors.textPrimary },
 
   previewButton: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 8,
+    gap: space.sm,
     backgroundColor: colors.surfaceAlt,
-    borderRadius: PILL,
+    borderRadius: radius.pill,
     minHeight: 48,
     paddingVertical: 14,
-    marginTop: 20,
+    marginTop: space.xl,
   },
-  previewButtonText: { color: colors.textFaint, fontSize: 16, fontWeight: '700' },
-  previewNote: { color: colors.textFaint, fontSize: 13, marginTop: 8, lineHeight: 19, textAlign: 'center' },
+  previewButtonText: { ...typography.subheading, fontWeight: '700', color: colors.textFaint },
+  previewNote: { ...typography.caption, fontSize: 13, lineHeight: 19, color: colors.textFaint, marginTop: space.sm, textAlign: 'center' },
 
   howCard: {
     backgroundColor: colors.surface,
-    borderRadius: 12,
-    padding: 16,
-    marginTop: 20,
+    borderRadius: radius.md,
+    padding: space.lg,
+    marginTop: space.xl,
     ...shadow.card,
   },
-  howTitle: { color: colors.textPrimary, fontSize: 16, fontWeight: '700' },
+  howTitle: { ...typography.subheading, fontWeight: '700', color: colors.textPrimary },
 
   opsButton: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 8,
+    gap: space.sm,
     backgroundColor: colors.btnPrimaryBg,
-    borderRadius: PILL,
+    borderRadius: radius.pill,
     minHeight: 48,
     paddingVertical: 14,
-    marginTop: 16,
+    marginTop: space.lg,
   },
-  opsButtonText: { color: colors.btnPrimaryText, fontSize: 16, fontWeight: '700' },
+  opsButtonText: { ...typography.subheading, fontWeight: '700', color: colors.btnPrimaryText },
 });
