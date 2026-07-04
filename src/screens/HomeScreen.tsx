@@ -6,7 +6,6 @@ import {
   Pressable,
   ScrollView,
   StyleSheet,
-  Text,
   View,
 } from 'react-native';
 import { Feather } from '@expo/vector-icons';
@@ -71,12 +70,14 @@ import {
 import { useSession } from '../state/session';
 import { useActiveJob } from '../state/activeJob';
 import { REALTIME_ENABLED, connectDriverStream } from '../lib/realtime';
-import { colors, shadow, PILL } from '../theme';
+import { colors, shadow, typography, space, radius } from '../theme';
+import { animateNext } from '../lib/motion';
+import { haptics } from '../lib/haptics';
 import OffersList from '../components/OffersList';
 import BoardList from '../components/BoardList';
 import ActiveJob, { type LifecycleAction, type ActionExtra } from '../components/ActiveJob';
 import ShiftStatus from '../components/ShiftStatus';
-import { OfferAlert, type OfferAlertData } from '../components/ui';
+import { OfferAlert, Text, type OfferAlertData } from '../components/ui';
 import { useIsStopped } from '../hooks/useIsStopped';
 
 // Foreground offers+location poll (runs only while online and not on a job). 5s on the
@@ -995,6 +996,26 @@ export default function HomeScreen({ focused }: { focused: boolean }) {
         }
       : null;
 
+  // B2: the payday moment gets the shared success haptic the instant it appears —
+  // the loop's most motivating screen was previously silent (no tactile confirmation).
+  useEffect(() => {
+    if (completed) haptics.success();
+  }, [completed]);
+
+  // B3: animate the top-level state swaps (offline↔online↔job↔payday) so a mode
+  // change is never a silent pop. Driven from ONE render-phase choke point rather
+  // than the ~15 setJob/setOnline call sites, so every path that flips the mode —
+  // claim, grab, realtime reconcile, rehydrate, payday — gets the transition, and
+  // (unlike <Transition>, which would freeze live offers/earnings under a mode) the
+  // content keeps updating. animateNext only schedules the NEXT native layout commit
+  // — the one this render produces — so it must run here, before the tree is returned.
+  const mode = completed ? 'payday' : job ? 'job' : online ? 'online' : 'offline';
+  const prevMode = useRef(mode);
+  if (prevMode.current !== mode) {
+    animateNext(mode === 'payday' ? 'loud' : 'base');
+    prevMode.current = mode;
+  }
+
   return (
     <View style={styles.rootWrap}>
       <ScrollView style={styles.container} contentContainerStyle={styles.content}>
@@ -1133,7 +1154,10 @@ export default function HomeScreen({ focused }: { focused: boolean }) {
               <Pressable
                 style={styles.stayBtn}
                 disabled={busy}
-                onPress={() => setConfirmingOffline(false)}
+                onPress={() => {
+                  animateNext('base');
+                  setConfirmingOffline(false);
+                }}
               >
                 <Text style={styles.stayText}>Stay online</Text>
               </Pressable>
@@ -1142,7 +1166,14 @@ export default function HomeScreen({ focused }: { focused: boolean }) {
             <>
               <Pressable
                 style={[styles.toggle, online ? styles.offBtn : styles.onBtn, busy && styles.busy]}
-                onPress={online ? () => setConfirmingOffline(true) : goOnlineNow}
+                onPress={
+                  online
+                    ? () => {
+                        animateNext('base');
+                        setConfirmingOffline(true);
+                      }
+                    : goOnlineNow
+                }
                 disabled={busy}
               >
                 {busy ? (
@@ -1242,21 +1273,25 @@ export default function HomeScreen({ focused }: { focused: boolean }) {
   );
 }
 
+// Every text style is built from the shared type scale (`typography.*`) so the
+// screen speaks one type language (B4) — and because each variant carries its own
+// lineHeight, the big money numbers render correctly through the <Text> primitive
+// instead of clipping. Spacing/radii come from the `space`/`radius` tokens.
 const styles = StyleSheet.create({
   rootWrap: { flex: 1 },
   container: { flex: 1, backgroundColor: colors.bg },
-  content: { padding: 24, paddingTop: 72, flexGrow: 1 },
-  title: { color: colors.textPrimary, fontSize: 28, fontWeight: '700' },
+  content: { padding: space.xxl, paddingTop: 72, flexGrow: 1 },
+  title: { ...typography.display, color: colors.textPrimary },
   earnCard: {
     backgroundColor: colors.surface,
-    borderRadius: 12,
-    padding: 16,
-    marginTop: 16,
+    borderRadius: radius.md,
+    padding: space.lg,
+    marginTop: space.lg,
     ...shadow.card,
   },
-  earnHeroLabel: { color: colors.textFaint, fontSize: 12 },
-  earnHero: { color: colors.money, fontSize: 30, fontWeight: '700', marginTop: 2, letterSpacing: -0.5 },
-  earnHeroSub: { color: colors.textFaint, fontSize: 13, marginTop: 1 },
+  earnHeroLabel: { ...typography.caption, color: colors.textFaint },
+  earnHero: { ...typography.display, fontSize: 30, lineHeight: 36, color: colors.money, marginTop: 2, letterSpacing: -0.5 },
+  earnHeroSub: { ...typography.caption, fontSize: 13, lineHeight: 18, color: colors.textFaint, marginTop: 1 },
   earnRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1266,70 +1301,70 @@ const styles = StyleSheet.create({
     borderTopWidth: StyleSheet.hairlineWidth,
     borderTopColor: colors.hairline,
   },
-  earnRowLabel: { color: colors.textSecondary, fontSize: 14 },
-  earnRowValue: { color: colors.money, fontSize: 16, fontWeight: '700', marginLeft: 'auto' },
+  earnRowLabel: { ...typography.callout, color: colors.textSecondary },
+  earnRowValue: { ...typography.subheading, fontWeight: '700', color: colors.money, marginLeft: 'auto' },
   codCallout: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
     backgroundColor: colors.codBg,
-    borderRadius: 8,
-    padding: 12,
+    borderRadius: radius.sm,
+    padding: space.md,
     marginTop: 14,
   },
   codBody: { flex: 1 },
-  codTitle: { color: colors.codText, fontSize: 14, fontWeight: '700' },
-  codSub: { color: colors.codText, fontSize: 12, marginTop: 1 },
-  codValue: { color: colors.codText, fontSize: 16, fontWeight: '700' },
-  toggle: { borderRadius: PILL, paddingVertical: 18, alignItems: 'center', marginTop: 20 },
+  codTitle: { ...typography.callout, fontWeight: '700', color: colors.codText },
+  codSub: { ...typography.caption, color: colors.codText, marginTop: 1 },
+  codValue: { ...typography.subheading, fontWeight: '700', color: colors.codText },
+  toggle: { borderRadius: radius.pill, paddingVertical: 18, alignItems: 'center', marginTop: space.xl },
   onBtn: { backgroundColor: colors.btnPrimaryBg },
   offBtn: { backgroundColor: colors.btnSecondaryBg },
   busy: { opacity: 0.6 },
-  toggleText: { color: colors.btnPrimaryText, fontSize: 18, fontWeight: '700' },
-  toggleRow: { flexDirection: 'row', gap: 8 },
+  toggleText: { ...typography.heading, color: colors.btnPrimaryText },
+  toggleRow: { flexDirection: 'row', gap: space.sm },
   iconRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  bgRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 16 },
-  bg: { color: colors.textFaint, fontSize: 13 },
-  syncingRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 16 },
-  syncing: { color: colors.warning, fontSize: 13 },
-  error: { color: colors.danger, fontSize: 14, marginTop: 16 },
+  bgRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: space.lg },
+  bg: { ...typography.caption, fontSize: 13, lineHeight: 18, color: colors.textFaint },
+  syncingRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: space.lg },
+  syncing: { ...typography.caption, fontSize: 13, lineHeight: 18, color: colors.warning },
+  error: { ...typography.callout, color: colors.danger, marginTop: space.lg },
   checkingCard: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 10,
     backgroundColor: colors.surface,
-    borderRadius: 12,
-    padding: 24,
+    borderRadius: radius.md,
+    padding: space.xxl,
     marginTop: 28,
     ...shadow.card,
   },
-  checkingText: { color: colors.textFaint, fontSize: 15 },
+  checkingText: { ...typography.body, color: colors.textFaint },
   // H2 segmented Offers | Available control.
   segment: {
     flexDirection: 'row',
-    marginTop: 24,
+    marginTop: space.xxl,
     backgroundColor: colors.surfaceAlt,
-    borderRadius: PILL,
-    padding: 4,
-    gap: 4,
+    borderRadius: radius.pill,
+    padding: space.xs,
+    gap: space.xs,
   },
-  segmentBtn: { flex: 1, minHeight: 40, alignItems: 'center', justifyContent: 'center', borderRadius: PILL },
+  segmentBtn: { flex: 1, minHeight: 40, alignItems: 'center', justifyContent: 'center', borderRadius: radius.pill },
   segmentBtnActive: { backgroundColor: colors.surface, ...shadow.card },
-  segmentText: { color: colors.textMuted, fontSize: 15, fontWeight: '700' },
+  segmentText: { ...typography.body, fontWeight: '700', color: colors.textMuted },
   segmentTextActive: { color: colors.textPrimary },
   batteryBanner: {
     backgroundColor: colors.batteryBg,
     borderColor: colors.batteryBorder,
     borderWidth: 1,
-    borderRadius: 12,
+    borderRadius: radius.md,
     padding: 14,
-    marginBottom: 16,
+    marginBottom: space.lg,
   },
-  batteryTitle: { color: colors.batteryTitle, fontSize: 15, fontWeight: '700' },
-  batteryBody: { color: colors.batteryBody, fontSize: 13, marginTop: 4, lineHeight: 18 },
+  batteryTitle: { ...typography.body, fontWeight: '700', color: colors.batteryTitle },
+  batteryBody: { ...typography.caption, fontSize: 13, lineHeight: 18, color: colors.batteryBody, marginTop: space.xs },
   // Payday moment (the loop's most motivating screen — previously silent).
-  completeCard: { alignItems: 'center', paddingTop: 24, gap: 8 },
+  completeCard: { alignItems: 'center', paddingTop: space.xxl, gap: space.sm },
   completeCheck: {
     width: 88,
     height: 88,
@@ -1337,43 +1372,42 @@ const styles = StyleSheet.create({
     backgroundColor: colors.btnPrimaryBg,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 8,
+    marginBottom: space.sm,
   },
-  completeTitle: { color: colors.textPrimary, fontSize: 24, fontWeight: '700' },
-  completeEarnLabel: { color: colors.textFaint, fontSize: 14, marginTop: 8 },
-  completeEarn: { color: colors.money, fontSize: 32, fontWeight: '700' },
-  completeToday: { color: colors.textSecondary, fontSize: 15, marginTop: 4 },
+  completeTitle: { ...typography.title, fontSize: 24, lineHeight: 30, color: colors.textPrimary },
+  completeEarnLabel: { ...typography.callout, color: colors.textFaint, marginTop: space.sm },
+  completeEarn: { ...typography.display, fontSize: 32, lineHeight: 38, color: colors.money },
+  completeToday: { ...typography.body, color: colors.textSecondary, marginTop: space.xs },
   completeCod: {
+    ...typography.callout,
     color: colors.cod,
-    fontSize: 14,
-    lineHeight: 20,
     textAlign: 'center',
-    marginTop: 12,
-    paddingHorizontal: 8,
+    marginTop: space.md,
+    paddingHorizontal: space.sm,
   },
   completeBtn: {
     backgroundColor: colors.btnPrimaryBg,
-    borderRadius: PILL,
-    paddingVertical: 16,
+    borderRadius: radius.pill,
+    paddingVertical: space.lg,
     paddingHorizontal: 40,
     alignItems: 'center',
     marginTop: 28,
     alignSelf: 'stretch',
   },
-  completeBtnText: { color: colors.btnPrimaryText, fontSize: 16, fontWeight: '700' },
+  completeBtnText: { ...typography.subheading, fontWeight: '700', color: colors.btnPrimaryText },
   // End-of-shift summary confirm.
   summaryCard: {
     backgroundColor: colors.surface,
-    borderRadius: 12,
-    padding: 20,
-    marginTop: 20,
+    borderRadius: radius.md,
+    padding: space.xl,
+    marginTop: space.xl,
     alignItems: 'stretch',
     ...shadow.card,
   },
-  summaryTitle: { color: colors.textPrimary, fontSize: 18, fontWeight: '700', textAlign: 'center' },
-  summaryBig: { color: colors.money, fontSize: 32, fontWeight: '700', marginTop: 10, textAlign: 'center' },
-  summarySub: { color: colors.textFaint, fontSize: 14, marginTop: 2, textAlign: 'center' },
-  summaryCod: { color: colors.cod, fontSize: 14, textAlign: 'center', marginTop: 12, lineHeight: 20 },
-  stayBtn: { alignItems: 'center', paddingVertical: 14, marginTop: 4 },
-  stayText: { color: colors.textFaint, fontSize: 14 },
+  summaryTitle: { ...typography.heading, color: colors.textPrimary, textAlign: 'center' },
+  summaryBig: { ...typography.display, fontSize: 32, lineHeight: 38, color: colors.money, marginTop: 10, textAlign: 'center' },
+  summarySub: { ...typography.callout, color: colors.textFaint, marginTop: 2, textAlign: 'center' },
+  summaryCod: { ...typography.callout, color: colors.cod, textAlign: 'center', marginTop: space.md },
+  stayBtn: { alignItems: 'center', paddingVertical: 14, marginTop: space.xs },
+  stayText: { ...typography.callout, color: colors.textFaint },
 });
