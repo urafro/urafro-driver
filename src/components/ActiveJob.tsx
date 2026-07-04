@@ -1,6 +1,6 @@
 import { Feather } from '@expo/vector-icons';
-import { useEffect, useState } from 'react';
-import { ActivityIndicator, Linking, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { useEffect, useRef, useState } from 'react';
+import { ActivityIndicator, Linking, Pressable, StyleSheet, TextInput, View } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import * as FileSystem from 'expo-file-system/legacy';
 import { ApiError, getPodPhotoUrl, type DriverDelivery, type FailureReason } from '../lib/api';
@@ -9,7 +9,9 @@ import { metersBetween } from '../lib/geo';
 import { money, placeLabel } from '../lib/format';
 import { runStops } from '../lib/run';
 import { mapsUrl, telUrl, waUrl } from '../lib/links';
-import { colors, shadow, PILL } from '../theme';
+import { colors, FONT, iconSize, PILL, radius, shadow, space } from '../theme';
+import { animateNext } from '../lib/motion';
+import { Stepper, Text, Transition, useToast } from './ui';
 import RouteMap from './RouteMap';
 
 export type LifecycleAction = 'picked_up' | 'in_transit' | 'delivered' | 'failed';
@@ -97,6 +99,8 @@ export default function ActiveJob({
   // is the stop being worked now (== `job`, chosen by currentStopLeg on the HomeScreen).
   const stops = runLegs ? runStops(runLegs) : null;
 
+  const toast = useToast();
+
   // Two-step confirms: "Can't complete" needs a reason; "Delivered" captures the
   // at-door delivery code (verified handover) + PoD note + (on COD jobs) the cash
   // actually collected.
@@ -120,6 +124,20 @@ export default function ActiveJob({
     setPinInput('');
     setPhotoError(null);
   }, [job.id]);
+
+  // B2 per-action acknowledgment: confirm what just happened (felt + seen) when the
+  // SAME worked leg advances FORWARD. Keyed on both id and status in one ref, so a
+  // pooled-run leg-advance (job.id change) never fires a stale ack regardless of effect
+  // ordering, and each ack is gated on its genuine predecessor. Delivered is not acked
+  // here — the leg unmounts and HomeScreen shows the payday / next-stop state.
+  const advanceRef = useRef({ id: job.id, status });
+  useEffect(() => {
+    const prev = advanceRef.current;
+    advanceRef.current = { id: job.id, status };
+    if (prev.id !== job.id || prev.status === status) return;
+    if (status === 'picked_up' && prev.status === 'assigned') toast.success('Order collected — head to the customer');
+    else if (status === 'in_transit' && prev.status === 'picked_up') toast.info('On the way to the customer');
+  }, [job.id, status, toast]);
 
   // The driver's own position for the route map. Watched HERE (this screen only shows
   // on shift, so location permission is granted) rather than threaded from HomeScreen,
@@ -147,14 +165,20 @@ export default function ActiveJob({
   const codDue = job.collect_minor ?? 0;
   const startAction = (to: LifecycleAction) => {
     if (to === 'failed') {
+      animateNext('base');
       setPanel('fail');
     } else if (to === 'delivered') {
       setCodInput(codDue > 0 ? (codDue / 100).toFixed(2) : '');
       setPinInput('');
+      animateNext('base');
       setPanel('deliver');
     } else {
       onAction(to);
     }
+  };
+  const closePanel = () => {
+    animateNext('base');
+    setPanel(null);
   };
   // The deliver panel deliberately STAYS OPEN here: on success the whole card
   // unmounts (the job clears), and on a wrong-code 400 the driver needs the form
@@ -239,44 +263,28 @@ export default function ActiveJob({
 
   return (
     <View style={styles.container}>
-      {/* 4-segment progress stepper — for a SINGLE job. In a pooled run it would reset
-          per leg (confusing: pick up A → "Claimed" for B), so the run strip below is the
-          progress indicator instead and the per-leg stepper is hidden. */}
+      {/* B2 progress — for a SINGLE job the shared numeric stepper ("Step X of 4"
+          with an animated fill). In a pooled run the per-leg lifecycle would reset
+          per stop (confusing), so the stop-by-stop run strip below is the indicator. */}
       {stops ? null : (
-        <View style={styles.stepper}>
-          {STEPS.map((s, i) => {
-            const isDone = i < stepsDone;
-            const isCurrent = i === stepsDone;
-            return (
-              <View key={s} style={styles.step}>
-                <View
-                  style={[
-                    styles.stepBar,
-                    isDone && styles.stepBarDone,
-                    isCurrent && styles.stepBarCurrent,
-                  ]}
-                />
-                <Text
-                  style={[styles.stepLabel, (isDone || isCurrent) && styles.stepLabelActive]}
-                  numberOfLines={1}
-                >
-                  {s}
-                </Text>
-              </View>
-            );
-          })}
-        </View>
+        <Stepper
+          current={stepsDone}
+          total={4}
+          label="Step"
+          sublabel={goingToPickup ? `Heading to ${placeLabel(job.pickup)}` : 'At the customer'}
+          steps={STEPS.map((s) => ({ key: s, label: s }))}
+        />
       )}
 
-      {/* #66 (batching): the stop-by-stop run strip — every drop in the pooled run, the
+      {/* #66 (batching): the stop-by-stop run strip — every stop in the pooled run, the
           one being worked highlighted "Now". Advances automatically: a completed leg
           drops out on the next run refresh and the next becomes current. Falls back to
           the F4 single-leg banner when only this leg is known (batch_id, no run list). */}
       {stops ? (
         <View style={styles.runStrip}>
           <View style={styles.runHead}>
-            <Feather name="layers" size={15} color={colors.textMuted} aria-hidden />
-            <Text style={styles.runHeadText}>
+            <Feather name="layers" size={iconSize.sm} color={colors.textMuted} aria-hidden />
+            <Text variant="bodyStrong" color="textPrimary">
               Pooled run · {runLegs?.length} orders · {stops.length} stops
             </Text>
           </View>
@@ -292,96 +300,121 @@ export default function ActiveJob({
                 <View style={[styles.runDot, current && styles.runDotCurrent]}>
                   <Feather
                     name={isPickup ? 'package' : 'flag'}
-                    size={12}
+                    size={14}
                     color={current ? colors.btnPrimaryText : colors.textMuted}
                     aria-hidden
                   />
                 </View>
-                <Text style={[styles.runLegText, current && styles.runLegTextCurrent]} numberOfLines={1}>
+                <Text
+                  variant="callout"
+                  color={current ? 'textPrimary' : 'textMuted'}
+                  style={styles.runLegText}
+                  numberOfLines={1}
+                >
                   {isPickup ? 'Pick up' : 'Deliver'} · {label}
                 </Text>
-                {current ? <Text style={styles.runNow}>Now</Text> : null}
+                {current ? (
+                  <Text variant="micro" color="tabActive">
+                    Now
+                  </Text>
+                ) : null}
               </View>
             );
           })}
         </View>
       ) : job.batch_id ? (
         <View style={styles.runBanner}>
-          <Feather name="layers" size={15} color={colors.textMuted} aria-hidden />
-          <Text style={styles.runBannerText}>Pooled run · stop {job.batch_sequence ?? 1}</Text>
+          <Feather name="layers" size={iconSize.sm} color={colors.textMuted} aria-hidden />
+          <Text variant="bodyStrong" color="textPrimary">
+            Pooled run · stop {job.batch_sequence ?? 1}
+          </Text>
         </View>
       ) : null}
 
-      {/* Primary leg-aware contact card */}
-      <View style={styles.card}>
-        <Text style={styles.eyebrow}>{goingToPickup ? 'Pick up from' : 'Deliver to'}</Text>
-        <Text style={styles.place}>{placeLabel(target.geo)}</Text>
-
-        <View style={styles.divider} />
-
-        {target.contact?.name ? (
-          <Text style={styles.contactName}>
-            {target.contact.name} · {target.label}
+      {/* Primary leg-aware contact card. Wrapped in Transition so the merchant→customer
+          swap after pickup is a visible cross-fade, not a silent re-render (B3). */}
+      <Transition trigger={goingToPickup ? 'pickup' : 'deliver'} intensity="light">
+        <View style={styles.card}>
+          <Text variant="label" color="tabActive" style={styles.eyebrow}>
+            {goingToPickup ? 'Pick up from' : 'Deliver to'}
           </Text>
-        ) : (
-          <Text style={styles.contactName}>The {target.label}</Text>
-        )}
-        {target.contact?.phone ? (
-          <Text style={styles.contactPhone}>{target.contact.phone}</Text>
-        ) : null}
+          <Text variant="title" color="textPrimary" style={styles.place}>
+            {placeLabel(target.geo)}
+          </Text>
 
-        <View style={styles.actionRow}>
+          <View style={styles.divider} />
+
+          {target.contact?.name ? (
+            <Text variant="subheading" color="textPrimary">
+              {target.contact.name} · {target.label}
+            </Text>
+          ) : (
+            <Text variant="subheading" color="textPrimary">
+              The {target.label}
+            </Text>
+          )}
           {target.contact?.phone ? (
-            <Pressable style={[styles.legBtn, styles.legBtnPrimary]} onPress={call}>
-              <View style={styles.legBtnInner}>
-                <Feather name="phone" size={16} color={colors.surface} />
-                <Text style={[styles.legBtnText, styles.legBtnTextPrimary]}>Call {target.label}</Text>
-              </View>
-            </Pressable>
+            <Text variant="body" color="textMuted" style={styles.contactPhone}>
+              {target.contact.phone}
+            </Text>
           ) : null}
-          {hasGeo ? (
-            <Pressable style={[styles.legBtn, styles.legBtnGhost]} onPress={navigate}>
-              <View style={styles.legBtnInner}>
-                <Feather name="navigation" size={16} color={colors.textPrimary} />
-                <Text style={styles.legBtnText}>Navigate</Text>
-              </View>
-            </Pressable>
-          ) : null}
-        </View>
 
-        {customerPhone ? (
-          <View style={styles.waRow}>
-            {QUICK_REPLIES.map((m) => (
-              <Pressable
-                key={m}
-                style={styles.waChip}
-                onPress={() => void Linking.openURL(waUrl(customerPhone, m))}
-              >
-                <View style={styles.waChipInner}>
-                  <Feather name="message-circle" size={16} color={colors.textPrimary} />
-                  <Text style={styles.waChipText}>{m}</Text>
+          <View style={styles.actionRow}>
+            {target.contact?.phone ? (
+              <Pressable style={[styles.legBtn, styles.legBtnPrimary]} onPress={call}>
+                <View style={styles.legBtnInner}>
+                  <Feather name="phone" size={iconSize.sm} color={colors.surface} />
+                  <Text variant="bodyStrong" color="surface">
+                    Call {target.label}
+                  </Text>
                 </View>
               </Pressable>
-            ))}
+            ) : null}
+            {hasGeo ? (
+              <Pressable style={[styles.legBtn, styles.legBtnGhost]} onPress={navigate}>
+                <View style={styles.legBtnInner}>
+                  <Feather name="navigation" size={iconSize.sm} color={colors.textPrimary} />
+                  <Text variant="bodyStrong" color="textPrimary">
+                    Navigate
+                  </Text>
+                </View>
+              </Pressable>
+            ) : null}
           </View>
-        ) : null}
-      </View>
+
+          {customerPhone ? (
+            <View style={styles.waRow}>
+              {QUICK_REPLIES.map((m) => (
+                <Pressable key={m} style={styles.waChip} onPress={() => void Linking.openURL(waUrl(customerPhone, m))}>
+                  <View style={styles.waChipInner}>
+                    <Feather name="message-circle" size={iconSize.sm} color={colors.textPrimary} />
+                    <Text variant="callout" color="textPrimary" style={styles.waChipText}>
+                      {m}
+                    </Text>
+                  </View>
+                </Pressable>
+              ))}
+            </View>
+          ) : null}
+        </View>
+      </Transition>
 
       {/* Active-job map (Option B): the driver's live position relative to the
-          current stop (merchant before pickup, customer after) on a Leaflet/OSM map. */}
+          current stop (merchant before pickup, customer after) on a Leaflet/OSM map.
+          Kept OUTSIDE the Transition so a leg swap doesn't reload OSM tiles. */}
       {hasGeo && target.geo ? (
-        <RouteMap
-          from={driverLoc}
-          to={{ lat: target.geo.lat, lng: target.geo.lng }}
-          label={placeLabel(target.geo)}
-        />
+        <RouteMap from={driverLoc} to={{ lat: target.geo.lat, lng: target.geo.lng }} label={placeLabel(target.geo)} />
       ) : null}
 
       {/* Secondary "then deliver to" card — only on the pickup leg */}
       {goingToPickup ? (
         <View style={styles.card}>
-          <Text style={styles.eyebrowMuted}>Then deliver to</Text>
-          <Text style={styles.place2}>{placeLabel(job.dropoff)}</Text>
+          <Text variant="label" color="textFaint" style={styles.eyebrow}>
+            Then deliver to
+          </Text>
+          <Text variant="subheading" color="textPrimary" style={styles.place2}>
+            {placeLabel(job.dropoff)}
+          </Text>
         </View>
       ) : null}
 
@@ -390,24 +423,36 @@ export default function ActiveJob({
         <View style={styles.moneyRow}>
           {/* The driver's CUT, never the platform fee — quoting money they don't
               earn is a trust breach (ADR-002 A.3). */}
-          <Text style={styles.moneyLabel}>You earn</Text>
-          <Text style={styles.moneyValue}>{money(job.driver_fee_minor ?? null)}</Text>
+          <Text variant="body" color="textPrimary" style={styles.moneyLabel}>
+            You earn
+          </Text>
+          <Text variant="title" color="textPrimary">
+            {money(job.driver_fee_minor ?? null)}
+          </Text>
         </View>
         {job.collect_minor ? (
           <View style={[styles.moneyRow, styles.moneyRowSpaced]}>
-            <Text style={styles.moneyLabel}>Collect from customer</Text>
-            <Text style={styles.collectBadge}>{money(job.collect_minor)} cash</Text>
+            <Text variant="body" color="textPrimary" style={styles.moneyLabel}>
+              Collect from customer
+            </Text>
+            <Text variant="label" color="cod" style={styles.collectBadge}>
+              {money(job.collect_minor)} cash
+            </Text>
           </View>
         ) : null}
         {!goingToPickup ? (
-          <Text style={styles.codeHint}>At the door: ask for the 4-digit code on the customer&apos;s receipt.</Text>
+          <Text variant="body" color="textMuted" style={styles.codeHint}>
+            At the door: ask for the 4-digit code on the customer&apos;s receipt.
+          </Text>
         ) : null}
       </View>
 
       {panel === 'fail' ? (
         <View style={styles.panel}>
-          <Text style={styles.panelTitle}>Why can&apos;t this be completed?</Text>
-          <Text style={styles.panelSub}>
+          <Text variant="title" color="textPrimary">
+            Why can&apos;t this be completed?
+          </Text>
+          <Text variant="body" color="textFaint">
             The merchant is told and the job is offered to another driver. This won&apos;t count against you when the
             reason checks out.
           </Text>
@@ -421,18 +466,28 @@ export default function ActiveJob({
                 onAction('failed', { reason: r.value });
               }}
             >
-              <Text style={styles.reasonText}>{r.label}</Text>
-              <Text style={styles.reasonSub}>{r.sub}</Text>
+              <Text variant="subheading" color="textPrimary">
+                {r.label}
+              </Text>
+              <Text variant="callout" color="textFaint" style={styles.reasonSub}>
+                {r.sub}
+              </Text>
             </Pressable>
           ))}
-          <Pressable style={styles.panelCancel} onPress={() => setPanel(null)}>
-            <Text style={styles.panelCancelText}>Cancel — keep delivering</Text>
+          <Pressable style={styles.panelCancel} onPress={closePanel}>
+            <Text variant="bodyStrong" color="textFaint">
+              Cancel — keep delivering
+            </Text>
           </Pressable>
         </View>
       ) : panel === 'deliver' ? (
         <View style={styles.panel}>
-          <Text style={styles.panelTitle}>Delivery code</Text>
-          <Text style={styles.fieldLabel}>Ask the customer for the 4-digit code on their receipt.</Text>
+          <Text variant="title" color="textPrimary">
+            Delivery code
+          </Text>
+          <Text variant="callout" color="textMuted" style={styles.fieldLabel}>
+            Ask the customer for the 4-digit code on their receipt.
+          </Text>
           <TextInput
             style={[styles.input, styles.pinInput]}
             value={pinInput}
@@ -444,10 +499,16 @@ export default function ActiveJob({
           />
           {/* Wrong-code / cap feedback lands HERE, next to the field — not at the
               bottom of the scroll where the keyboard hides it. */}
-          {actionError ? <Text style={styles.actionError}>{actionError}</Text> : null}
+          {actionError ? (
+            <Text variant="bodyStrong" color="danger">
+              {actionError}
+            </Text>
+          ) : null}
           {codDue > 0 ? (
             <>
-              <Text style={styles.fieldLabel}>Cash collected (due {money(codDue)})</Text>
+              <Text variant="callout" color="textMuted" style={styles.fieldLabel}>
+                Cash collected (due {money(codDue)})
+              </Text>
               <TextInput
                 style={styles.input}
                 value={codInput}
@@ -458,7 +519,9 @@ export default function ActiveJob({
               />
             </>
           ) : null}
-          <Text style={styles.fieldLabel}>Received by / note (optional)</Text>
+          <Text variant="callout" color="textMuted" style={styles.fieldLabel}>
+            Received by / note (optional)
+          </Text>
           <TextInput
             style={styles.input}
             value={note}
@@ -468,53 +531,73 @@ export default function ActiveJob({
             maxLength={500}
           />
           <Pressable
-            style={[styles.btn, styles.primary, (blocked || !pinReady) && styles.busy]}
+            style={[styles.btn, styles.primary, (blocked || !pinReady) && styles.busyOpacity]}
             disabled={blocked || !pinReady}
             onPress={() => confirmDelivered(true)}
           >
-            {busy ? <ActivityIndicator color={colors.btnPrimaryText} /> : <Text style={styles.btnText}>Confirm delivered</Text>}
+            {busy ? (
+              <ActivityIndicator color={colors.btnPrimaryText} />
+            ) : (
+              <Text variant="subheading" color="btnPrimaryText">
+                Confirm delivered
+              </Text>
+            )}
           </Pressable>
           {/* Photo proof — an alternative to the code: snap a picture of the handover,
               which completes the delivery (method='photo'). The merchant can view it. */}
-          <Text style={styles.orHint}>or, no code?</Text>
-          <Pressable
-            style={[styles.btn, styles.photoBtn, blocked && styles.busy]}
-            disabled={blocked}
-            onPress={takePhoto}
-          >
+          <Text variant="callout" color="textFaint" style={styles.orHint}>
+            or, no code?
+          </Text>
+          <Pressable style={[styles.btn, styles.photoBtn, blocked && styles.busyOpacity]} disabled={blocked} onPress={takePhoto}>
             {uploading ? (
               <ActivityIndicator color={colors.textPrimary} />
             ) : (
               <View style={styles.photoBtnInner}>
-                <Feather name="camera" size={18} color={colors.textPrimary} />
-                <Text style={styles.photoBtnText}>Take delivery photo</Text>
+                <Feather name="camera" size={iconSize.md} color={colors.textPrimary} />
+                <Text variant="subheading" color="textPrimary">
+                  Take delivery photo
+                </Text>
               </View>
             )}
           </Pressable>
-          {photoError ? <Text style={styles.actionError}>{photoError}</Text> : null}
+          {photoError ? (
+            <Text variant="bodyStrong" color="danger">
+              {photoError}
+            </Text>
+          ) : null}
           {/* Manual fallback — no code and no photo (older receipt, phone dead).
               Books the same completion, just unverified ('manual'). */}
           <Pressable style={styles.panelCancel} disabled={blocked} onPress={() => confirmDelivered(false)}>
-            <Text style={styles.panelCancelText}>Complete without proof</Text>
+            <Text variant="bodyStrong" color="textFaint">
+              Complete without proof
+            </Text>
           </Pressable>
-          <Pressable style={styles.panelCancel} disabled={uploading} onPress={() => setPanel(null)}>
-            <Text style={styles.panelCancelText}>Cancel</Text>
+          <Pressable style={styles.panelCancel} disabled={uploading} onPress={closePanel}>
+            <Text variant="bodyStrong" color="textFaint">
+              Cancel
+            </Text>
           </Pressable>
         </View>
       ) : (
         <View style={styles.actions}>
-          {actionError ? <Text style={styles.actionError}>{actionError}</Text> : null}
+          {actionError ? (
+            <Text variant="bodyStrong" color="danger">
+              {actionError}
+            </Text>
+          ) : null}
           {actions.map((a) => (
             <Pressable
               key={a.to}
-              style={[styles.btn, a.danger ? styles.danger : styles.primary, busy && styles.busy]}
+              style={[styles.btn, a.danger ? styles.danger : styles.primary, busy && styles.busyOpacity]}
               onPress={() => startAction(a.to)}
               disabled={busy}
             >
               {busy ? (
                 <ActivityIndicator color={a.danger ? colors.danger : colors.btnPrimaryText} />
               ) : (
-                <Text style={[styles.btnText, a.danger && styles.dangerText]}>{a.label}</Text>
+                <Text variant="subheading" color={a.danger ? 'danger' : 'btnPrimaryText'}>
+                  {a.label}
+                </Text>
               )}
             </Pressable>
           ))}
@@ -525,118 +608,75 @@ export default function ActiveJob({
 }
 
 const styles = StyleSheet.create({
-  container: { gap: 16 },
-
-  // Stepper
-  stepper: { flexDirection: 'row', gap: 8 },
-  step: { flex: 1, alignItems: 'center' },
-  stepBar: {
-    height: 6,
-    width: '100%',
-    borderRadius: PILL,
-    marginBottom: 6,
-    backgroundColor: colors.surfaceAlt,
-    borderWidth: 1,
-    borderColor: 'transparent',
-  },
-  stepBarDone: { backgroundColor: colors.tabActive },
-  stepBarCurrent: { borderColor: colors.tabActive },
-  stepLabel: { fontSize: 12, color: colors.textFaint, textAlign: 'center' },
-  stepLabelActive: { color: colors.tabActive, fontWeight: '700' },
-
-  // F4 pooled-run banner.
-  runBanner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    backgroundColor: colors.surfaceAlt,
-    borderRadius: 12,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    marginBottom: 12,
-  },
-  runBannerText: { color: colors.textPrimary, fontSize: 14, fontWeight: '700' },
+  container: { gap: space.lg },
 
   // #66 pooled-run stop strip.
   runStrip: {
     backgroundColor: colors.surfaceAlt,
-    borderRadius: 12,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    marginBottom: 12,
-    gap: 8,
+    borderRadius: radius.md,
+    paddingHorizontal: space.md,
+    paddingVertical: space.md,
+    gap: space.sm,
   },
-  runHead: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 2 },
-  runHeadText: { color: colors.textPrimary, fontSize: 14, fontWeight: '700' },
+  runBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: space.sm,
+    backgroundColor: colors.surfaceAlt,
+    borderRadius: radius.md,
+    paddingHorizontal: space.md,
+    paddingVertical: space.sm,
+  },
+  runHead: { flexDirection: 'row', alignItems: 'center', gap: space.sm, marginBottom: space.xs },
   runLeg: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
-    paddingVertical: 6,
-    paddingHorizontal: 8,
-    borderRadius: 10,
+    gap: space.sm,
+    paddingVertical: space.xs,
+    paddingHorizontal: space.sm,
+    borderRadius: radius.sm,
   },
   runLegCurrent: { backgroundColor: colors.surface },
   runDot: {
-    width: 22,
-    height: 22,
-    borderRadius: 11,
+    width: 26,
+    height: 26,
+    borderRadius: PILL,
     backgroundColor: colors.surface,
     alignItems: 'center',
     justifyContent: 'center',
   },
   runDotCurrent: { backgroundColor: colors.tabActive },
-  runNum: { color: colors.textMuted, fontSize: 12, fontWeight: '800' },
-  runNumCurrent: { color: colors.btnPrimaryText },
-  runLegText: { flex: 1, color: colors.textMuted, fontSize: 14, fontWeight: '600' },
-  runLegTextCurrent: { color: colors.textPrimary, fontWeight: '700' },
-  runNow: { color: colors.tabActive, fontSize: 12, fontWeight: '800' },
+  runLegText: { flex: 1 },
 
   // Card
   card: {
     backgroundColor: colors.surface,
-    borderRadius: 14,
-    padding: 16,
+    borderRadius: radius.lg,
+    padding: space.lg,
     ...shadow.card,
   },
-  eyebrow: {
-    fontSize: 12,
-    fontWeight: '700',
-    letterSpacing: 1,
-    textTransform: 'uppercase',
-    color: colors.tabActive,
-  },
-  eyebrowMuted: {
-    fontSize: 12,
-    fontWeight: '700',
-    letterSpacing: 1,
-    textTransform: 'uppercase',
-    color: colors.textFaint,
-  },
-  place: { color: colors.textPrimary, fontSize: 20, fontWeight: '700', lineHeight: 27, marginTop: 4 },
-  place2: { color: colors.textPrimary, fontSize: 16, fontWeight: '700', lineHeight: 22, marginTop: 4 },
+  eyebrow: { textTransform: 'uppercase', letterSpacing: 1 },
+  place: { marginTop: space.xs },
+  place2: { marginTop: space.xs },
 
-  divider: { height: 1, backgroundColor: colors.surfaceAlt, marginVertical: 16 },
+  divider: { height: 1, backgroundColor: colors.surfaceAlt, marginVertical: space.lg },
 
-  contactName: { color: colors.textPrimary, fontSize: 16, fontWeight: '700' },
-  contactPhone: { color: colors.textMuted, fontSize: 16, marginTop: 2 },
+  contactPhone: { marginTop: 2 },
 
-  actionRow: { flexDirection: 'row', gap: 8, marginTop: 16 },
+  actionRow: { flexDirection: 'row', gap: space.sm, marginTop: space.lg },
   legBtn: {
     flex: 1,
     minHeight: 48,
     borderRadius: PILL,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingHorizontal: 12,
+    paddingHorizontal: space.md,
   },
   legBtnPrimary: { backgroundColor: colors.tabActive },
   legBtnGhost: { borderWidth: 1, borderColor: colors.textPrimary },
-  legBtnInner: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  legBtnText: { color: colors.textPrimary, fontSize: 15, fontWeight: '700' },
-  legBtnTextPrimary: { color: colors.surface },
+  legBtnInner: { flexDirection: 'row', alignItems: 'center', gap: space.xs },
 
-  waRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 8 },
+  waRow: { flexDirection: 'row', flexWrap: 'wrap', gap: space.sm, marginTop: space.sm },
   waChip: {
     minHeight: 48,
     justifyContent: 'center',
@@ -644,74 +684,63 @@ const styles = StyleSheet.create({
     borderRadius: PILL,
     borderWidth: 1,
     borderColor: colors.border,
-    paddingHorizontal: 14,
+    paddingHorizontal: space.md,
   },
-  waChipInner: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  waChipText: { color: colors.textPrimary, fontSize: 14, fontWeight: '700' },
+  waChipInner: { flexDirection: 'row', alignItems: 'center', gap: space.xs },
+  waChipText: {},
 
   // Earn / collect
-  moneyRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  moneyRowSpaced: { marginTop: 8 },
-  moneyLabel: { flex: 1, fontSize: 16, color: colors.textPrimary },
-  moneyValue: { fontSize: 20, fontWeight: '700', color: colors.textPrimary },
+  moneyRow: { flexDirection: 'row', alignItems: 'center', gap: space.sm },
+  moneyRowSpaced: { marginTop: space.sm },
+  moneyLabel: { flex: 1 },
   collectBadge: {
-    color: colors.cod,
-    fontSize: 13,
-    fontWeight: '700',
     letterSpacing: 0.5,
     textTransform: 'uppercase',
     backgroundColor: colors.batteryBg,
     borderRadius: PILL,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
+    paddingHorizontal: space.sm,
+    paddingVertical: space.xs,
     overflow: 'hidden',
   },
-  codeHint: { color: colors.textMuted, fontSize: 16, lineHeight: 23, marginTop: 8 },
+  codeHint: { marginTop: space.sm },
 
   // Panels
-  panel: { gap: 12 },
-  panelTitle: { color: colors.textPrimary, fontSize: 20, fontWeight: '700' },
-  panelSub: { color: colors.textFaint, fontSize: 16, lineHeight: 23 },
+  panel: { gap: space.md },
   reasonBtn: {
     backgroundColor: colors.surface,
-    borderRadius: 14,
-    paddingVertical: 14,
-    paddingHorizontal: 16,
+    borderRadius: radius.lg,
+    paddingVertical: space.md,
+    paddingHorizontal: space.lg,
     minHeight: 48,
     justifyContent: 'center',
     ...shadow.card,
   },
-  reasonText: { color: colors.textPrimary, fontSize: 16, fontWeight: '700' },
-  reasonSub: { color: colors.textFaint, fontSize: 14, lineHeight: 20, marginTop: 2 },
-  panelCancel: { alignItems: 'center', justifyContent: 'center', minHeight: 44, paddingVertical: 10 },
-  panelCancelText: { color: colors.textFaint, fontSize: 15 },
-  fieldLabel: { color: colors.textMuted, fontSize: 15, marginTop: 4 },
-  actionError: { color: colors.danger, fontSize: 15, fontWeight: '700', lineHeight: 21 },
-  pinInput: { fontSize: 24, fontWeight: '700', letterSpacing: 12, textAlign: 'center' },
+  reasonSub: { marginTop: 2 },
+  panelCancel: { alignItems: 'center', justifyContent: 'center', minHeight: 44, paddingVertical: space.sm },
+  fieldLabel: { marginTop: space.xs },
+  pinInput: { fontFamily: FONT, fontSize: 24, fontWeight: '700', letterSpacing: 12, textAlign: 'center' },
   input: {
     backgroundColor: colors.inputBg,
-    borderRadius: 10,
+    borderRadius: radius.sm,
     borderWidth: 1,
     borderColor: colors.border,
     color: colors.textPrimary,
+    fontFamily: FONT,
     fontSize: 16,
     minHeight: 48,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
+    paddingHorizontal: space.md,
+    paddingVertical: space.sm,
   },
 
   // Buttons
-  actions: { gap: 10 },
-  btn: { minHeight: 48, borderRadius: PILL, alignItems: 'center', justifyContent: 'center', paddingVertical: 14 },
+  actions: { gap: space.sm },
+  btn: { minHeight: 48, borderRadius: PILL, alignItems: 'center', justifyContent: 'center', paddingVertical: space.md },
   primary: { backgroundColor: colors.btnPrimaryBg },
   danger: { backgroundColor: 'transparent', borderWidth: 1, borderColor: colors.dangerBorder },
+  orHint: { textAlign: 'center', marginTop: 2 },
   // Photo-proof button: a ghost (bordered) button so it reads as the alternative
   // path, not competing with the gold primary "Confirm delivered".
-  orHint: { color: colors.textFaint, fontSize: 14, textAlign: 'center', marginTop: 2 },
   photoBtn: { backgroundColor: 'transparent', borderWidth: 1, borderColor: colors.textPrimary },
-  photoBtnInner: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  photoBtnText: { color: colors.textPrimary, fontSize: 16, fontWeight: '700' },
-  busy: { opacity: 0.6 },
-  btnText: { color: colors.btnPrimaryText, fontSize: 16, fontWeight: '700' },
-  dangerText: { color: colors.danger },
+  photoBtnInner: { flexDirection: 'row', alignItems: 'center', gap: space.sm },
+  busyOpacity: { opacity: 0.6 },
 });

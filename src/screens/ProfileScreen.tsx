@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Linking, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Linking, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import {
   getEarnings,
@@ -14,7 +14,10 @@ import { money } from '../lib/format';
 import { waUrl } from '../lib/links';
 import { OPS_WHATSAPP } from '../config';
 import { useSession } from '../state/session';
-import { colors, shadow, PILL } from '../theme';
+import { colors, shadow, typography, space, radius, FONT } from '../theme';
+import { Text, useToast } from '../components/ui';
+import { animateNext } from '../lib/motion';
+import { haptics } from '../lib/haptics';
 import AvailabilityCard from '../components/AvailabilityCard';
 
 // Driver profile (ADR-003 P0). Identity + REAL derived stats (no fake rating) +
@@ -46,6 +49,7 @@ function initials(name: string): string {
 export default function ProfileScreen() {
   const { session, signOut } = useSession();
   const token = session?.token ?? '';
+  const toast = useToast();
 
   const [profile, setProfile] = useState<DriverProfile | null>(null);
   const [earnings, setEarnings] = useState<Earnings | null>(null);
@@ -65,7 +69,6 @@ export default function ProfileScreen() {
 
   const [savingDetails, setSavingDetails] = useState(false);
   const [savingVehicle, setSavingVehicle] = useState(false);
-  const [note, setNote] = useState<string | null>(null);
 
   const hydrate = useCallback((p: DriverProfile) => {
     setProfile(p);
@@ -91,7 +94,7 @@ export default function ProfileScreen() {
         const p = await getProfile(token);
         if (!cancelled) hydrate(p);
       } catch {
-        if (!cancelled) setNote('Could not load your profile — try again.');
+        if (!cancelled) toast.error('Could not load your profile — try again.');
       }
       try {
         const e = await getEarnings(token);
@@ -107,7 +110,6 @@ export default function ProfileScreen() {
 
   const saveDetails = useCallback(async () => {
     setSavingDetails(true);
-    setNote(null);
     try {
       await updateProfile(token, {
         name: name.trim(),
@@ -118,17 +120,16 @@ export default function ProfileScreen() {
       });
       const p = await getProfile(token);
       hydrate(p);
-      setNote('Saved.');
+      toast.success('Details saved'); // toast fires the success haptic itself
     } catch {
-      setNote('Could not save — check your connection and try again.');
+      toast.error('Could not save — check your connection and try again.');
     } finally {
       setSavingDetails(false);
     }
-  }, [token, name, displayName, language, ecName, ecPhone, hydrate]);
+  }, [token, name, displayName, language, ecName, ecPhone, hydrate, toast]);
 
   const saveVehicle = useCallback(async () => {
     setSavingVehicle(true);
-    setNote(null);
     try {
       // 'foot' carries no make/model — omit them so a prior vehicle's stale detail
       // can't leak. Blank fields go as undefined (let the server keep them null).
@@ -146,13 +147,13 @@ export default function ProfileScreen() {
       );
       const p = await getProfile(token);
       hydrate(p);
-      setNote('Vehicle saved.');
+      toast.success('Vehicle saved');
     } catch {
-      setNote('Could not save your vehicle — try again.');
+      toast.error('Could not save your vehicle — try again.');
     } finally {
       setSavingVehicle(false);
     }
-  }, [token, vType, vMake, vModel, vColour, vPlate, hydrate]);
+  }, [token, vType, vMake, vModel, vColour, vPlate, hydrate, toast]);
 
   const stats = profile?.stats;
   const canGoOnline = profile?.capabilities?.can_go_online ?? true;
@@ -244,7 +245,10 @@ export default function ProfileScreen() {
             <Pressable
               key={l.id}
               style={[styles.chip, language === l.id && styles.chipActive]}
-              onPress={() => setLanguage(l.id)}
+              onPress={() => {
+                haptics.tap(); // selection tick
+                setLanguage(l.id);
+              }}
             >
               <Text style={[styles.chipText, language === l.id && styles.chipTextActive]}>{l.label}</Text>
             </Pressable>
@@ -290,7 +294,13 @@ export default function ProfileScreen() {
             <Pressable
               key={v.id}
               style={[styles.chip, vType === v.id && styles.chipActive]}
-              onPress={() => setVType(v.id)}
+              onPress={() => {
+                haptics.tap(); // selection tick
+                // B3: the make/model/colour/plate block appears/collapses when the
+                // choice crosses the 'foot' boundary — animate that layout change.
+                if ((vType === 'foot') !== (v.id === 'foot')) animateNext('base');
+                setVType(v.id);
+              }}
             >
               <Text style={[styles.chipText, vType === v.id && styles.chipTextActive]}>{v.label}</Text>
             </Pressable>
@@ -355,8 +365,6 @@ export default function ProfileScreen() {
           <Text style={styles.saveText}>{savingVehicle ? 'Saving…' : 'Save vehicle'}</Text>
         </Pressable>
       </View>
-
-      {note ? <Text style={styles.note}>{note}</Text> : null}
 
       <AvailabilityCard token={token} />
 
@@ -427,99 +435,100 @@ function Row({ label, value, color }: { label: string; value: string; color: str
   );
 }
 
+// Text styles from the shared type scale (typography.*); spacing/radii from tokens.
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.bg },
-  content: { padding: 16, paddingTop: 72, paddingBottom: 32, gap: 16 },
-  title: { color: colors.textPrimary, fontSize: 28, fontWeight: '700' },
+  content: { padding: space.lg, paddingTop: 72, paddingBottom: space.xxxl, gap: space.lg },
+  title: { ...typography.display, color: colors.textPrimary },
 
-  header: { flexDirection: 'row', alignItems: 'center', gap: 16 },
+  header: { flexDirection: 'row', alignItems: 'center', gap: space.lg },
   avatar: {
     width: 56,
     height: 56,
-    borderRadius: PILL,
+    borderRadius: radius.pill,
     backgroundColor: colors.tabActive,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  avatarText: { color: colors.surface, fontSize: 20, fontWeight: '700' },
+  avatarText: { ...typography.heading, fontSize: 20, lineHeight: 26, color: colors.surface },
   headerBody: { flex: 1, minWidth: 0 },
-  headerName: { color: colors.textPrimary, fontSize: 20, fontWeight: '700' },
-  ratingRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 4 },
-  ratingText: { color: colors.textMuted, fontSize: 14 },
-  jobsText: { color: colors.textFaint, fontSize: 13, marginTop: 2 },
+  headerName: { ...typography.heading, fontSize: 20, lineHeight: 26, color: colors.textPrimary },
+  ratingRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: space.xs },
+  ratingText: { ...typography.callout, color: colors.textMuted },
+  jobsText: { ...typography.caption, fontSize: 13, lineHeight: 18, color: colors.textFaint, marginTop: 2 },
 
-  card: { backgroundColor: colors.surface, borderRadius: 12, borderWidth: 1, borderColor: colors.border, padding: 16, ...shadow.card },
-  cardTitle: { color: colors.textPrimary, fontSize: 16, fontWeight: '700', marginBottom: 12 },
+  card: { backgroundColor: colors.surface, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border, padding: space.lg, ...shadow.card },
+  cardTitle: { ...typography.subheading, fontWeight: '700', color: colors.textPrimary, marginBottom: space.md },
 
-  pending: { backgroundColor: colors.pendingBg, borderRadius: 12, padding: 12 },
-  pendingRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 8 },
-  pendingText: { color: colors.pendingText, fontSize: 15 },
+  pending: { backgroundColor: colors.pendingBg, borderRadius: radius.md, padding: space.md },
+  pendingRow: { flexDirection: 'row', alignItems: 'flex-start', gap: space.sm },
+  pendingText: { ...typography.body, color: colors.pendingText },
   pendingTextFlex: { flex: 1 },
 
-  phoneRow: { flexDirection: 'row', alignItems: 'center', gap: 16 },
+  phoneRow: { flexDirection: 'row', alignItems: 'center', gap: space.lg },
   phoneBody: { flex: 1 },
-  phoneValue: { color: colors.textPrimary, fontSize: 16, fontWeight: '700' },
-  phoneHint: { color: colors.textMuted, fontSize: 14, marginTop: 2 },
+  phoneValue: { ...typography.subheading, fontWeight: '700', color: colors.textPrimary },
+  phoneHint: { ...typography.callout, color: colors.textMuted, marginTop: 2 },
 
-  label: { color: colors.textPrimary, fontSize: 14, fontWeight: '700', marginBottom: 8 },
-  labelSpaced: { marginTop: 16 },
+  label: { ...typography.callout, fontWeight: '700', color: colors.textPrimary, marginBottom: space.sm },
+  labelSpaced: { marginTop: space.lg },
   input: {
     backgroundColor: colors.inputBg,
-    borderRadius: 8,
+    borderRadius: radius.sm,
     borderWidth: 1,
     borderColor: colors.border,
     color: colors.textPrimary,
+    fontFamily: FONT,
     fontSize: 16,
     minHeight: 48,
-    paddingHorizontal: 16,
+    paddingHorizontal: space.lg,
     paddingVertical: 10,
   },
-  inputGap: { marginTop: 8 },
-  row: { flexDirection: 'row', gap: 12 },
+  inputGap: { marginTop: space.sm },
+  row: { flexDirection: 'row', gap: space.md },
   rowItem: { flex: 1 },
-  hint: { color: colors.textFaint, fontSize: 13, marginTop: 8 },
+  hint: { ...typography.caption, fontSize: 13, lineHeight: 18, color: colors.textFaint, marginTop: space.sm },
 
-  chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  chips: { flexDirection: 'row', flexWrap: 'wrap', gap: space.sm },
   chip: {
-    borderRadius: PILL,
+    borderRadius: radius.pill,
     borderWidth: 1,
     borderColor: colors.border,
-    paddingHorizontal: 14,
-    paddingVertical: 8,
+    paddingHorizontal: 14, // non-grid literal, kept exact
+    paddingVertical: space.sm,
     backgroundColor: colors.surface,
   },
   chipActive: { backgroundColor: colors.tabActive, borderColor: colors.tabActive },
-  chipText: { color: colors.textMuted, fontSize: 14, fontWeight: '700' },
+  chipText: { ...typography.callout, fontWeight: '700', color: colors.textMuted },
   chipTextActive: { color: colors.surface },
 
-  save: { backgroundColor: colors.btnPrimaryBg, borderRadius: PILL, minHeight: 48, justifyContent: 'center', alignItems: 'center', marginTop: 20 },
+  save: { backgroundColor: colors.btnPrimaryBg, borderRadius: radius.pill, minHeight: 48, justifyContent: 'center', alignItems: 'center', marginTop: space.xl },
   busy: { opacity: 0.6 },
-  saveText: { color: colors.btnPrimaryText, fontSize: 16, fontWeight: '700' },
-  note: { color: colors.textMuted, fontSize: 14, textAlign: 'center' },
+  saveText: { ...typography.subheading, fontWeight: '700', color: colors.btnPrimaryText },
 
   moneyRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 6 },
-  moneyLabel: { color: colors.textMuted, fontSize: 15 },
-  moneyValue: { fontSize: 15, fontWeight: '700' },
-  moneyHint: { color: colors.textFaint, fontSize: 12, marginTop: 8 },
-  codLocked: { flexDirection: 'row', alignItems: 'flex-start', gap: 8, backgroundColor: colors.codBg, borderRadius: 8, padding: 12 },
-  codLockedText: { flex: 1, color: colors.codText, fontSize: 14 },
+  moneyLabel: { ...typography.body, color: colors.textMuted },
+  moneyValue: { ...typography.body, fontWeight: '700' },
+  moneyHint: { ...typography.caption, color: colors.textFaint, marginTop: space.sm },
+  codLocked: { flexDirection: 'row', alignItems: 'flex-start', gap: space.sm, backgroundColor: colors.codBg, borderRadius: radius.sm, padding: space.md },
+  codLockedText: { ...typography.callout, flex: 1, color: colors.codText },
 
   ghostBtn: {
     minHeight: 48,
-    borderRadius: PILL,
+    borderRadius: radius.pill,
     borderWidth: 1,
     borderColor: colors.textPrimary,
     justifyContent: 'center',
     alignItems: 'center',
   },
-  ghostBtnText: { color: colors.textPrimary, fontSize: 16, fontWeight: '700' },
+  ghostBtnText: { ...typography.subheading, fontWeight: '700', color: colors.textPrimary },
   dangerBtn: {
     minHeight: 48,
-    borderRadius: PILL,
+    borderRadius: radius.pill,
     borderWidth: 1,
     borderColor: colors.danger,
     justifyContent: 'center',
     alignItems: 'center',
   },
-  dangerBtnText: { color: colors.danger, fontSize: 16, fontWeight: '700' },
+  dangerBtnText: { ...typography.subheading, fontWeight: '700', color: colors.danger },
 });

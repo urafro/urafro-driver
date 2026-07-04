@@ -4,7 +4,7 @@ import { Feather } from '@expo/vector-icons';
 import type { Offer } from '../lib/api';
 import { driverNetMinor, parseCounterMinor } from '../lib/auction';
 import { money, placeLabel, placeLabelDetailed, pickupDistanceLabel, tripLabel, secondsUntil } from '../lib/format';
-import { colors, shadow, PILL } from '../theme';
+import { colors, shadow, PILL, FONT } from '../theme';
 
 // Live list of nearby job offers. A FIXED-PRICE job leads with the driver's payout and is CLAIMED
 // (instant assign). An AUCTION job (ADR-036, customer-named price) leads with what the customer
@@ -296,16 +296,16 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     ...shadow.card,
   },
-  emptyTitle: { color: colors.textPrimary, fontSize: 16, fontWeight: '700', textAlign: 'center' },
-  emptyBody: { color: colors.textFaint, fontSize: 15, marginTop: 6, textAlign: 'center' },
+  emptyTitle: { color: colors.textPrimary, fontFamily: FONT, fontSize: 16, fontWeight: '700', textAlign: 'center' },
+  emptyBody: { color: colors.textFaint, fontFamily: FONT, fontSize: 15, marginTop: 6, textAlign: 'center' },
 
   card: { backgroundColor: colors.surface, borderRadius: 12, padding: 16, ...shadow.card },
 
   headerRow: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8 },
   payoutWrap: { flexDirection: 'row', alignItems: 'baseline', gap: 6, flexShrink: 1 },
-  payout: { color: colors.textPrimary, fontSize: 24, fontWeight: '700' },
-  offerLabel: { color: colors.textFaint, fontSize: 13, fontWeight: '700' },
-  netHint: { color: colors.textMuted, fontSize: 13, marginTop: 2 },
+  payout: { color: colors.textPrimary, fontFamily: FONT, fontSize: 24, fontWeight: '700' },
+  offerLabel: { color: colors.textFaint, fontFamily: FONT, fontSize: 13, fontWeight: '700' },
+  netHint: { color: colors.textMuted, fontFamily: FONT, fontSize: 13, marginTop: 2 },
 
   timerPill: {
     borderRadius: PILL,
@@ -316,13 +316,13 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   timerPillUrgent: { backgroundColor: colors.batteryBg },
-  timerText: { color: colors.textPrimary, fontSize: 14, fontWeight: '700' },
+  timerText: { color: colors.textPrimary, fontFamily: FONT, fontSize: 14, fontWeight: '700' },
   timerTextUrgent: { color: colors.warning },
 
-  dropoff: { color: colors.textPrimary, fontSize: 16, fontWeight: '700', marginTop: 10, lineHeight: 22 },
-  dropoffSub: { color: colors.textFaint, fontSize: 13, marginTop: 1 },
-  pickup: { color: colors.textMuted, fontSize: 15, marginTop: 4 },
-  trip: { color: colors.textFaint, fontSize: 14, marginTop: 2 },
+  dropoff: { color: colors.textPrimary, fontFamily: FONT, fontSize: 16, fontWeight: '700', marginTop: 10, lineHeight: 22 },
+  dropoffSub: { color: colors.textFaint, fontFamily: FONT, fontSize: 13, marginTop: 1 },
+  pickup: { color: colors.textMuted, fontFamily: FONT, fontSize: 15, marginTop: 4 },
+  trip: { color: colors.textFaint, fontFamily: FONT, fontSize: 14, marginTop: 2 },
 
   codRow: { marginTop: 10, flexDirection: 'row' },
   codChip: {
@@ -331,7 +331,7 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     paddingHorizontal: 12,
   },
-  codText: { color: colors.cod, fontSize: 14, fontWeight: '700' },
+  codText: { color: colors.cod, fontFamily: FONT, fontSize: 14, fontWeight: '700' },
 
   // #66 (batching): the "on your route" add-to-run hint.
   routeRow: { marginTop: 10, flexDirection: 'row' },
@@ -344,7 +344,7 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     paddingHorizontal: 12,
   },
-  routeText: { color: colors.textMuted, fontSize: 13, fontWeight: '700' },
+  routeText: { color: colors.textMuted, fontFamily: FONT, fontSize: 13, fontWeight: '700' },
 
   actions: { marginTop: 16, gap: 8 },
   accept: {
@@ -355,7 +355,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingHorizontal: 24,
   },
-  acceptText: { color: colors.btnPrimaryText, fontSize: 16, fontWeight: '700' },
+  acceptText: { color: colors.btnPrimaryText, fontFamily: FONT, fontSize: 16, fontWeight: '700' },
   secondary: {
     backgroundColor: colors.surfaceAlt,
     borderRadius: PILL,
@@ -364,7 +364,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingHorizontal: 24,
   },
-  secondaryText: { color: colors.textPrimary, fontSize: 16, fontWeight: '700' },
+  secondaryText: { color: colors.textPrimary, fontFamily: FONT, fontSize: 16, fontWeight: '700' },
   pass: {
     backgroundColor: colors.surfaceAlt,
     borderRadius: PILL,
@@ -373,7 +373,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingHorizontal: 24,
   },
-  passText: { color: colors.textMuted, fontSize: 16, fontWeight: '700' },
+  passText: { color: colors.textMuted, fontFamily: FONT, fontSize: 16, fontWeight: '700' },
   // H4: the "Need more time?" nudge — quieter than Pass (a row, small type) so it
   // reads as a gentle option, not a primary action.
   needTime: {
@@ -384,7 +384,7 @@ const styles = StyleSheet.create({
     minHeight: 40,
     paddingHorizontal: 24,
   },
-  needTimeText: { color: colors.textMuted, fontSize: 14, fontWeight: '700' },
+  needTimeText: { color: colors.textMuted, fontFamily: FONT, fontSize: 14, fontWeight: '700' },
   disabled: { opacity: 0.6 },
 
   bidSent: {
@@ -397,7 +397,7 @@ const styles = StyleSheet.create({
     gap: 6,
     paddingHorizontal: 16,
   },
-  bidSentText: { color: colors.textMuted, fontSize: 15, fontWeight: '700', textAlign: 'center' },
+  bidSentText: { color: colors.textMuted, fontFamily: FONT, fontSize: 15, fontWeight: '700', textAlign: 'center' },
 
   counterBox: { gap: 8 },
   counterInputRow: {
@@ -409,6 +409,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     minHeight: 48,
   },
-  dollar: { color: colors.textMuted, fontSize: 18, fontWeight: '700' },
-  counterInput: { flex: 1, color: colors.textPrimary, fontSize: 18, fontWeight: '700', paddingVertical: 10 },
+  dollar: { color: colors.textMuted, fontFamily: FONT, fontSize: 18, fontWeight: '700' },
+  counterInput: { flex: 1, color: colors.textPrimary, fontFamily: FONT, fontSize: 18, fontWeight: '700', paddingVertical: 10 },
 });

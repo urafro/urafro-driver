@@ -29,6 +29,29 @@ export interface QueuedAction {
 
 const KEY = 'pending_actions';
 
+// Observable pending-count. The offline banner lives in the app chrome (every tab),
+// but the flusher that mutates the queue lives on the Shift screen — so the count is
+// published here, from the one write choke point (`saveQueue`), rather than lifting
+// the flusher's React state up past three sibling screens. Listeners get the current
+// value on subscribe and every change thereafter.
+type QueueCountListener = (n: number) => void;
+const countListeners = new Set<QueueCountListener>();
+let currentCount = 0;
+
+export function subscribeQueueCount(fn: QueueCountListener): () => void {
+  countListeners.add(fn);
+  fn(currentCount);
+  return () => {
+    countListeners.delete(fn);
+  };
+}
+
+function publishQueueCount(n: number) {
+  if (n === currentCount) return;
+  currentCount = n;
+  for (const fn of countListeners) fn(n);
+}
+
 // Retry only on TRANSIENT failures — a network error or a 5xx. A 4xx (including a
 // 409 "already applied / illegal transition") is terminal: retrying can't make it
 // succeed, so the action is dropped rather than looping forever.
@@ -56,16 +79,25 @@ export async function flushActions(
 
 export async function loadQueue(): Promise<QueuedAction[]> {
   const raw = await SecureStore.getItemAsync(KEY);
-  if (!raw) return [];
-  try {
-    return JSON.parse(raw) as QueuedAction[];
-  } catch {
-    return [];
+  let items: QueuedAction[] = [];
+  if (raw) {
+    try {
+      items = JSON.parse(raw) as QueuedAction[];
+    } catch {
+      items = []; // corrupt store → treat as empty
+    }
   }
+  // Reconcile the in-memory count with disk truth on EVERY read — not just writes.
+  // At cold start `currentCount` is 0 but a prior dead-zone session may have left
+  // actions on disk; without this, the drain-to-empty `saveQueue([])` would coalesce
+  // (0 === stale-0) and strand the banner on a phantom "syncing N".
+  publishQueueCount(items.length);
+  return items;
 }
 
 export async function saveQueue(items: QueuedAction[]): Promise<void> {
   await SecureStore.setItemAsync(KEY, JSON.stringify(items));
+  publishQueueCount(items.length);
 }
 
 // Add (or replace) a pending action, de-duped by id, and return the new queue.

@@ -6,7 +6,6 @@ import {
   Pressable,
   ScrollView,
   StyleSheet,
-  Text,
   View,
 } from 'react-native';
 import { Feather } from '@expo/vector-icons';
@@ -59,7 +58,7 @@ import {
   type PushData,
 } from '../lib/notifications';
 import { saveActiveJob, loadActiveJob, clearActiveJob } from '../lib/session';
-import { money, placeLabel } from '../lib/format';
+import { money, placeLabel, secondsUntil } from '../lib/format';
 import {
   enqueueAction,
   flushActions,
@@ -71,11 +70,16 @@ import {
 import { useSession } from '../state/session';
 import { useActiveJob } from '../state/activeJob';
 import { REALTIME_ENABLED, connectDriverStream } from '../lib/realtime';
-import { colors, shadow, PILL } from '../theme';
+import { colors, shadow, typography, space, radius } from '../theme';
+import { animateNext } from '../lib/motion';
+import { haptics } from '../lib/haptics';
 import OffersList from '../components/OffersList';
 import BoardList from '../components/BoardList';
 import ActiveJob, { type LifecycleAction, type ActionExtra } from '../components/ActiveJob';
 import ShiftStatus from '../components/ShiftStatus';
+import { OfferAlert, Text, type OfferAlertData } from '../components/ui';
+import { useIsStopped } from '../hooks/useIsStopped';
+import { useConnectivity } from '../hooks/useConnectivity';
 
 // Foreground offers+location poll (runs only while online and not on a job). 5s on the
 // 3G-primary baseline (tightened from 8s) so offers surface faster; remote push is the
@@ -115,6 +119,9 @@ export default function HomeScreen({ focused }: { focused: boolean }) {
   // C5: is the C4 live socket currently healthy? Drives the poll cadence below.
   const [socketHealthy, setSocketHealthy] = useState(false);
   const [claimingId, setClaimingId] = useState<string | null>(null);
+  // #66 (batching) B1: mid-run appendable offers the driver dismissed from the OfferAlert
+  // banner, so it advances to the next on-route offer instead of re-buzzing the same one.
+  const [dismissedAppendIds, setDismissedAppendIds] = useState<Set<string>>(() => new Set());
   // Auction offers this driver has bid on (ADR-036) — the card shows "offer sent" instead of the
   // accept/counter buttons. Local-only: a bid doesn't assign the job (the customer/auto-clear does
   // later), so until then the offer still lists; this stops a re-bid and clarifies the state.
@@ -130,7 +137,6 @@ export default function HomeScreen({ focused }: { focused: boolean }) {
   const [board, setBoard] = useState<BoardJob[] | null>(null);
   // Debounce the resume handler against Samsung's flurry of AppState 'active' transitions.
   const lastResumeRef = useRef(0);
-  const [pending, setPending] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [earnings, setEarnings] = useState<Earnings | null>(null);
   // The payday moment: set on a confirmed delivery so the loop ends on the
@@ -150,6 +156,21 @@ export default function HomeScreen({ focused }: { focused: boolean }) {
   // Latest job, readable from inside the (token-scoped) flush interval.
   const jobRef = useRef<DriverDelivery | null>(null);
   jobRef.current = job;
+
+  // Connectivity signal (Phase 2.4): when the link returns, drain the offline queue
+  // IMMEDIATELY rather than waiting out the 12s flush interval — the whole reason the
+  // netinfo hook exists. The app-chrome OfflineBanner (App.tsx) shows the status.
+  const { online: netOnline } = useConnectivity();
+  // Points at the latest flush closure so the reconnect effect can trigger it without
+  // taking on the token/performAction deps that scope the flush interval below.
+  const flushRef = useRef<() => void>(() => {});
+  // Re-entrancy guard: interval + reconnect + mount can all call flush(); two drains
+  // racing the same queue would re-perform a lifecycle action (the server 409s the
+  // duplicate, but don't send it). One drain at a time. Shared across effect instances
+  // on purpose — preventing cross-instance concurrency matters more than the one case
+  // it costs: a re-login WHILE a drain is in flight skips the new instance's immediate
+  // mount drain, which the next 12s interval tick then performs (bounded, self-healing).
+  const flushingRef = useRef(false);
 
   // Register this device for offer push as soon as we have a session. Degrades
   // silently (permission denied / pre-Firebase Android) — the local-notification
@@ -542,32 +563,35 @@ export default function HomeScreen({ focused }: { focused: boolean }) {
     if (!token) return;
     let cancelled = false;
     async function flush() {
-      const queue = await loadQueue();
-      if (queue.length === 0) {
-        if (!cancelled) setPending(0);
-        return;
-      }
-      const remaining = await flushActions(queue, performAction);
-      await saveQueue(remaining);
-      if (cancelled) return;
-      setPending(remaining.length);
+      if (flushingRef.current) return; // a drain is already in flight
+      flushingRef.current = true;
+      try {
+        const queue = await loadQueue();
+        if (queue.length === 0) return; // count already 0 in the queue store
+        const remaining = await flushActions(queue, performAction);
+        await saveQueue(remaining); // publishes the new depth to the OfflineBanner
+        if (cancelled) return;
 
-      const id = jobRef.current?.id;
-      const synced =
-        id != null && queue.some((a) => a.deliveryId === id) && !remaining.some((a) => a.deliveryId === id);
-      if (synced && id) {
-        try {
-          const fresh = await getDelivery(token, id);
-          if (!cancelled) setJob(fresh.status === 'delivered' || fresh.status === 'failed' ? null : fresh);
-        } catch (e) {
-          // Clear only when the server SAYS it's not ours — a network blip here
-          // must not wipe a live job (+ its snapshot); the active-job poll retries.
-          if (!cancelled && e instanceof ApiError && (e.status === 404 || e.status === 403)) {
-            setJob(null);
+        const id = jobRef.current?.id;
+        const synced =
+          id != null && queue.some((a) => a.deliveryId === id) && !remaining.some((a) => a.deliveryId === id);
+        if (synced && id) {
+          try {
+            const fresh = await getDelivery(token, id);
+            if (!cancelled) setJob(fresh.status === 'delivered' || fresh.status === 'failed' ? null : fresh);
+          } catch (e) {
+            // Clear only when the server SAYS it's not ours — a network blip here
+            // must not wipe a live job (+ its snapshot); the active-job poll retries.
+            if (!cancelled && e instanceof ApiError && (e.status === 404 || e.status === 403)) {
+              setJob(null);
+            }
           }
         }
+      } finally {
+        flushingRef.current = false;
       }
     }
+    flushRef.current = () => void flush();
     void flush();
     const interval = setInterval(() => void flush(), FLUSH_MS);
     return () => {
@@ -575,6 +599,13 @@ export default function HomeScreen({ focused }: { focused: boolean }) {
       clearInterval(interval);
     };
   }, [token, performAction]);
+
+  // Reconnect → flush now. `netOnline` flips false→true the moment the link returns;
+  // don't make a queued "Delivered" wait out the interval. No-op with no token (flushRef
+  // stays the default) or an empty queue (flush early-returns).
+  useEffect(() => {
+    if (netOnline) flushRef.current();
+  }, [netOnline]);
 
   const goOnlineNow = useCallback(async () => {
     setBusy(true);
@@ -602,26 +633,34 @@ export default function HomeScreen({ focused }: { focused: boolean }) {
       const state = await goOnline(token, loc ?? undefined);
       confirmedOnline = state.status !== 'offline';
       setOnline(confirmedOnline);
-      // One-time explainer BEFORE the background prompt: Android 11+ can't grant
-      // "Allow all the time" in-app, so without context drivers silently lose
-      // background GPS.
-      await maybeExplainBackgroundPermission();
-      // Best-effort background streaming; falls back to the foreground poll if the
-      // "allow all the time" permission is denied.
-      setBgActive(await startBackgroundLocation());
-      // The battery-saver banner (below) takes over from here: it shows while the
-      // OS can still freeze the app, and clears itself once the exemption is real.
-      refreshBatteryRisk();
     } catch {
-      // Only drop the optimistic online if go-online itself didn't land — a failure in
-      // the best-effort background-location setup AFTER goOnline succeeded must not flip
-      // a genuinely-online driver back to offline (reconcileShift would re-correct, but
-      // the flash is wrong). reconcileShift on next resume is the backstop either way.
+      // go-online itself (permission → getCurrentLocation → the goOnline POST) failed —
+      // drop the optimistic online and surface it. The advisory background-permission tail
+      // moved OUT of this try (below), so a hung explainer/Settings dialog can no longer
+      // reach this catch or set a misleading "could not go online".
       if (!confirmedOnline) setOnline(false);
       setError('Could not go online — try again.');
+      return;
     } finally {
+      // #84: `busy` ends with the go-online round-trip, NOT the (possibly dialog-blocked)
+      // advisory tail. An unresolved background-permission Alert used to latch busy here
+      // and lock every lifecycle button on a first-run device.
       setBusy(false);
       setLocating(false);
+    }
+
+    // Advisory tail — runs AFTER busy is released, best-effort. These awaited dialogs (the
+    // one-time "Allow all the time" explainer — Android 11+ can't grant it in-app — plus
+    // the background-permission Settings round-trip) can hang indefinitely on a first-run
+    // device; out here a hang no longer bricks the controls. A driver who's online works
+    // fine without background streaming (the foreground poll covers offers), and the
+    // battery-saver banner clears itself once the exemption is real.
+    try {
+      await maybeExplainBackgroundPermission();
+      setBgActive(await startBackgroundLocation());
+      refreshBatteryRisk();
+    } catch {
+      // background streaming is best-effort — never surface or block on it
     }
   }, [token, refreshBatteryRisk]);
 
@@ -652,6 +691,7 @@ export default function HomeScreen({ focused }: { focused: boolean }) {
           setRunLegs([delivery]); // #66: a fresh run of one; the poll keeps it current
           runEarnedRef.current = 0; // fresh run — reset the payday accumulator
           runCodRef.current = 0;
+          setDismissedAppendIds(new Set()); // fresh run — dismissed append offers don't carry over
         }
         setOffers(null);
       } catch (e) {
@@ -753,6 +793,7 @@ export default function HomeScreen({ focused }: { focused: boolean }) {
           setRunLegs([delivery]); // #66: a fresh run of one
           runEarnedRef.current = 0; // fresh run — reset the payday accumulator
           runCodRef.current = 0;
+          setDismissedAppendIds(new Set()); // fresh run — dismissed append offers don't carry over
         }
         setOffers(null);
       } catch (e) {
@@ -932,8 +973,7 @@ export default function HomeScreen({ focused }: { focused: boolean }) {
         }
       } catch (e) {
         if (shouldRetry(e)) {
-          const q = await enqueueAction(queued);
-          setPending(q.length);
+          await enqueueAction(queued); // publishes the new depth to the OfflineBanner
           setError('No signal — saved. It’ll sync automatically when you’re back online.');
         } else if (extra?.podPin && e instanceof ApiError && e.status === 400) {
           // Wrong at-door code vs the burned attempt cap are different situations
@@ -954,8 +994,55 @@ export default function HomeScreen({ focused }: { focused: boolean }) {
     [job, token, canBatch],
   );
 
+  // #66 (batching) B1: a mid-run on-route offer the driver can ADD to the current run.
+  // Surfaced as a non-blocking, haptic+chime OfferAlert banner (the OS notification is
+  // suppressed while on a job) whose "Add to run" is gated behind the vehicle being
+  // STOPPED — so it never competes with the road. Advances past dismissed ones.
+  const appendOffer =
+    job && canBatch && offers
+      ? // fixed-price appends ONLY — an auction (opening_price_minor set) that's also
+        // flagged appendable must fall through to the bid flow, never "Add to run" (mirrors
+        // OffersList's `!isAuction && appendable` gate).
+        (offers.find((o) => o.appendable && o.opening_price_minor == null && o.id && !dismissedAppendIds.has(o.id)) ??
+        null)
+      : null;
+  // Watch GPS speed only while a mid-run offer is actually showing (else no extra watch).
+  const appendMotion = useIsStopped(appendOffer != null);
+  const appendAlert: OfferAlertData | null =
+    appendOffer && appendOffer.id
+      ? {
+          id: appendOffer.id,
+          title: 'Add on your route',
+          fareMinor: appendOffer.driver_fee_minor ?? appendOffer.fee_minor ?? 0,
+          codMinor: appendOffer.collect_minor ?? null,
+          distanceKm: appendOffer.trip_km ?? null,
+          expiresInSec: appendOffer.offer_expires_at ? secondsUntil(appendOffer.offer_expires_at, Date.now()) : null,
+        }
+      : null;
+
+  // B2: the payday moment gets the shared success haptic the instant it appears —
+  // the loop's most motivating screen was previously silent (no tactile confirmation).
+  useEffect(() => {
+    if (completed) haptics.success();
+  }, [completed]);
+
+  // B3: animate the top-level state swaps (offline↔online↔job↔payday) so a mode
+  // change is never a silent pop. Driven from ONE render-phase choke point rather
+  // than the ~15 setJob/setOnline call sites, so every path that flips the mode —
+  // claim, grab, realtime reconcile, rehydrate, payday — gets the transition, and
+  // (unlike <Transition>, which would freeze live offers/earnings under a mode) the
+  // content keeps updating. animateNext only schedules the NEXT native layout commit
+  // — the one this render produces — so it must run here, before the tree is returned.
+  const mode = completed ? 'payday' : job ? 'job' : online ? 'online' : 'offline';
+  const prevMode = useRef(mode);
+  if (prevMode.current !== mode) {
+    animateNext(mode === 'payday' ? 'loud' : 'base');
+    prevMode.current = mode;
+  }
+
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+    <View style={styles.rootWrap}>
+      <ScrollView style={styles.container} contentContainerStyle={styles.content}>
       {/* Battery-saver warning (ADR-001): visible whenever the shift is live and
           the OS can still freeze the app in the background — including mid-job,
           where a frozen app means dead GPS + missed cancellations. Clears itself
@@ -1024,26 +1111,9 @@ export default function HomeScreen({ focused }: { focused: boolean }) {
               action feedback) — not at the bottom of the scroll where the keyboard
               hides it. */}
           <ActiveJob job={job} run={runLegs} token={token} onAction={act} busy={busy} actionError={error} />
-          {/* #66 (batching): on-route jobs the driver can ADD to this run, surfaced ON the
-              active-job screen (the offers list is otherwise hidden while on a job). Only
-              the appendable ones, only when batching is on — empty/absent at cap=1. */}
-          {canBatch && offers && offers.some((o) => o.appendable) ? (
-            <View style={styles.batchOffers}>
-              <Text style={styles.batchOffersTitle}>On your route</Text>
-              <Text style={styles.batchOffersSub}>Add a nearby job to your current run.</Text>
-              <OffersList
-                offers={offers.filter((o) => o.appendable)}
-                onClaim={claim}
-                onAppend={append}
-                onBid={bid}
-                onDecline={decline}
-                onReset={resetTimer}
-                resetOfferIds={resetOfferIds}
-                actingId={claimingId}
-                bidSentIds={bidSentIds}
-              />
-            </View>
-          ) : null}
+          {/* #66 (batching) B1: an on-route job the driver can ADD to this run is surfaced
+              as the OfferAlert banner below (haptic + chime + motion-gated), NOT a passive
+              inline list — see the appendOffer wiring above the return. */}
           {/* Availability stays visible but locked mid-delivery — going offline on a
               job isn't allowed, and hiding the control read as "where did it go?". */}
           <View style={[styles.toggle, styles.offBtn, styles.busy, styles.toggleRow]}>
@@ -1108,7 +1178,10 @@ export default function HomeScreen({ focused }: { focused: boolean }) {
               <Pressable
                 style={styles.stayBtn}
                 disabled={busy}
-                onPress={() => setConfirmingOffline(false)}
+                onPress={() => {
+                  animateNext('base');
+                  setConfirmingOffline(false);
+                }}
               >
                 <Text style={styles.stayText}>Stay online</Text>
               </Pressable>
@@ -1117,7 +1190,14 @@ export default function HomeScreen({ focused }: { focused: boolean }) {
             <>
               <Pressable
                 style={[styles.toggle, online ? styles.offBtn : styles.onBtn, busy && styles.busy]}
-                onPress={online ? () => setConfirmingOffline(true) : goOnlineNow}
+                onPress={
+                  online
+                    ? () => {
+                        animateNext('base');
+                        setConfirmingOffline(true);
+                      }
+                    : goOnlineNow
+                }
                 disabled={busy}
               >
                 {busy ? (
@@ -1186,39 +1266,50 @@ export default function HomeScreen({ focused }: { focused: boolean }) {
           <Text style={styles.bg}>Sharing your location while on shift</Text>
         </View>
       ) : null}
-      {!completed && pending > 0 ? (
-        <View style={styles.syncingRow}>
-          <Feather name="clock" size={16} color={colors.warning} />
-          <Text style={styles.syncing}>
-            {pending} action{pending > 1 ? 's' : ''} waiting to sync…
-          </Text>
-        </View>
-      ) : null}
+      {/* Queued-sync status is no longer an inline row here — the app-chrome
+          OfflineBanner (App.tsx) owns "offline / N actions saved" on every tab (B4). */}
       {/* Shift-level errors only (go online/offline, claim) — action errors during
           a job render inside the ActiveJob card instead. */}
       {!completed && !job && error ? <Text style={styles.error}>{error}</Text> : null}
-    </ScrollView>
+      </ScrollView>
+
+      {/* #66 (batching) B1: mid-run "add to your run" offer — a non-blocking banner that
+          buzzes + chimes on arrival (the OS notification is suppressed mid-job) and gates
+          the "Add to run" action behind the vehicle being stopped. Overlays the scroll. */}
+      <OfferAlert
+        offer={appendAlert}
+        moving={appendMotion.moving}
+        busy={appendOffer != null && claimingId === appendOffer.id}
+        onAppend={() => {
+          if (!claimingId && appendOffer?.id) void append(appendOffer.id);
+        }}
+        onDismiss={() => {
+          if (appendOffer?.id) setDismissedAppendIds((s) => new Set(s).add(appendOffer.id as string));
+        }}
+      />
+    </View>
   );
 }
 
+// Every text style is built from the shared type scale (`typography.*`) so the
+// screen speaks one type language (B4) — and because each variant carries its own
+// lineHeight, the big money numbers render correctly through the <Text> primitive
+// instead of clipping. Spacing/radii come from the `space`/`radius` tokens.
 const styles = StyleSheet.create({
+  rootWrap: { flex: 1 },
   container: { flex: 1, backgroundColor: colors.bg },
-  content: { padding: 24, paddingTop: 72, flexGrow: 1 },
-  title: { color: colors.textPrimary, fontSize: 28, fontWeight: '700' },
-  // #66 (batching): the "add to your run" section on the active-job screen.
-  batchOffers: { marginTop: 20 },
-  batchOffersTitle: { color: colors.textPrimary, fontSize: 18, fontWeight: '700' },
-  batchOffersSub: { color: colors.textMuted, fontSize: 14, marginTop: 2 },
+  content: { padding: space.xxl, paddingTop: 72, flexGrow: 1 },
+  title: { ...typography.display, color: colors.textPrimary },
   earnCard: {
     backgroundColor: colors.surface,
-    borderRadius: 12,
-    padding: 16,
-    marginTop: 16,
+    borderRadius: radius.md,
+    padding: space.lg,
+    marginTop: space.lg,
     ...shadow.card,
   },
-  earnHeroLabel: { color: colors.textFaint, fontSize: 12 },
-  earnHero: { color: colors.money, fontSize: 30, fontWeight: '700', marginTop: 2, letterSpacing: -0.5 },
-  earnHeroSub: { color: colors.textFaint, fontSize: 13, marginTop: 1 },
+  earnHeroLabel: { ...typography.caption, color: colors.textFaint },
+  earnHero: { ...typography.display, fontSize: 30, lineHeight: 36, color: colors.money, marginTop: 2, letterSpacing: -0.5 },
+  earnHeroSub: { ...typography.caption, fontSize: 13, lineHeight: 18, color: colors.textFaint, marginTop: 1 },
   earnRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1228,70 +1319,68 @@ const styles = StyleSheet.create({
     borderTopWidth: StyleSheet.hairlineWidth,
     borderTopColor: colors.hairline,
   },
-  earnRowLabel: { color: colors.textSecondary, fontSize: 14 },
-  earnRowValue: { color: colors.money, fontSize: 16, fontWeight: '700', marginLeft: 'auto' },
+  earnRowLabel: { ...typography.callout, color: colors.textSecondary },
+  earnRowValue: { ...typography.subheading, fontWeight: '700', color: colors.money, marginLeft: 'auto' },
   codCallout: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
     backgroundColor: colors.codBg,
-    borderRadius: 8,
-    padding: 12,
+    borderRadius: radius.sm,
+    padding: space.md,
     marginTop: 14,
   },
   codBody: { flex: 1 },
-  codTitle: { color: colors.codText, fontSize: 14, fontWeight: '700' },
-  codSub: { color: colors.codText, fontSize: 12, marginTop: 1 },
-  codValue: { color: colors.codText, fontSize: 16, fontWeight: '700' },
-  toggle: { borderRadius: PILL, paddingVertical: 18, alignItems: 'center', marginTop: 20 },
+  codTitle: { ...typography.callout, fontWeight: '700', color: colors.codText },
+  codSub: { ...typography.caption, color: colors.codText, marginTop: 1 },
+  codValue: { ...typography.subheading, fontWeight: '700', color: colors.codText },
+  toggle: { borderRadius: radius.pill, paddingVertical: 18, alignItems: 'center', marginTop: space.xl },
   onBtn: { backgroundColor: colors.btnPrimaryBg },
   offBtn: { backgroundColor: colors.btnSecondaryBg },
   busy: { opacity: 0.6 },
-  toggleText: { color: colors.btnPrimaryText, fontSize: 18, fontWeight: '700' },
-  toggleRow: { flexDirection: 'row', gap: 8 },
+  toggleText: { ...typography.heading, color: colors.btnPrimaryText },
+  toggleRow: { flexDirection: 'row', gap: space.sm },
   iconRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  bgRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 16 },
-  bg: { color: colors.textFaint, fontSize: 13 },
-  syncingRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 16 },
-  syncing: { color: colors.warning, fontSize: 13 },
-  error: { color: colors.danger, fontSize: 14, marginTop: 16 },
+  bgRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: space.lg },
+  bg: { ...typography.caption, fontSize: 13, lineHeight: 18, color: colors.textFaint },
+  error: { ...typography.callout, color: colors.danger, marginTop: space.lg },
   checkingCard: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 10,
     backgroundColor: colors.surface,
-    borderRadius: 12,
-    padding: 24,
+    borderRadius: radius.md,
+    padding: space.xxl,
     marginTop: 28,
     ...shadow.card,
   },
-  checkingText: { color: colors.textFaint, fontSize: 15 },
+  checkingText: { ...typography.body, color: colors.textFaint },
   // H2 segmented Offers | Available control.
   segment: {
     flexDirection: 'row',
-    marginTop: 24,
+    marginTop: space.xxl,
     backgroundColor: colors.surfaceAlt,
-    borderRadius: PILL,
-    padding: 4,
-    gap: 4,
+    borderRadius: radius.pill,
+    padding: space.xs,
+    gap: space.xs,
   },
-  segmentBtn: { flex: 1, minHeight: 40, alignItems: 'center', justifyContent: 'center', borderRadius: PILL },
+  segmentBtn: { flex: 1, minHeight: 40, alignItems: 'center', justifyContent: 'center', borderRadius: radius.pill },
   segmentBtnActive: { backgroundColor: colors.surface, ...shadow.card },
-  segmentText: { color: colors.textMuted, fontSize: 15, fontWeight: '700' },
+  segmentText: { ...typography.body, fontWeight: '700', color: colors.textMuted },
   segmentTextActive: { color: colors.textPrimary },
   batteryBanner: {
     backgroundColor: colors.batteryBg,
     borderColor: colors.batteryBorder,
     borderWidth: 1,
-    borderRadius: 12,
+    borderRadius: radius.md,
     padding: 14,
-    marginBottom: 16,
+    marginBottom: space.lg,
   },
-  batteryTitle: { color: colors.batteryTitle, fontSize: 15, fontWeight: '700' },
-  batteryBody: { color: colors.batteryBody, fontSize: 13, marginTop: 4, lineHeight: 18 },
+  batteryTitle: { ...typography.body, fontWeight: '700', color: colors.batteryTitle },
+  batteryBody: { ...typography.caption, fontSize: 13, lineHeight: 18, color: colors.batteryBody, marginTop: space.xs },
   // Payday moment (the loop's most motivating screen — previously silent).
-  completeCard: { alignItems: 'center', paddingTop: 24, gap: 8 },
+  completeCard: { alignItems: 'center', paddingTop: space.xxl, gap: space.sm },
   completeCheck: {
     width: 88,
     height: 88,
@@ -1299,43 +1388,42 @@ const styles = StyleSheet.create({
     backgroundColor: colors.btnPrimaryBg,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 8,
+    marginBottom: space.sm,
   },
-  completeTitle: { color: colors.textPrimary, fontSize: 24, fontWeight: '700' },
-  completeEarnLabel: { color: colors.textFaint, fontSize: 14, marginTop: 8 },
-  completeEarn: { color: colors.money, fontSize: 32, fontWeight: '700' },
-  completeToday: { color: colors.textSecondary, fontSize: 15, marginTop: 4 },
+  completeTitle: { ...typography.title, fontSize: 24, lineHeight: 30, color: colors.textPrimary },
+  completeEarnLabel: { ...typography.callout, color: colors.textFaint, marginTop: space.sm },
+  completeEarn: { ...typography.display, fontSize: 32, lineHeight: 38, color: colors.money },
+  completeToday: { ...typography.body, color: colors.textSecondary, marginTop: space.xs },
   completeCod: {
+    ...typography.callout,
     color: colors.cod,
-    fontSize: 14,
-    lineHeight: 20,
     textAlign: 'center',
-    marginTop: 12,
-    paddingHorizontal: 8,
+    marginTop: space.md,
+    paddingHorizontal: space.sm,
   },
   completeBtn: {
     backgroundColor: colors.btnPrimaryBg,
-    borderRadius: PILL,
-    paddingVertical: 16,
+    borderRadius: radius.pill,
+    paddingVertical: space.lg,
     paddingHorizontal: 40,
     alignItems: 'center',
     marginTop: 28,
     alignSelf: 'stretch',
   },
-  completeBtnText: { color: colors.btnPrimaryText, fontSize: 16, fontWeight: '700' },
+  completeBtnText: { ...typography.subheading, fontWeight: '700', color: colors.btnPrimaryText },
   // End-of-shift summary confirm.
   summaryCard: {
     backgroundColor: colors.surface,
-    borderRadius: 12,
-    padding: 20,
-    marginTop: 20,
+    borderRadius: radius.md,
+    padding: space.xl,
+    marginTop: space.xl,
     alignItems: 'stretch',
     ...shadow.card,
   },
-  summaryTitle: { color: colors.textPrimary, fontSize: 18, fontWeight: '700', textAlign: 'center' },
-  summaryBig: { color: colors.money, fontSize: 32, fontWeight: '700', marginTop: 10, textAlign: 'center' },
-  summarySub: { color: colors.textFaint, fontSize: 14, marginTop: 2, textAlign: 'center' },
-  summaryCod: { color: colors.cod, fontSize: 14, textAlign: 'center', marginTop: 12, lineHeight: 20 },
-  stayBtn: { alignItems: 'center', paddingVertical: 14, marginTop: 4 },
-  stayText: { color: colors.textFaint, fontSize: 14 },
+  summaryTitle: { ...typography.heading, color: colors.textPrimary, textAlign: 'center' },
+  summaryBig: { ...typography.display, fontSize: 32, lineHeight: 38, color: colors.money, marginTop: 10, textAlign: 'center' },
+  summarySub: { ...typography.callout, color: colors.textFaint, marginTop: 2, textAlign: 'center' },
+  summaryCod: { ...typography.callout, color: colors.cod, textAlign: 'center', marginTop: space.md },
+  stayBtn: { alignItems: 'center', paddingVertical: 14, marginTop: space.xs },
+  stayText: { ...typography.callout, color: colors.textFaint },
 });

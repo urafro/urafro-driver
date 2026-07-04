@@ -8,7 +8,7 @@ import {
   setDefaultPayoutMethod,
   type PayoutMethod,
 } from '../lib/api';
-import { colors, shadow, PILL } from '../theme';
+import { colors, shadow, PILL, FONT } from '../theme';
 
 type Kind = 'ecocash' | 'bank';
 
@@ -198,26 +198,26 @@ export default function PayoutMethods({ token, onChange }: { token: string; onCh
 const styles = StyleSheet.create({
   card: { backgroundColor: colors.surface, borderRadius: 12, padding: 16, marginTop: 16, ...shadow.card },
   rowHead: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8 },
-  cardLabel: { color: colors.textPrimary, fontSize: 16, fontWeight: '700' },
-  muted: { color: colors.textFaint, fontSize: 14, lineHeight: 20 },
+  cardLabel: { color: colors.textPrimary, fontFamily: FONT, fontSize: 16, fontWeight: '700' },
+  muted: { color: colors.textFaint, fontFamily: FONT, fontSize: 14, lineHeight: 20 },
   loading: { alignSelf: 'flex-start', marginVertical: 8 },
 
   method: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 10 },
   methodBody: { flex: 1 },
-  methodLabel: { color: colors.textPrimary, fontSize: 15, fontWeight: '600' },
-  methodSub: { color: colors.textFaint, fontSize: 13, marginTop: 1 },
+  methodLabel: { color: colors.textPrimary, fontFamily: FONT, fontSize: 15, fontWeight: '600' },
+  methodSub: { color: colors.textFaint, fontFamily: FONT, fontSize: 13, marginTop: 1 },
   defaultBadge: { backgroundColor: colors.surfaceAlt, borderRadius: PILL, paddingHorizontal: 12, paddingVertical: 6 },
-  defaultBadgeText: { color: colors.tabActive, fontSize: 12, fontWeight: '700' },
-  setDefault: { color: colors.textMuted, fontSize: 14, fontWeight: '700', textDecorationLine: 'underline' },
+  defaultBadgeText: { color: colors.tabActive, fontFamily: FONT, fontSize: 12, fontWeight: '700' },
+  setDefault: { color: colors.textMuted, fontFamily: FONT, fontSize: 14, fontWeight: '700', textDecorationLine: 'underline' },
 
   addBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 12 },
-  addBtnText: { color: colors.tabActive, fontSize: 15, fontWeight: '700' },
+  addBtnText: { color: colors.tabActive, fontFamily: FONT, fontSize: 15, fontWeight: '700' },
 
   form: { marginTop: 12 },
   chips: { flexDirection: 'row', gap: 8, marginBottom: 10 },
   chip: { borderRadius: PILL, borderWidth: 1, borderColor: colors.border, paddingHorizontal: 16, paddingVertical: 8 },
   chipActive: { backgroundColor: colors.tabActive, borderColor: colors.tabActive },
-  chipText: { color: colors.textMuted, fontSize: 14, fontWeight: '700' },
+  chipText: { color: colors.textMuted, fontFamily: FONT, fontSize: 14, fontWeight: '700' },
   chipTextActive: { color: colors.surface },
   input: {
     backgroundColor: colors.inputBg,
@@ -225,6 +225,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.border,
     color: colors.textPrimary,
+    fontFamily: FONT,
     fontSize: 16,
     minHeight: 48,
     paddingHorizontal: 14,
@@ -232,10 +233,10 @@ const styles = StyleSheet.create({
   },
   inputGap: { marginTop: 8 },
   formActions: { flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', gap: 16, marginTop: 12 },
-  cancel: { color: colors.textMuted, fontSize: 15, fontWeight: '700' },
+  cancel: { color: colors.textMuted, fontFamily: FONT, fontSize: 15, fontWeight: '700' },
   saveBtn: { backgroundColor: colors.btnPrimaryBg, borderRadius: PILL, paddingHorizontal: 20, paddingVertical: 10 },
   busy: { opacity: 0.6 },
-  saveBtnText: { color: colors.btnPrimaryText, fontSize: 15, fontWeight: '700' },
+  saveBtnText: { color: colors.btnPrimaryText, fontFamily: FONT, fontSize: 15, fontWeight: '700' },
 
-  note: { color: colors.textMuted, fontSize: 14, marginTop: 10, lineHeight: 20 },
+  note: { color: colors.textMuted, fontFamily: FONT, fontSize: 14, marginTop: 10, lineHeight: 20 },
 });

@@ -14,7 +14,15 @@ vi.mock('expo-secure-store', () => {
   };
 });
 
-import { shouldRetry, flushActions, enqueueAction, loadQueue, type QueuedAction } from './queue';
+import {
+  shouldRetry,
+  flushActions,
+  enqueueAction,
+  loadQueue,
+  saveQueue,
+  subscribeQueueCount,
+  type QueuedAction,
+} from './queue';
 import { ApiError } from './api';
 
 const action = (id: string): QueuedAction => ({
@@ -64,5 +72,43 @@ describe('enqueueAction', () => {
     expect(q).toHaveLength(1);
     expect(q[0].createdAt).toBe(99);
     expect(await loadQueue()).toHaveLength(1);
+  });
+});
+
+describe('subscribeQueueCount', () => {
+  it('emits the current depth on subscribe, then every save; stops after unsubscribe', async () => {
+    await saveQueue([]); // normalize the module count to 0 regardless of prior tests
+    const seen: number[] = [];
+    const unsub = subscribeQueueCount((n) => seen.push(n)); // fires immediately with 0
+    await saveQueue([action('a'), action('b')]); // -> 2
+    await saveQueue([action('a')]); // -> 1
+    unsub();
+    await saveQueue([]); // ignored: no longer subscribed
+    expect(seen).toEqual([0, 2, 1]);
+  });
+
+  it('coalesces a save that does not change the depth', async () => {
+    await saveQueue([action('a')]); // set depth 1
+    const seen: number[] = [];
+    const unsub = subscribeQueueCount((n) => seen.push(n)); // -> 1
+    await saveQueue([action('b')]); // still depth 1 -> no emit
+    unsub();
+    expect(seen).toEqual([1]);
+  });
+
+  // Regression: a queue persisted by a PRIOR (dead-zone) session leaves the in-memory
+  // count behind at cold start; loadQueue must reconcile it, else the drain-to-empty
+  // saveQueue([]) coalesces (0 === stale-0) and strands the banner on a phantom count.
+  it('reconciles the count from disk on load, so a drain-to-empty still emits 0', async () => {
+    const SecureStore = await import('expo-secure-store');
+    // Seed disk DIRECTLY (bypassing saveQueue), so the module count does not track it.
+    await SecureStore.setItemAsync('pending_actions', JSON.stringify([action('a'), action('b')]));
+    const seen: number[] = [];
+    const unsub = subscribeQueueCount((n) => seen.push(n));
+    await loadQueue(); // reconciles the cache with disk -> emits 2
+    await saveQueue([]); // drains -> must emit 0 (would be coalesced without the reconcile)
+    unsub();
+    expect(seen).toContain(2);
+    expect(seen[seen.length - 1]).toBe(0);
   });
 });

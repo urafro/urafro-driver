@@ -12,7 +12,7 @@ import {
   type DriverRequirement,
   type FileRequirementType,
 } from '../lib/api';
-import { colors, shadow, PILL } from '../theme';
+import { colors, shadow, PILL, FONT } from '../theme';
 
 const TERMS_VERSION = 'v1';
 
@@ -174,13 +174,13 @@ export default function VerificationCard({ token, onChange }: { token: string; o
 
 const styles = StyleSheet.create({
   card: { backgroundColor: colors.surface, borderRadius: 12, padding: 16, ...shadow.card },
-  title: { color: colors.textPrimary, fontSize: 18, fontWeight: '700' },
-  lead: { color: colors.textMuted, fontSize: 14, lineHeight: 20, marginTop: 4, marginBottom: 8 },
+  title: { color: colors.textPrimary, fontSize: 18, fontWeight: '700', fontFamily: FONT },
+  lead: { color: colors.textMuted, fontSize: 14, lineHeight: 20, marginTop: 4, marginBottom: 8, fontFamily: FONT },
 
   row: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 10 },
   rowBody: { flex: 1 },
-  rowLabel: { color: colors.textPrimary, fontSize: 15, fontWeight: '600' },
-  rowHelp: { color: colors.textFaint, fontSize: 13, marginTop: 1 },
+  rowLabel: { color: colors.textPrimary, fontSize: 15, fontWeight: '600', fontFamily: FONT },
+  rowHelp: { color: colors.textFaint, fontSize: 13, marginTop: 1, fontFamily: FONT },
 
   action: {
     backgroundColor: colors.btnPrimaryBg,
@@ -188,14 +188,14 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 8,
   },
-  actionText: { color: colors.btnPrimaryText, fontSize: 14, fontWeight: '700' },
+  actionText: { color: colors.btnPrimaryText, fontSize: 14, fontWeight: '700', fontFamily: FONT },
 
   badge: { borderRadius: PILL, paddingHorizontal: 12, paddingVertical: 6 },
   badgeDone: { backgroundColor: colors.surfaceAlt },
   badgePending: { backgroundColor: colors.batteryBg },
-  badgeText: { fontSize: 12, fontWeight: '700' },
+  badgeText: { fontSize: 12, fontWeight: '700', fontFamily: FONT },
   badgeTextDone: { color: colors.success },
   badgeTextPending: { color: colors.warning },
 
-  note: { color: colors.textMuted, fontSize: 14, marginTop: 8, lineHeight: 20 },
+  note: { color: colors.textMuted, fontSize: 14, marginTop: 8, lineHeight: 20, fontFamily: FONT },
 });

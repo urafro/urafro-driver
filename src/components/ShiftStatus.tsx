@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { Animated, Easing, StyleSheet, Text, View } from 'react-native';
 import { Feather } from '@expo/vector-icons';
-import { colors, shadow } from '../theme';
+import { colors, shadow, FONT } from '../theme';
 
 // The shift status badge (replaces the old 12px status dot). An icon sits in a
 // tinted disc; ONLINE it broadcasts a pulsing halo — a fading, expanding ring that
@@ -83,6 +83,6 @@ const styles = StyleSheet.create({
   badgeOn: { backgroundColor: colors.successBg },
   badgeOff: { backgroundColor: colors.surfaceAlt },
   body: { flex: 1 },
-  title: { color: colors.textPrimary, fontSize: 18, fontWeight: '700' },
-  msg: { color: colors.textFaint, fontSize: 14, marginTop: 2, lineHeight: 20 },
+  title: { color: colors.textPrimary, fontSize: 18, fontWeight: '700', fontFamily: FONT },
+  msg: { color: colors.textFaint, fontSize: 14, marginTop: 2, lineHeight: 20, fontFamily: FONT },
 });

@@ -4,9 +4,11 @@ import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-nati
 import { Feather } from '@expo/vector-icons';
 import { SessionProvider, useSession } from './src/state/session';
 import { ActiveJobProvider, useActiveJob } from './src/state/activeJob';
+import { ToastProvider, OfflineBanner } from './src/components/ui';
+import { useQueuedCount } from './src/hooks/useQueuedCount';
 import { getProfile, type DriverProfile } from './src/lib/api';
 import { onNotificationResponse } from './src/lib/notifications';
-import { colors } from './src/theme';
+import { colors, FONT } from './src/theme';
 import LoginScreen from './src/screens/LoginScreen';
 import Onboarding from './src/screens/Onboarding';
 import HomeScreen from './src/screens/HomeScreen';
@@ -33,6 +35,11 @@ const TABS: { key: Tab; label: string; icon: keyof typeof Feather.glyphMap }[] =
 function Tabs() {
   const [tab, setTab] = useState<Tab>('shift');
   const { active } = useActiveJob();
+  // Authoritative offline / queued-sync status, shown on EVERY tab (network hardening,
+  // Phase 2.4). Sits in the chrome — not per-screen — so a driver who wandered onto
+  // Earnings still sees "you're offline, taps are saved". Collapses to nothing when
+  // online with an empty queue. Fed the live queue depth from the offline queue's pub/sub.
+  const queued = useQueuedCount();
   // Tapping a delivery notification (warm or cold-start) lands on the Shift tab where
   // offers live — its focus-refresh then pulls the offer in immediately.
   useEffect(() => {
@@ -74,6 +81,7 @@ function Tabs() {
           <Feather name="chevron-right" size={20} color={colors.badgeText} />
         </Pressable>
       ) : null}
+      <OfflineBanner queued={queued} />
       <View style={styles.tabBar}>
         {TABS.map((t) => (
           <Pressable key={t.key} style={styles.tabBtn} onPress={() => setTab(t.key)}>
@@ -138,8 +146,10 @@ export default function App() {
   return (
     <SessionProvider>
       <ActiveJobProvider>
-        <Root />
-        <StatusBar style="dark" />
+        <ToastProvider>
+          <Root />
+          <StatusBar style="dark" />
+        </ToastProvider>
       </ActiveJobProvider>
     </SessionProvider>
   );
@@ -158,7 +168,7 @@ const styles = StyleSheet.create({
     paddingTop: 8,
   },
   tabBtn: { flex: 1, alignItems: 'center', gap: 3 },
-  tabLabel: { color: colors.textFaint, fontSize: 12 },
+  tabLabel: { fontFamily: FONT, color: colors.textFaint, fontSize: 12 },
   tabActive: { color: colors.tabActive, fontWeight: '700' },
   jobChip: {
     flexDirection: 'row',
@@ -168,6 +178,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 14,
   },
-  jobChipText: { flex: 1, color: colors.badgeText, fontSize: 14, fontWeight: '700' },
+  jobChipText: { fontFamily: FONT, flex: 1, color: colors.badgeText, fontSize: 14, fontWeight: '700' },
   loading: { flex: 1, backgroundColor: colors.bg, alignItems: 'center', justifyContent: 'center' },
 });

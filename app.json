@@ -42,6 +42,25 @@
     "plugins": [
       "expo-secure-store",
       [
+        "expo-font",
+        {
+          "android": {
+            "fonts": [
+              {
+                "fontFamily": "Lato",
+                "fontDefinitions": [
+                  { "path": "./assets/fonts/Lato-Regular.ttf", "weight": 400 },
+                  { "path": "./assets/fonts/Lato-Bold.ttf", "weight": 700 }
+                ]
+              }
+            ]
+          },
+          "ios": {
+            "fonts": ["./assets/fonts/Lato-Regular.ttf", "./assets/fonts/Lato-Bold.ttf"]
+          }
+        }
+      ],
+      [
         "expo-notifications",
         {
           "icon": "./assets/notification-icon.png",
