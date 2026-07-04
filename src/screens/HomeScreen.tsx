@@ -607,26 +607,34 @@ export default function HomeScreen({ focused }: { focused: boolean }) {
       const state = await goOnline(token, loc ?? undefined);
       confirmedOnline = state.status !== 'offline';
       setOnline(confirmedOnline);
-      // One-time explainer BEFORE the background prompt: Android 11+ can't grant
-      // "Allow all the time" in-app, so without context drivers silently lose
-      // background GPS.
-      await maybeExplainBackgroundPermission();
-      // Best-effort background streaming; falls back to the foreground poll if the
-      // "allow all the time" permission is denied.
-      setBgActive(await startBackgroundLocation());
-      // The battery-saver banner (below) takes over from here: it shows while the
-      // OS can still freeze the app, and clears itself once the exemption is real.
-      refreshBatteryRisk();
     } catch {
-      // Only drop the optimistic online if go-online itself didn't land — a failure in
-      // the best-effort background-location setup AFTER goOnline succeeded must not flip
-      // a genuinely-online driver back to offline (reconcileShift would re-correct, but
-      // the flash is wrong). reconcileShift on next resume is the backstop either way.
+      // go-online itself (permission → getCurrentLocation → the goOnline POST) failed —
+      // drop the optimistic online and surface it. The advisory background-permission tail
+      // moved OUT of this try (below), so a hung explainer/Settings dialog can no longer
+      // reach this catch or set a misleading "could not go online".
       if (!confirmedOnline) setOnline(false);
       setError('Could not go online — try again.');
+      return;
     } finally {
+      // #84: `busy` ends with the go-online round-trip, NOT the (possibly dialog-blocked)
+      // advisory tail. An unresolved background-permission Alert used to latch busy here
+      // and lock every lifecycle button on a first-run device.
       setBusy(false);
       setLocating(false);
+    }
+
+    // Advisory tail — runs AFTER busy is released, best-effort. These awaited dialogs (the
+    // one-time "Allow all the time" explainer — Android 11+ can't grant it in-app — plus
+    // the background-permission Settings round-trip) can hang indefinitely on a first-run
+    // device; out here a hang no longer bricks the controls. A driver who's online works
+    // fine without background streaming (the foreground poll covers offers), and the
+    // battery-saver banner clears itself once the exemption is real.
+    try {
+      await maybeExplainBackgroundPermission();
+      setBgActive(await startBackgroundLocation());
+      refreshBatteryRisk();
+    } catch {
+      // background streaming is best-effort — never surface or block on it
     }
   }, [token, refreshBatteryRisk]);
 
