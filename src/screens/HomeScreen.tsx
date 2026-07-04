@@ -1339,7 +1339,7 @@ const styles = StyleSheet.create({
   offBtn: { backgroundColor: colors.btnSecondaryBg },
   busy: { opacity: 0.6 },
   toggleText: { ...typography.heading, color: colors.btnPrimaryText },
-  toggleRow: { flexDirection: 'row', gap: space.sm },
+  toggleRow: { flexDirection: 'row', justifyContent: 'center', gap: space.sm },
   iconRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   bgRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: space.lg },
   bg: { ...typography.caption, fontSize: 13, lineHeight: 18, color: colors.textFaint },
