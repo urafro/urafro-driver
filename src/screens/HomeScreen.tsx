@@ -79,6 +79,7 @@ import ActiveJob, { type LifecycleAction, type ActionExtra } from '../components
 import ShiftStatus from '../components/ShiftStatus';
 import { OfferAlert, Text, type OfferAlertData } from '../components/ui';
 import { useIsStopped } from '../hooks/useIsStopped';
+import { useConnectivity } from '../hooks/useConnectivity';
 
 // Foreground offers+location poll (runs only while online and not on a job). 5s on the
 // 3G-primary baseline (tightened from 8s) so offers surface faster; remote push is the
@@ -136,7 +137,6 @@ export default function HomeScreen({ focused }: { focused: boolean }) {
   const [board, setBoard] = useState<BoardJob[] | null>(null);
   // Debounce the resume handler against Samsung's flurry of AppState 'active' transitions.
   const lastResumeRef = useRef(0);
-  const [pending, setPending] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [earnings, setEarnings] = useState<Earnings | null>(null);
   // The payday moment: set on a confirmed delivery so the loop ends on the
@@ -156,6 +156,21 @@ export default function HomeScreen({ focused }: { focused: boolean }) {
   // Latest job, readable from inside the (token-scoped) flush interval.
   const jobRef = useRef<DriverDelivery | null>(null);
   jobRef.current = job;
+
+  // Connectivity signal (Phase 2.4): when the link returns, drain the offline queue
+  // IMMEDIATELY rather than waiting out the 12s flush interval — the whole reason the
+  // netinfo hook exists. The app-chrome OfflineBanner (App.tsx) shows the status.
+  const { online: netOnline } = useConnectivity();
+  // Points at the latest flush closure so the reconnect effect can trigger it without
+  // taking on the token/performAction deps that scope the flush interval below.
+  const flushRef = useRef<() => void>(() => {});
+  // Re-entrancy guard: interval + reconnect + mount can all call flush(); two drains
+  // racing the same queue would re-perform a lifecycle action (the server 409s the
+  // duplicate, but don't send it). One drain at a time. Shared across effect instances
+  // on purpose — preventing cross-instance concurrency matters more than the one case
+  // it costs: a re-login WHILE a drain is in flight skips the new instance's immediate
+  // mount drain, which the next 12s interval tick then performs (bounded, self-healing).
+  const flushingRef = useRef(false);
 
   // Register this device for offer push as soon as we have a session. Degrades
   // silently (permission denied / pre-Firebase Android) — the local-notification
@@ -548,32 +563,35 @@ export default function HomeScreen({ focused }: { focused: boolean }) {
     if (!token) return;
     let cancelled = false;
     async function flush() {
-      const queue = await loadQueue();
-      if (queue.length === 0) {
-        if (!cancelled) setPending(0);
-        return;
-      }
-      const remaining = await flushActions(queue, performAction);
-      await saveQueue(remaining);
-      if (cancelled) return;
-      setPending(remaining.length);
+      if (flushingRef.current) return; // a drain is already in flight
+      flushingRef.current = true;
+      try {
+        const queue = await loadQueue();
+        if (queue.length === 0) return; // count already 0 in the queue store
+        const remaining = await flushActions(queue, performAction);
+        await saveQueue(remaining); // publishes the new depth to the OfflineBanner
+        if (cancelled) return;
 
-      const id = jobRef.current?.id;
-      const synced =
-        id != null && queue.some((a) => a.deliveryId === id) && !remaining.some((a) => a.deliveryId === id);
-      if (synced && id) {
-        try {
-          const fresh = await getDelivery(token, id);
-          if (!cancelled) setJob(fresh.status === 'delivered' || fresh.status === 'failed' ? null : fresh);
-        } catch (e) {
-          // Clear only when the server SAYS it's not ours — a network blip here
-          // must not wipe a live job (+ its snapshot); the active-job poll retries.
-          if (!cancelled && e instanceof ApiError && (e.status === 404 || e.status === 403)) {
-            setJob(null);
+        const id = jobRef.current?.id;
+        const synced =
+          id != null && queue.some((a) => a.deliveryId === id) && !remaining.some((a) => a.deliveryId === id);
+        if (synced && id) {
+          try {
+            const fresh = await getDelivery(token, id);
+            if (!cancelled) setJob(fresh.status === 'delivered' || fresh.status === 'failed' ? null : fresh);
+          } catch (e) {
+            // Clear only when the server SAYS it's not ours — a network blip here
+            // must not wipe a live job (+ its snapshot); the active-job poll retries.
+            if (!cancelled && e instanceof ApiError && (e.status === 404 || e.status === 403)) {
+              setJob(null);
+            }
           }
         }
+      } finally {
+        flushingRef.current = false;
       }
     }
+    flushRef.current = () => void flush();
     void flush();
     const interval = setInterval(() => void flush(), FLUSH_MS);
     return () => {
@@ -581,6 +599,13 @@ export default function HomeScreen({ focused }: { focused: boolean }) {
       clearInterval(interval);
     };
   }, [token, performAction]);
+
+  // Reconnect → flush now. `netOnline` flips false→true the moment the link returns;
+  // don't make a queued "Delivered" wait out the interval. No-op with no token (flushRef
+  // stays the default) or an empty queue (flush early-returns).
+  useEffect(() => {
+    if (netOnline) flushRef.current();
+  }, [netOnline]);
 
   const goOnlineNow = useCallback(async () => {
     setBusy(true);
@@ -948,8 +973,7 @@ export default function HomeScreen({ focused }: { focused: boolean }) {
         }
       } catch (e) {
         if (shouldRetry(e)) {
-          const q = await enqueueAction(queued);
-          setPending(q.length);
+          await enqueueAction(queued); // publishes the new depth to the OfflineBanner
           setError('No signal — saved. It’ll sync automatically when you’re back online.');
         } else if (extra?.podPin && e instanceof ApiError && e.status === 400) {
           // Wrong at-door code vs the burned attempt cap are different situations
@@ -1242,14 +1266,8 @@ export default function HomeScreen({ focused }: { focused: boolean }) {
           <Text style={styles.bg}>Sharing your location while on shift</Text>
         </View>
       ) : null}
-      {!completed && pending > 0 ? (
-        <View style={styles.syncingRow}>
-          <Feather name="clock" size={16} color={colors.warning} />
-          <Text style={styles.syncing}>
-            {pending} action{pending > 1 ? 's' : ''} waiting to sync…
-          </Text>
-        </View>
-      ) : null}
+      {/* Queued-sync status is no longer an inline row here — the app-chrome
+          OfflineBanner (App.tsx) owns "offline / N actions saved" on every tab (B4). */}
       {/* Shift-level errors only (go online/offline, claim) — action errors during
           a job render inside the ActiveJob card instead. */}
       {!completed && !job && error ? <Text style={styles.error}>{error}</Text> : null}
@@ -1325,8 +1343,6 @@ const styles = StyleSheet.create({
   iconRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   bgRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: space.lg },
   bg: { ...typography.caption, fontSize: 13, lineHeight: 18, color: colors.textFaint },
-  syncingRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: space.lg },
-  syncing: { ...typography.caption, fontSize: 13, lineHeight: 18, color: colors.warning },
   error: { ...typography.callout, color: colors.danger, marginTop: space.lg },
   checkingCard: {
     flexDirection: 'row',

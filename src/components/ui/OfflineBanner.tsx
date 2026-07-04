@@ -37,11 +37,14 @@ export function OfflineBanner({ queued = 0 }: OfflineBannerProps) {
   const offline = !online;
   // Any generation below 4g reads as "slow" (covers 2g/3g plus netinfo's 'slow-2g').
   const slow = cellularGeneration != null && cellularGeneration !== '4g' && cellularGeneration !== '5g';
+  // The online branch fires whenever there's queued work AND a link — which includes
+  // a transient 5xx that queued a tap while the driver never actually went offline. So
+  // it says "Syncing…", not "Back online…" (which would wrongly assert a reconnect).
   const message = offline
     ? queued > 0
       ? `Offline — ${queued} action${queued > 1 ? 's' : ''} saved, will send when you reconnect`
       : 'Offline — your taps are saved and will send when you reconnect'
-    : `Back online${slow ? ' (slow link)' : ''} — syncing ${queued} action${queued > 1 ? 's' : ''}`;
+    : `Syncing ${queued} action${queued > 1 ? 's' : ''}${slow ? ' (slow link)' : ''}…`;
 
   return (
     <Animated.View
