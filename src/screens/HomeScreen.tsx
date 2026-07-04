@@ -59,7 +59,7 @@ import {
   type PushData,
 } from '../lib/notifications';
 import { saveActiveJob, loadActiveJob, clearActiveJob } from '../lib/session';
-import { money, placeLabel } from '../lib/format';
+import { money, placeLabel, secondsUntil } from '../lib/format';
 import {
   enqueueAction,
   flushActions,
@@ -76,6 +76,8 @@ import OffersList from '../components/OffersList';
 import BoardList from '../components/BoardList';
 import ActiveJob, { type LifecycleAction, type ActionExtra } from '../components/ActiveJob';
 import ShiftStatus from '../components/ShiftStatus';
+import { OfferAlert, type OfferAlertData } from '../components/ui';
+import { useIsStopped } from '../hooks/useIsStopped';
 
 // Foreground offers+location poll (runs only while online and not on a job). 5s on the
 // 3G-primary baseline (tightened from 8s) so offers surface faster; remote push is the
@@ -115,6 +117,9 @@ export default function HomeScreen({ focused }: { focused: boolean }) {
   // C5: is the C4 live socket currently healthy? Drives the poll cadence below.
   const [socketHealthy, setSocketHealthy] = useState(false);
   const [claimingId, setClaimingId] = useState<string | null>(null);
+  // #66 (batching) B1: mid-run appendable offers the driver dismissed from the OfferAlert
+  // banner, so it advances to the next on-route offer instead of re-buzzing the same one.
+  const [dismissedAppendIds, setDismissedAppendIds] = useState<Set<string>>(() => new Set());
   // Auction offers this driver has bid on (ADR-036) — the card shows "offer sent" instead of the
   // accept/counter buttons. Local-only: a bid doesn't assign the job (the customer/auto-clear does
   // later), so until then the offer still lists; this stops a re-bid and clarifies the state.
@@ -652,6 +657,7 @@ export default function HomeScreen({ focused }: { focused: boolean }) {
           setRunLegs([delivery]); // #66: a fresh run of one; the poll keeps it current
           runEarnedRef.current = 0; // fresh run — reset the payday accumulator
           runCodRef.current = 0;
+          setDismissedAppendIds(new Set()); // fresh run — dismissed append offers don't carry over
         }
         setOffers(null);
       } catch (e) {
@@ -753,6 +759,7 @@ export default function HomeScreen({ focused }: { focused: boolean }) {
           setRunLegs([delivery]); // #66: a fresh run of one
           runEarnedRef.current = 0; // fresh run — reset the payday accumulator
           runCodRef.current = 0;
+          setDismissedAppendIds(new Set()); // fresh run — dismissed append offers don't carry over
         }
         setOffers(null);
       } catch (e) {
@@ -954,8 +961,35 @@ export default function HomeScreen({ focused }: { focused: boolean }) {
     [job, token, canBatch],
   );
 
+  // #66 (batching) B1: a mid-run on-route offer the driver can ADD to the current run.
+  // Surfaced as a non-blocking, haptic+chime OfferAlert banner (the OS notification is
+  // suppressed while on a job) whose "Add to run" is gated behind the vehicle being
+  // STOPPED — so it never competes with the road. Advances past dismissed ones.
+  const appendOffer =
+    job && canBatch && offers
+      ? // fixed-price appends ONLY — an auction (opening_price_minor set) that's also
+        // flagged appendable must fall through to the bid flow, never "Add to run" (mirrors
+        // OffersList's `!isAuction && appendable` gate).
+        (offers.find((o) => o.appendable && o.opening_price_minor == null && o.id && !dismissedAppendIds.has(o.id)) ??
+        null)
+      : null;
+  // Watch GPS speed only while a mid-run offer is actually showing (else no extra watch).
+  const appendMotion = useIsStopped(appendOffer != null);
+  const appendAlert: OfferAlertData | null =
+    appendOffer && appendOffer.id
+      ? {
+          id: appendOffer.id,
+          title: 'Add on your route',
+          fareMinor: appendOffer.driver_fee_minor ?? appendOffer.fee_minor ?? 0,
+          codMinor: appendOffer.collect_minor ?? null,
+          distanceKm: appendOffer.trip_km ?? null,
+          expiresInSec: appendOffer.offer_expires_at ? secondsUntil(appendOffer.offer_expires_at, Date.now()) : null,
+        }
+      : null;
+
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+    <View style={styles.rootWrap}>
+      <ScrollView style={styles.container} contentContainerStyle={styles.content}>
       {/* Battery-saver warning (ADR-001): visible whenever the shift is live and
           the OS can still freeze the app in the background — including mid-job,
           where a frozen app means dead GPS + missed cancellations. Clears itself
@@ -1024,26 +1058,9 @@ export default function HomeScreen({ focused }: { focused: boolean }) {
               action feedback) — not at the bottom of the scroll where the keyboard
               hides it. */}
           <ActiveJob job={job} run={runLegs} token={token} onAction={act} busy={busy} actionError={error} />
-          {/* #66 (batching): on-route jobs the driver can ADD to this run, surfaced ON the
-              active-job screen (the offers list is otherwise hidden while on a job). Only
-              the appendable ones, only when batching is on — empty/absent at cap=1. */}
-          {canBatch && offers && offers.some((o) => o.appendable) ? (
-            <View style={styles.batchOffers}>
-              <Text style={styles.batchOffersTitle}>On your route</Text>
-              <Text style={styles.batchOffersSub}>Add a nearby job to your current run.</Text>
-              <OffersList
-                offers={offers.filter((o) => o.appendable)}
-                onClaim={claim}
-                onAppend={append}
-                onBid={bid}
-                onDecline={decline}
-                onReset={resetTimer}
-                resetOfferIds={resetOfferIds}
-                actingId={claimingId}
-                bidSentIds={bidSentIds}
-              />
-            </View>
-          ) : null}
+          {/* #66 (batching) B1: an on-route job the driver can ADD to this run is surfaced
+              as the OfferAlert banner below (haptic + chime + motion-gated), NOT a passive
+              inline list — see the appendOffer wiring above the return. */}
           {/* Availability stays visible but locked mid-delivery — going offline on a
               job isn't allowed, and hiding the control read as "where did it go?". */}
           <View style={[styles.toggle, styles.offBtn, styles.busy, styles.toggleRow]}>
@@ -1197,18 +1214,31 @@ export default function HomeScreen({ focused }: { focused: boolean }) {
       {/* Shift-level errors only (go online/offline, claim) — action errors during
           a job render inside the ActiveJob card instead. */}
       {!completed && !job && error ? <Text style={styles.error}>{error}</Text> : null}
-    </ScrollView>
+      </ScrollView>
+
+      {/* #66 (batching) B1: mid-run "add to your run" offer — a non-blocking banner that
+          buzzes + chimes on arrival (the OS notification is suppressed mid-job) and gates
+          the "Add to run" action behind the vehicle being stopped. Overlays the scroll. */}
+      <OfferAlert
+        offer={appendAlert}
+        moving={appendMotion.moving}
+        busy={appendOffer != null && claimingId === appendOffer.id}
+        onAppend={() => {
+          if (!claimingId && appendOffer?.id) void append(appendOffer.id);
+        }}
+        onDismiss={() => {
+          if (appendOffer?.id) setDismissedAppendIds((s) => new Set(s).add(appendOffer.id as string));
+        }}
+      />
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
+  rootWrap: { flex: 1 },
   container: { flex: 1, backgroundColor: colors.bg },
   content: { padding: 24, paddingTop: 72, flexGrow: 1 },
   title: { color: colors.textPrimary, fontSize: 28, fontWeight: '700' },
-  // #66 (batching): the "add to your run" section on the active-job screen.
-  batchOffers: { marginTop: 20 },
-  batchOffersTitle: { color: colors.textPrimary, fontSize: 18, fontWeight: '700' },
-  batchOffersSub: { color: colors.textMuted, fontSize: 14, marginTop: 2 },
   earnCard: {
     backgroundColor: colors.surface,
     borderRadius: 12,

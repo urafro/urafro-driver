@@ -12,7 +12,7 @@
 // banner silences that id for this component's lifetime; a genuinely new id (or a
 // re-mount) re-alerts and re-animates in.
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Animated, Pressable, StyleSheet, TextInput, View } from 'react-native';
+import { ActivityIndicator, Animated, Pressable, StyleSheet, TextInput, View } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { colors, duration, iconSize, PILL, radius, shadow, space, typography } from '../../theme';
 import Text from './Text';
@@ -35,10 +35,15 @@ export type OfferAlertProps = {
   offer: OfferAlertData | null;
   /** From useIsStopped — while true, the interactive card is gated. */
   moving: boolean;
-  onAccept: () => void;
+  /** Auction actions (an idle offer). Omit these and pass onAppend for a mid-run add offer. */
+  onAccept?: () => void;
   /** Called with the driver's counter fare in MINOR units (cents), never dollars. */
-  onCounter: (amountMinor: number) => void;
-  onPass: () => void;
+  onCounter?: (amountMinor: number) => void;
+  onPass?: () => void;
+  /** Mid-run "Add to run" action — when set, replaces accept/counter/pass with a single add. */
+  onAppend?: () => void;
+  /** In-flight state for the primary action (e.g. the append round-trip) — shows a spinner + disables. */
+  busy?: boolean;
   /** Hide the banner. The offer stays claimable from the list/board. */
   onDismiss: () => void;
 };
@@ -72,7 +77,7 @@ function Countdown({ seconds, onExpire }: { seconds: number | null; onExpire: ()
   );
 }
 
-export function OfferAlert({ offer, moving, onAccept, onCounter, onPass, onDismiss }: OfferAlertProps) {
+export function OfferAlert({ offer, moving, onAccept, onCounter, onPass, onAppend, busy, onDismiss }: OfferAlertProps) {
   const [render, setRender] = useState<OfferAlertData | null>(offer);
   const [expanded, setExpanded] = useState(false);
   const [mode, setMode] = useState<'buttons' | 'counter'>('buttons');
@@ -132,7 +137,7 @@ export function OfferAlert({ offer, moving, onAccept, onCounter, onPass, onDismi
     // than silently taking a prefix; the server is still authoritative on the fare.
     const dollars = Number(counterText.replace(/[^0-9.]/g, ''));
     if (!Number.isFinite(dollars) || dollars <= 0) return;
-    onCounter(Math.round(dollars * 100));
+    onCounter?.(Math.round(dollars * 100));
   };
 
   const meta = [
@@ -161,7 +166,7 @@ export function OfferAlert({ offer, moving, onAccept, onCounter, onPass, onDismi
           <Pressable
             onPress={() => setExpanded((e) => !e)}
             accessibilityRole="button"
-            accessibilityLabel={`New run offer, ${money(render.fareMinor)}. ${expanded ? 'Collapse' : 'Expand'}`}
+            accessibilityLabel={`${render.title ?? 'New run offer'}, ${money(render.fareMinor)}. ${expanded ? 'Collapse' : 'Expand'}`}
             style={styles.headerMain}
           >
             <View style={styles.bell}>
@@ -204,7 +209,7 @@ export function OfferAlert({ offer, moving, onAccept, onCounter, onPass, onDismi
               <View style={styles.notice} accessibilityLiveRegion="polite">
                 <Feather name="navigation" size={iconSize.md} color={colors.info} />
                 <Text variant="callout" color="textSecondary" style={styles.noticeText}>
-                  You're moving — pull over to accept, counter or pass. The offer is held.
+                  You're moving — pull over to respond. The offer is held.
                 </Text>
               </View>
             ) : expired ? (
@@ -215,6 +220,28 @@ export function OfferAlert({ offer, moving, onAccept, onCounter, onPass, onDismi
                 </Text>
                 <Pressable onPress={onDismiss} style={styles.btnGhost} accessibilityRole="button">
                   <Text variant="label" color="textMuted">
+                    Dismiss
+                  </Text>
+                </Pressable>
+              </View>
+            ) : onAppend ? (
+              <View style={styles.actions}>
+                <Pressable
+                  onPress={onAppend}
+                  disabled={busy}
+                  style={[styles.btn, styles.btnPrimary, styles.grow, busy && styles.busyOpacity]}
+                  accessibilityRole="button"
+                >
+                  {busy ? (
+                    <ActivityIndicator color={colors.btnPrimaryText} />
+                  ) : (
+                    <Text variant="label" color="btnPrimaryText">
+                      Add to run · {money(render.fareMinor)}
+                    </Text>
+                  )}
+                </Pressable>
+                <Pressable onPress={onDismiss} disabled={busy} style={styles.btnGhost} accessibilityRole="button">
+                  <Text variant="label" color="textFaint">
                     Dismiss
                   </Text>
                 </Pressable>
@@ -251,7 +278,7 @@ export function OfferAlert({ offer, moving, onAccept, onCounter, onPass, onDismi
               </View>
             ) : (
               <View style={styles.actions}>
-                <Pressable onPress={onAccept} style={[styles.btn, styles.btnPrimary, styles.grow]} accessibilityRole="button">
+                <Pressable onPress={() => onAccept?.()} style={[styles.btn, styles.btnPrimary, styles.grow]} accessibilityRole="button">
                   <Text variant="label" color="btnPrimaryText">
                     Accept · {money(render.fareMinor)}
                   </Text>
@@ -261,7 +288,7 @@ export function OfferAlert({ offer, moving, onAccept, onCounter, onPass, onDismi
                     Counter
                   </Text>
                 </Pressable>
-                <Pressable onPress={onPass} style={styles.btnGhost} accessibilityRole="button">
+                <Pressable onPress={() => onPass?.()} style={styles.btnGhost} accessibilityRole="button">
                   <Text variant="label" color="textFaint">
                     Pass
                   </Text>
@@ -318,6 +345,7 @@ const styles = StyleSheet.create({
   btnPrimary: { backgroundColor: colors.btnPrimaryBg },
   btnSecondary: { backgroundColor: colors.btnSecondaryBg },
   btnGhost: { height: 44, alignItems: 'center', justifyContent: 'center', paddingHorizontal: space.md },
+  busyOpacity: { opacity: 0.6 },
   counterRow: { flexDirection: 'row', alignItems: 'center', gap: space.sm },
   counterInputWrap: {
     flex: 1,
