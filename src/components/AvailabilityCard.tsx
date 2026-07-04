@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { getSchedule, setSchedule } from '../lib/api';
-import { colors, shadow, PILL } from '../theme';
+import { colors, shadow, PILL, FONT } from '../theme';
 
 const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 // A "day you usually work" maps to a default 06:00–18:00 window. A finer per-day
@@ -83,8 +83,8 @@ export default function AvailabilityCard({ token }: { token: string }) {
 
 const styles = StyleSheet.create({
   card: { backgroundColor: colors.surface, borderRadius: 12, borderWidth: 1, borderColor: colors.border, padding: 16, ...shadow.card },
-  title: { color: colors.textPrimary, fontSize: 16, fontWeight: '700' },
-  lead: { color: colors.textMuted, fontSize: 14, lineHeight: 20, marginTop: 4, marginBottom: 12 },
+  title: { color: colors.textPrimary, fontSize: 16, fontFamily: FONT, fontWeight: '700' },
+  lead: { color: colors.textMuted, fontSize: 14, fontFamily: FONT, lineHeight: 20, marginTop: 4, marginBottom: 12 },
   days: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   day: {
     width: 44,
@@ -97,10 +97,10 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surface,
   },
   dayActive: { backgroundColor: colors.tabActive, borderColor: colors.tabActive },
-  dayText: { color: colors.textMuted, fontSize: 13, fontWeight: '700' },
+  dayText: { color: colors.textMuted, fontSize: 13, fontFamily: FONT, fontWeight: '700' },
   dayTextActive: { color: colors.surface },
   save: { backgroundColor: colors.btnPrimaryBg, borderRadius: PILL, minHeight: 48, justifyContent: 'center', alignItems: 'center', marginTop: 16 },
   busy: { opacity: 0.6 },
-  saveText: { color: colors.btnPrimaryText, fontSize: 16, fontWeight: '700' },
-  note: { color: colors.textMuted, fontSize: 14, marginTop: 10, textAlign: 'center' },
+  saveText: { color: colors.btnPrimaryText, fontSize: 16, fontFamily: FONT, fontWeight: '700' },
+  note: { color: colors.textMuted, fontSize: 14, fontFamily: FONT, marginTop: 10, textAlign: 'center' },
 });

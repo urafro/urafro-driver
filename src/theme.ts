@@ -91,17 +91,25 @@ export const PILL = 999;
 // low-end devices; bundling the web's Lato-style family (expo-font + asset) is
 // a deliberate, isolated follow-up — swap a single `fontFamily` in here and the
 // whole app changes. Weights kept to 400/500/600/700 (crisp on Android Roboto).
+// Brand font (ADR-034). Bundled as a grouped Android family via the expo-font config
+// plugin (Lato-Regular=400, Lato-Bold=700), so a single `fontFamily: FONT` + the
+// variant's fontWeight selects the right cut — no per-weight family juggling. Baked
+// into every typography token below so every screen/style that spreads a variant
+// (and the <Text> primitive) inherits Lato with no per-call change. Raw-Text
+// components that don't use these tokens set `fontFamily: FONT` on their own styles.
+export const FONT = 'Lato';
+
 export const typography = {
-  display: { fontSize: 28, lineHeight: 34, fontWeight: '700' },
-  title: { fontSize: 22, lineHeight: 28, fontWeight: '700' },
-  heading: { fontSize: 18, lineHeight: 24, fontWeight: '700' },
-  subheading: { fontSize: 16, lineHeight: 22, fontWeight: '600' },
-  body: { fontSize: 15, lineHeight: 22, fontWeight: '400' },
-  bodyStrong: { fontSize: 15, lineHeight: 22, fontWeight: '600' },
-  callout: { fontSize: 14, lineHeight: 20, fontWeight: '400' },
-  label: { fontSize: 13, lineHeight: 18, fontWeight: '600', letterSpacing: 0.2 },
-  caption: { fontSize: 12, lineHeight: 16, fontWeight: '400' },
-  micro: { fontSize: 11, lineHeight: 14, fontWeight: '700', letterSpacing: 0.4 },
+  display: { fontFamily: FONT, fontSize: 28, lineHeight: 34, fontWeight: '700' },
+  title: { fontFamily: FONT, fontSize: 22, lineHeight: 28, fontWeight: '700' },
+  heading: { fontFamily: FONT, fontSize: 18, lineHeight: 24, fontWeight: '700' },
+  subheading: { fontFamily: FONT, fontSize: 16, lineHeight: 22, fontWeight: '600' },
+  body: { fontFamily: FONT, fontSize: 15, lineHeight: 22, fontWeight: '400' },
+  bodyStrong: { fontFamily: FONT, fontSize: 15, lineHeight: 22, fontWeight: '600' },
+  callout: { fontFamily: FONT, fontSize: 14, lineHeight: 20, fontWeight: '400' },
+  label: { fontFamily: FONT, fontSize: 13, lineHeight: 18, fontWeight: '600', letterSpacing: 0.2 },
+  caption: { fontFamily: FONT, fontSize: 12, lineHeight: 16, fontWeight: '400' },
+  micro: { fontFamily: FONT, fontSize: 11, lineHeight: 14, fontWeight: '700', letterSpacing: 0.4 },
 } as const;
 
 export type TypeVariant = keyof typeof typography;

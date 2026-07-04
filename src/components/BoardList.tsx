@@ -2,7 +2,7 @@ import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-nati
 import { Feather } from '@expo/vector-icons';
 import type { BoardJob } from '../lib/api';
 import { money } from '../lib/format';
-import { colors, shadow, PILL } from '../theme';
+import { colors, shadow, PILL, FONT } from '../theme';
 
 // H2 + board grab (issue 170) — the open job board ("Available" tab). Coarse cards (the
 // driver's cut / distance / COD y/n) — NO address/contact (revealed only on GRAB). Grab
@@ -72,14 +72,14 @@ export default function BoardList({
 
 const styles = StyleSheet.create({
   list: { marginTop: 24, gap: 16 },
-  caption: { color: colors.textMuted, fontSize: 14, fontWeight: '600' },
+  caption: { color: colors.textMuted, fontFamily: FONT, fontSize: 14, fontWeight: '600' },
   card: { backgroundColor: colors.surface, borderRadius: 20, padding: 20, gap: 10, ...shadow.card },
   headRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  payout: { color: colors.textPrimary, fontSize: 26, fontWeight: '800' },
+  payout: { color: colors.textPrimary, fontFamily: FONT, fontSize: 26, fontWeight: '800' },
   metaRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  pickup: { color: colors.textMuted, fontSize: 15, fontWeight: '600' },
+  pickup: { color: colors.textMuted, fontFamily: FONT, fontSize: 15, fontWeight: '600' },
   codChip: { backgroundColor: colors.batteryBg, borderRadius: PILL, paddingHorizontal: 12, paddingVertical: 4 },
-  codText: { color: colors.cod, fontSize: 13, fontWeight: '700' },
+  codText: { color: colors.cod, fontFamily: FONT, fontSize: 13, fontWeight: '700' },
   grab: {
     marginTop: 4,
     backgroundColor: colors.btnPrimaryBg,
@@ -89,11 +89,11 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingHorizontal: 24,
   },
-  grabText: { color: colors.btnPrimaryText, fontSize: 16, fontWeight: '700' },
+  grabText: { color: colors.btnPrimaryText, fontFamily: FONT, fontSize: 16, fontWeight: '700' },
   disabled: { opacity: 0.6 },
   checkingCard: { marginTop: 24, alignItems: 'center', gap: 12, padding: 24 },
-  checkingText: { color: colors.textFaint, fontSize: 15, fontWeight: '600' },
+  checkingText: { color: colors.textFaint, fontFamily: FONT, fontSize: 15, fontWeight: '600' },
   emptyCard: { marginTop: 24, backgroundColor: colors.surface, borderRadius: 20, padding: 24, gap: 8, ...shadow.card },
-  emptyTitle: { color: colors.textPrimary, fontSize: 17, fontWeight: '700' },
-  emptyBody: { color: colors.textMuted, fontSize: 15, fontWeight: '500' },
+  emptyTitle: { color: colors.textPrimary, fontFamily: FONT, fontSize: 17, fontWeight: '700' },
+  emptyBody: { color: colors.textMuted, fontFamily: FONT, fontSize: 15, fontWeight: '500' },
 });

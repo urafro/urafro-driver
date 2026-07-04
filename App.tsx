@@ -8,7 +8,7 @@ import { ToastProvider, OfflineBanner } from './src/components/ui';
 import { useQueuedCount } from './src/hooks/useQueuedCount';
 import { getProfile, type DriverProfile } from './src/lib/api';
 import { onNotificationResponse } from './src/lib/notifications';
-import { colors } from './src/theme';
+import { colors, FONT } from './src/theme';
 import LoginScreen from './src/screens/LoginScreen';
 import Onboarding from './src/screens/Onboarding';
 import HomeScreen from './src/screens/HomeScreen';
@@ -168,7 +168,7 @@ const styles = StyleSheet.create({
     paddingTop: 8,
   },
   tabBtn: { flex: 1, alignItems: 'center', gap: 3 },
-  tabLabel: { color: colors.textFaint, fontSize: 12 },
+  tabLabel: { fontFamily: FONT, color: colors.textFaint, fontSize: 12 },
   tabActive: { color: colors.tabActive, fontWeight: '700' },
   jobChip: {
     flexDirection: 'row',
@@ -178,6 +178,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 14,
   },
-  jobChipText: { flex: 1, color: colors.badgeText, fontSize: 14, fontWeight: '700' },
+  jobChipText: { fontFamily: FONT, flex: 1, color: colors.badgeText, fontSize: 14, fontWeight: '700' },
   loading: { flex: 1, backgroundColor: colors.bg, alignItems: 'center', justifyContent: 'center' },
 });

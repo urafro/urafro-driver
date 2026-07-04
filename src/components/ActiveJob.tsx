@@ -9,7 +9,7 @@ import { metersBetween } from '../lib/geo';
 import { money, placeLabel } from '../lib/format';
 import { runStops } from '../lib/run';
 import { mapsUrl, telUrl, waUrl } from '../lib/links';
-import { colors, iconSize, PILL, radius, shadow, space } from '../theme';
+import { colors, FONT, iconSize, PILL, radius, shadow, space } from '../theme';
 import { animateNext } from '../lib/motion';
 import { Stepper, Text, Transition, useToast } from './ui';
 import RouteMap from './RouteMap';
@@ -718,13 +718,14 @@ const styles = StyleSheet.create({
   reasonSub: { marginTop: 2 },
   panelCancel: { alignItems: 'center', justifyContent: 'center', minHeight: 44, paddingVertical: space.sm },
   fieldLabel: { marginTop: space.xs },
-  pinInput: { fontSize: 24, fontWeight: '700', letterSpacing: 12, textAlign: 'center' },
+  pinInput: { fontFamily: FONT, fontSize: 24, fontWeight: '700', letterSpacing: 12, textAlign: 'center' },
   input: {
     backgroundColor: colors.inputBg,
     borderRadius: radius.sm,
     borderWidth: 1,
     borderColor: colors.border,
     color: colors.textPrimary,
+    fontFamily: FONT,
     fontSize: 16,
     minHeight: 48,
     paddingHorizontal: space.md,

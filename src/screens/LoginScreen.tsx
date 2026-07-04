@@ -12,7 +12,7 @@ import { ApiError, requestOtp, verifyOtp } from '../lib/api';
 import { shouldRetry } from '../lib/queue';
 import { toE164 } from '../lib/phone';
 import { useSession } from '../state/session';
-import { colors, typography, space, radius } from '../theme';
+import { colors, typography, space, radius, FONT } from '../theme';
 import { Text } from '../components/ui';
 import { animateNext } from '../lib/motion';
 import { haptics } from '../lib/haptics';
@@ -252,6 +252,7 @@ const styles = StyleSheet.create({
     minHeight: 48,
     backgroundColor: colors.inputBgRaised,
     color: colors.textPrimary,
+    fontFamily: FONT,
     fontSize: 16,
     borderRadius: radius.sm,
     borderWidth: 1,
@@ -261,6 +262,7 @@ const styles = StyleSheet.create({
   },
   inputFlex: { flex: 1, minWidth: 0 },
   codeInput: {
+    fontFamily: FONT,
     letterSpacing: 8,
     textAlign: 'center',
     fontSize: 24,

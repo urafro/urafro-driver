@@ -16,7 +16,7 @@ import { ensureForegroundPermission } from '../lib/location';
 import { waUrl } from '../lib/links';
 import { OPS_WHATSAPP } from '../config';
 import { useSession } from '../state/session';
-import { colors, shadow, typography, space, radius } from '../theme';
+import { colors, shadow, typography, space, radius, FONT } from '../theme';
 import { Text } from '../components/ui';
 import { animateNext } from '../lib/motion';
 import { haptics } from '../lib/haptics';
@@ -409,6 +409,7 @@ const styles = StyleSheet.create({
     minHeight: 48,
     backgroundColor: colors.inputBg,
     color: colors.textPrimary,
+    fontFamily: FONT,
     fontSize: 16,
     borderRadius: radius.sm,
     borderWidth: 1,

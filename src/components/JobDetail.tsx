@@ -3,7 +3,7 @@ import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-nati
 import type { HistoryItem } from '../lib/api';
 import { dayLabel, money, placeLabel, podMethodLabel, timeLabel } from '../lib/format';
 import { REASON_LABEL, statusMeta } from '../lib/jobs';
-import { colors, PILL, shadow } from '../theme';
+import { colors, FONT, PILL, shadow } from '../theme';
 
 // The full record of one past run (the Jobs-tab detail). Read-only — proof of what
 // happened and what it earned, for the driver's own records and any dispute. Money
@@ -138,7 +138,7 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
   },
-  headerTitle: { color: colors.textPrimary, fontSize: 20, fontWeight: '700' },
+  headerTitle: { color: colors.textPrimary, fontFamily: FONT, fontSize: 20, fontWeight: '700' },
   close: { padding: 4 },
 
   content: { padding: 20, gap: 16, paddingBottom: 40 },
@@ -152,25 +152,26 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     backgroundColor: colors.surfaceAlt,
   },
-  badgeText: { fontSize: 13, fontWeight: '700', letterSpacing: 0.5, textTransform: 'uppercase' },
-  when: { color: colors.textFaint, fontSize: 14, flexShrink: 1, textAlign: 'right' },
+  badgeText: { fontFamily: FONT, fontSize: 13, fontWeight: '700', letterSpacing: 0.5, textTransform: 'uppercase' },
+  when: { color: colors.textFaint, fontFamily: FONT, fontSize: 14, flexShrink: 1, textAlign: 'right' },
 
   card: { backgroundColor: colors.surface, borderRadius: 14, padding: 16, ...shadow.card },
   legEyebrow: {
     color: colors.tabActive,
+    fontFamily: FONT,
     fontSize: 12,
     fontWeight: '700',
     letterSpacing: 1,
     textTransform: 'uppercase',
   },
-  legPlace: { color: colors.textPrimary, fontSize: 17, fontWeight: '700', lineHeight: 23, marginTop: 2 },
+  legPlace: { color: colors.textPrimary, fontFamily: FONT, fontSize: 17, fontWeight: '700', lineHeight: 23, marginTop: 2 },
   legLink: { flexDirection: 'row', alignItems: 'center', gap: 6, marginVertical: 10 },
-  tripText: { color: colors.textFaint, fontSize: 13 },
+  tripText: { color: colors.textFaint, fontFamily: FONT, fontSize: 13 },
 
   row: { flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between', gap: 12, paddingVertical: 6 },
-  rowLabel: { color: colors.textMuted, fontSize: 15, flexShrink: 0 },
-  rowValue: { color: colors.textPrimary, fontSize: 15, fontWeight: '600', flexShrink: 1, textAlign: 'right' },
-  rowValueStrong: { fontSize: 18, fontWeight: '700' },
+  rowLabel: { color: colors.textMuted, fontFamily: FONT, fontSize: 15, flexShrink: 0 },
+  rowValue: { color: colors.textPrimary, fontFamily: FONT, fontSize: 15, fontWeight: '600', flexShrink: 1, textAlign: 'right' },
+  rowValueStrong: { fontFamily: FONT, fontSize: 18, fontWeight: '700' },
   rowValueAccent: { color: colors.money },
   rowValueDanger: { color: colors.danger },
 
@@ -181,5 +182,5 @@ const styles = StyleSheet.create({
     gap: 8,
     paddingVertical: 12,
   },
-  earningsLinkText: { color: colors.textMuted, fontSize: 15 },
+  earningsLinkText: { color: colors.textMuted, fontFamily: FONT, fontSize: 15 },
 });

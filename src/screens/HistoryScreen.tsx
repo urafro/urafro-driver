@@ -61,6 +61,7 @@ export default function HistoryScreen({
       setError(null);
       const { data, next_before } = await listMyDeliveries(token, { limit: PAGE, status: statusParam });
       if (gen !== reqGen.current) return; // superseded by a newer filter/refresh
+      animateNext('base'); // B3: the skeleton settles into the list instead of popping
       setItems(data ?? []);
       setNextBefore(next_before);
     } catch {

@@ -4,7 +4,7 @@ import { WebView } from 'react-native-webview';
 import { Feather } from '@expo/vector-icons';
 import type { Coords } from '../lib/location';
 import { mapsUrl } from '../lib/links';
-import { colors, PILL } from '../theme';
+import { colors, FONT, PILL } from '../theme';
 
 // Interim active-job map (Option B — see memory project_driver_active_map). A WebView
 // + Leaflet/OSM that plots the driver relative to the CURRENT stop (merchant before
@@ -130,7 +130,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
     paddingVertical: 4,
   },
-  labelText: { fontSize: 12, fontWeight: '700', color: colors.textPrimary },
+  labelText: { fontSize: 12, fontFamily: FONT, fontWeight: '700', color: colors.textPrimary },
   cta: {
     position: 'absolute',
     right: 8,
@@ -145,5 +145,5 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     paddingVertical: 6,
   },
-  ctaText: { fontSize: 12, fontWeight: '700', color: colors.textPrimary },
+  ctaText: { fontSize: 12, fontFamily: FONT, fontWeight: '700', color: colors.textPrimary },
 });

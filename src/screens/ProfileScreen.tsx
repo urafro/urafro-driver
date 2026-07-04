@@ -14,7 +14,7 @@ import { money } from '../lib/format';
 import { waUrl } from '../lib/links';
 import { OPS_WHATSAPP } from '../config';
 import { useSession } from '../state/session';
-import { colors, shadow, typography, space, radius } from '../theme';
+import { colors, shadow, typography, space, radius, FONT } from '../theme';
 import { Text, useToast } from '../components/ui';
 import { animateNext } from '../lib/motion';
 import { haptics } from '../lib/haptics';
@@ -478,6 +478,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.border,
     color: colors.textPrimary,
+    fontFamily: FONT,
     fontSize: 16,
     minHeight: 48,
     paddingHorizontal: space.lg,
