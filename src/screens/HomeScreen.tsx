@@ -62,6 +62,7 @@ import { money, placeLabel, secondsUntil } from '../lib/format';
 import {
   enqueueAction,
   flushActions,
+  archiveExpired,
   loadQueue,
   saveQueue,
   shouldRetry,
@@ -568,7 +569,21 @@ export default function HomeScreen({ focused }: { focused: boolean }) {
       try {
         const queue = await loadQueue();
         if (queue.length === 0) return; // count already 0 in the queue store
-        const remaining = await flushActions(queue, performAction);
+        const remaining = await flushActions(queue, performAction, (expired) => {
+          // Audit R12: a bounded queue must never let a money-bearing action vanish
+          // silently — 24h unsynced means something is genuinely wrong, and the
+          // driver (not the retry loop) has to close it out with ops. The payload
+          // (COD amount, PoD note) is archived for that conversation.
+          void archiveExpired(expired);
+          console.warn('queued action expired unsynced:', expired.id, expired.action);
+          if (!cancelled) {
+            setError(
+              expired.action === 'delivered'
+                ? "A saved delivery confirmation couldn't sync — message ops so your cash and pay are recorded."
+                : "A saved update couldn't sync — message ops to close it out.",
+            );
+          }
+        });
         await saveQueue(remaining); // publishes the new depth to the OfflineBanner
         if (cancelled) return;
 
@@ -699,6 +714,31 @@ export default function HomeScreen({ focused }: { focused: boolean }) {
         // future on-device issue stays visible via `adb logcat` (a diagnostic build is
         // exactly how we caught the bodyless-POST 400).
         console.warn('claim failed:', e instanceof ApiError ? `${e.status} ${e.message}` : e);
+        // Audit R12 — ambiguous-claim recovery: on 3G the claim often LANDS while the
+        // response is lost, and every failure class here can be self-caused by that
+        // ("just taken" = taken by US; "not available" = WE just went busy; network =
+        // the lost response itself). Before telling the driver to move on — which used
+        // to strand them staring at an empty offers list while the merchant's job sat
+        // assigned — ask the server who owns the job. Best-effort: a failed check
+        // falls through to the normal error copy.
+        try {
+          const legs = await getActiveLegs(token);
+          const mine = currentStopLeg(legs);
+          if (mine) {
+            setJob(mine);
+            if (canBatch) {
+              setRunLegs(legs);
+              runEarnedRef.current = 0;
+              runCodRef.current = 0;
+              setDismissedAppendIds(new Set());
+            }
+            setOffers(null);
+            setError(null);
+            return;
+          }
+        } catch {
+          // recovery probe failed — fall through to the ordinary error handling
+        }
         if (e instanceof ApiError && e.status === 409) {
           // The server distinguishes three 409s — so should the driver. The
           // "not available" case means the sweep took them off shift while the

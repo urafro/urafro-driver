@@ -82,6 +82,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/deliveries/{id}/collect-amount": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Amend the COD amount to collect at the door
+         * @description The tenant's payment ledger moved (e.g. the buyer paid the merchant by mobile money mid-run), so the courier must stop quoting the stale figure. Allowed only before the doorstep leg (`pending`/`assigned`/`picked_up`; 409 from `in_transit` on — the door amount never changes mid-doorstep). An INCREASE with an assigned courier re-checks their cash cap (409 if it no longer fits); a reduction is always allowed. Emits a `delivery.collect_updated` webhook. The agreed fare (`final_price_minor`) is untouched — this amends the buyer's balance, never courier earnings.
+         */
+        post: operations["updateDeliveryCollectAmount"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/deliveries/{id}/bids": {
         parameters: {
             query?: never;
@@ -137,6 +157,210 @@ export interface paths {
         put?: never;
         post?: never;
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/fleets": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List your fleets */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Your fleets. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            data?: components["schemas"]["Fleet"][];
+                        };
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+            };
+        };
+        put?: never;
+        /**
+         * Create a fleet (your preferred riders)
+         * @description A named group of your own drivers to prefer for dispatch (Epic B). Add riders by phone via /fleets/{fleetId}/members; a delivery then sets dispatch_policy (fleet_first|fleet_only) + preferred_fleet_id to reach them first.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["CreateFleetRequest"];
+                };
+            };
+            responses: {
+                /** @description Created. */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Fleet"];
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/fleets/{fleetId}/members": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                fleetId: string;
+            };
+            cookie?: never;
+        };
+        /** List a fleet's riders + their onboarding state */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    fleetId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Members. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            data?: components["schemas"]["FleetMember"][];
+                        };
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                /** @description Fleet not found. */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        put?: never;
+        /**
+         * Add a rider to a fleet by phone
+         * @description Provisions the rider as a platform driver (find-or-create by phone). A new driver is unverified/offline until they onboard via the driver app (OTP + KYC) and go online — only then do they receive this fleet's deliveries.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    fleetId: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["AddFleetMemberRequest"];
+                };
+            };
+            responses: {
+                /** @description Added. */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            /** Format: uuid */
+                            driver_id?: string;
+                            /** @description true if a new driver row was provisioned */
+                            created?: boolean;
+                        };
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                /** @description Fleet not found. */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/fleets/{fleetId}/members/{driverId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Remove a rider from a fleet (rollback a migration) */
+        delete: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    fleetId: string;
+                    driverId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Removed. */
+                204: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                401: components["responses"]["Unauthorized"];
+                /** @description Fleet not found. */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
         options?: never;
         head?: never;
         patch?: never;
@@ -286,6 +510,26 @@ export interface paths {
          * @description Offered, unexpired jobs whose delivery is still pending, soonest-expiring first. Each item is a Delivery plus `offer_expires_at`.
          */
         get: operations["driverListOffers"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/driver/board": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The open job board (coarse, PII-scoped)
+         * @description H1. The pending deliveries a VERIFIED driver could grab, as COARSE cards only — distance-to-pickup, the driver's cut, and COD y/n. NO exact address, landmark, or contact pre-claim; full detail is revealed only on claim. Flag + supply gated: an empty list when the board is off or the driver is unverified. Bounded to the 50 most recent pending jobs.
+         */
+        get: operations["driverBoard"];
         put?: never;
         post?: never;
         delete?: never;
@@ -540,29 +784,9 @@ export interface paths {
         put?: never;
         /**
          * Reset (extend) an offer countdown once
-         * @description Gophr-parity resettable timer. Pushes this driver's OWN live offer countdown forward once, with no acceptance-rate penalty. Only a still-offered, unexpired, never-reset offer qualifies; anything else (already reset, lapsed, claimed, or not this driver's) returns 409. `id` is the delivery id.
+         * @description Gophr-parity resettable timer. Pushes this driver's OWN live offer countdown forward once, with no acceptance-rate penalty. Only a still-offered, unexpired, never-reset offer qualifies; anything else (already reset, lapsed, claimed, or not this driver's) returns 409. `id` is the delivery id (offers are keyed by delivery + driver). Additive/expand-only — old clients simply never call it.
          */
         post: operations["driverResetOffer"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/driver/board": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * The open job board (coarse, PII-scoped)
-         * @description H1. The pending deliveries a VERIFIED driver could grab, as COARSE cards only — distance-to-pickup, the driver's cut, and COD y/n. NO exact address, landmark, or contact pre-claim; full detail is revealed only on claim. Flag + supply gated: an empty list when the board is off or the driver is unverified. Bounded to the 50 most recent pending jobs.
-         */
-        get: operations["driverBoard"];
-        put?: never;
-        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -738,7 +962,7 @@ export interface paths {
         put?: never;
         /**
          * Add a compatible job to the current run (batching)
-         * @description Claim a compatible job to ADD to the driver's in-progress run. Same result as /claim but bounded to the concurrent-job limit and re-checks the combined COD across all in-flight legs. 409 if at the limit, over the cap, on an auction, or not claimable. Additive (A3) — old clients never call it.
+         * @description Claim a compatible job to ADD to the driver's in-progress run (they're already on one). Same result as /claim but bounded to the driver's concurrent-job limit and re-checks the COMBINED COD across all their in-flight legs under lock. 409 if at the limit, over the combined cap, on an auction, or not currently claimable. Additive (A3) — old clients simply never call it.
          */
         post: operations["driverAppendDelivery"];
         delete?: never;
@@ -758,7 +982,7 @@ export interface paths {
         put?: never;
         /**
          * Grab a pending job from the open board
-         * @description GRAB a pending job off the open board — one the driver was NOT offered. Like /claim but re-checks verification + vehicle capacity + the COD cap. 409 if the board is closed, the job is gone / an auction, or the driver is ineligible. Additive (A3).
+         * @description GRAB a pending job straight off the open board (see /driver/board) — one the driver was NOT offered. Like /claim but re-checks verification + vehicle capacity + the COD cap under lock. 409 if the board is closed, the job is gone / an auction, or the driver is ineligible (unavailable / unverified / over capacity / over the COD cap). Additive (A3) — old clients never call it.
          */
         post: operations["driverGrabDelivery"];
         delete?: never;
@@ -925,6 +1149,8 @@ export interface components {
             id?: string;
             /** Format: uri */
             url?: string;
+            /** @description Event-type filter; null = every event. */
+            event_types?: string[] | null;
             /** Format: date-time */
             created_at?: string;
         };
@@ -995,6 +1221,33 @@ export interface components {
              */
             preferred_fleet_id?: string;
         };
+        CreateFleetRequest: {
+            name: string;
+        };
+        AddFleetMemberRequest: {
+            /** @description The rider's phone (E.164-ish, the driver OTP-login key). */
+            phone: string;
+            /** @description Optional display name for a newly-provisioned driver. */
+            name?: string;
+        };
+        Fleet: {
+            /** Format: uuid */
+            id?: string;
+            name?: string;
+            active?: boolean;
+            /** Format: date-time */
+            created_at?: string;
+        };
+        /** @description A fleet rider + their onboarding/availability state. */
+        FleetMember: {
+            /** Format: uuid */
+            driver_id?: string;
+            name?: string;
+            phone?: string;
+            verification_status?: string;
+            /** @description offline | available | busy */
+            status?: string;
+        };
         /** @enum {string} */
         DeliveryStatus: "pending" | "assigned" | "picked_up" | "in_transit" | "delivered" | "failed" | "unassigned" | "cancelled";
         DeliveryBid: {
@@ -1043,6 +1296,8 @@ export interface components {
             fee_minor?: number | null;
             /** @description Cash-on-delivery amount (minor units); null = prepaid / nothing to collect. */
             collect_minor?: number | null;
+            /** @description Cash the courier actually BOOKED at completion (minor units). Present only on `delivery.completed` webhook payloads (audit R6 write-back); absent/null elsewhere. May differ from collect_minor (honest drivers enter what they really took). */
+            cod_collected_minor?: number | null;
             /** @description Customer-named opening price (minor units) when this is an AUCTION (ADR-036); null on a fixed-price delivery. The offered courier ACCEPTs or COUNTERs against it. */
             opening_price_minor?: number | null;
             /** @description Fraud-guard ceiling (minor units, 10× the cost estimate) a courier's COUNTER may not exceed on an auction (ADR-036); null on a fixed-price delivery. NOT a price band — the buyer's private auto-accept max is never exposed here. */
@@ -1051,7 +1306,7 @@ export interface components {
             final_price_minor?: number | null;
             /**
              * Format: uuid
-             * @description F5 (batching): the legs of one driver's pooled run share this id; null on a single-leg delivery. Additive — clients that ignore it treat each delivery as its own run.
+             * @description F5 (batching): the legs of one driver's pooled run share this id; null on a single-leg (non-batched) delivery. Additive — clients that ignore it treat every delivery as its own run.
              */
             batch_id?: string | null;
             /** @description This leg's position (1, 2, …) within its batch; null when not batched. */
@@ -1225,13 +1480,30 @@ export interface components {
             /** @description The at-door PIN read out by the recipient. Optional — manual remains the fallback. A match upgrades the PoD method to `otp`; a mismatch rejects the completion (400), capped at 5 attempts per delivery. */
             pod_pin?: string;
         };
+        /** @description SSE frame on GET /v1/realtime/deliveries/{id} (tenant, channel delivery:{id}) and GET /v1/driver/stream (driver, channel driver:{id}) — endpoints gated by REALTIME_ENABLED and deliberately not modelled as REST paths. Types seen on delivery:{id}: connected, heartbeat, delivery.picked_up/in_transit/failed/ completed/collect_updated (payload = Delivery), driver.location (payload = {delivery_id, lat, lng}). On driver:{id}: connected, heartbeat, offer.new (payload = {delivery_id}). Server heartbeats every ~25s; the driver app treats 60s of silence as stale. */
+        RealtimeEvent: {
+            type: string;
+            /** Format: date-time */
+            timestamp: string;
+            payload?: {
+                [key: string]: unknown;
+            };
+        };
+        /** @description The `data` payload of driver Expo push messages (Android channel id 'offers' — must match on both sides). Advisory only; the offers/active polls remain the load-bearing source of truth. */
+        DriverPushData: {
+            /** @enum {string} */
+            type: "offer" | "assigned" | "cancelled" | "swept_offline";
+            /** Format: uuid */
+            deliveryId?: string;
+        };
         WebhookEvent: {
             /** Format: uuid */
             id: string;
             /** @enum {string} */
-            type: "delivery.created" | "delivery.assigned" | "delivery.picked_up" | "delivery.in_transit" | "delivery.completed" | "delivery.failed" | "delivery.unassigned" | "delivery.cancelled" | "delivery.auction_reverted" | "eta.updated" | "bid.updated";
+            type: "delivery.created" | "delivery.assigned" | "delivery.picked_up" | "delivery.in_transit" | "delivery.completed" | "delivery.failed" | "delivery.unassigned" | "delivery.cancelled" | "delivery.auction_reverted" | "eta.updated" | "bid.updated" | "delivery.collect_updated";
             /** Format: date-time */
             created_at: string;
+            /** @description For delivery.* and eta.updated the payload is the Delivery (eta.updated adds eta_minutes; delivery.completed adds cod_collected_minor — the cash the courier actually booked, for the tenant's own ledger write-back). KNOWN DEVIATION: bid.updated currently ships a bid summary ({delivery_id, bid_id, driver_id, price_minor, bid_type}) under this key, not a Delivery — receivers should ignore event types they don't consume (or register with an event_types filter). */
             data: {
                 delivery?: components["schemas"]["Delivery"];
             };
@@ -1303,7 +1575,7 @@ export interface components {
         };
     };
     parameters: {
-        /** @description Replaying the same key returns the original delivery instead of creating a duplicate. */
+        /** @description Replaying the same key returns the original delivery instead of creating a duplicate — but only while that delivery can still proceed. A key whose delivery already ENDED (delivered/failed/cancelled/unassigned) is rejected with 409: replaying it would silently re-attach a dead delivery to a retry. Scope keys per dispatch attempt (e.g. suffix a retry counter). */
         IdempotencyKey: string;
     };
     requestBodies: never;
@@ -1348,6 +1620,8 @@ export interface operations {
                         distance_source: "osrm" | "haversine";
                         /** @description Fraud-guard ceiling (10× cost); never binds a real fare. */
                         ceiling_minor: number;
+                        /** @description E2 (optional): the merchant-authorized surge ceiling — the most the fee could reach with surge (fee_minor × maxMultiplier), or == fee_minor when surge is off. Static (fee + config, never live supply) → the quote stays symmetric. Older clients ignore it. */
+                        max_fee_minor?: number;
                         rationale: string;
                     };
                 };
@@ -1386,7 +1660,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                /** @description Replaying the same key returns the original delivery instead of creating a duplicate. */
+                /** @description Replaying the same key returns the original delivery instead of creating a duplicate — but only while that delivery can still proceed. A key whose delivery already ENDED (delivered/failed/cancelled/unassigned) is rejected with 409: replaying it would silently re-attach a dead delivery to a retry. Scope keys per dispatch attempt (e.g. suffix a retry counter). */
                 "Idempotency-Key"?: components["parameters"]["IdempotencyKey"];
             };
             path?: never;
@@ -1409,6 +1683,7 @@ export interface operations {
             };
             400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
+            409: components["responses"]["Conflict"];
             422: components["responses"]["Unprocessable"];
         };
     };
@@ -1456,6 +1731,39 @@ export interface operations {
                     "application/json": components["schemas"]["Delivery"];
                 };
             };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+        };
+    };
+    updateDeliveryCollectAmount: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description New COD due at the door (minor units); 0 = now prepaid. */
+                    collect_minor: number;
+                };
+            };
+        };
+        responses: {
+            /** @description Amended. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Delivery"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
             404: components["responses"]["NotFound"];
             409: components["responses"]["Conflict"];
@@ -1513,7 +1821,13 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Delivery"];
+                    "application/json": components["schemas"]["Delivery"] & {
+                        /**
+                         * Format: uuid
+                         * @description Flat convenience copy of driver.id (the implementation has always returned it; documented 2026-07-05 rather than removed — read the nested driver.id, this stays for compatibility).
+                         */
+                        driver_id?: string;
+                    };
                 };
             };
             401: components["responses"]["Unauthorized"];
@@ -1589,6 +1903,8 @@ export interface operations {
                 "application/json": {
                     /** Format: uri */
                     url: string;
+                    /** @description Optional event-type filter: omitted/null = every event (the original behaviour). Values match emitted types literally, so new event types stay additive (unknown strings never match). */
+                    event_types?: string[] | null;
                 };
             };
         };
@@ -1792,6 +2108,38 @@ export interface operations {
                 content: {
                     "application/json": {
                         data?: components["schemas"]["Offer"][];
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+        };
+    };
+    driverBoard: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Coarse open-board cards (possibly empty). */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data?: {
+                            /** Format: uuid */
+                            delivery_id: string;
+                            /** @description Straight-line km to pickup from the driver's last position; null if unknown. */
+                            pickup_distance_km?: number | null;
+                            /** @description The driver's cut (minor units). */
+                            driver_fee_minor: number;
+                            /** @description Whether the job carries cash-on-delivery. */
+                            cod: boolean;
+                        }[];
                     };
                 };
             };
@@ -2274,38 +2622,6 @@ export interface operations {
                 };
                 content?: never;
             };
-        };
-    };
-    driverBoard: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Coarse open-board cards (possibly empty). */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        data?: {
-                            /** Format: uuid */
-                            delivery_id: string;
-                            /** @description Straight-line km to pickup from the driver's last position; null if unknown. */
-                            pickup_distance_km?: number | null;
-                            /** @description The driver's cut (minor units). */
-                            driver_fee_minor: number;
-                            /** @description Whether the job carries cash-on-delivery. */
-                            cod: boolean;
-                        }[];
-                    };
-                };
-            };
-            401: components["responses"]["Unauthorized"];
         };
     };
     driverEarnings: {

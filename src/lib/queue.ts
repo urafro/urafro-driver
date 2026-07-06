@@ -13,6 +13,9 @@ export interface QueuedAction {
   deliveryId: string;
   action: QueuedActionType;
   createdAt: number;
+  /** Transient-failure replays so far (audit R12): a permanently-5xx-ing action
+   *  used to retry every 12s forever, across every launch. Bounded now. */
+  attempts?: number;
   /** Action payload (ADR-002 A.2/A.5): failure reason / COD amount / PoD note ride
    *  the queue so an offline tap loses none of its substance on replay. */
   reason?: string;
@@ -60,18 +63,42 @@ export function shouldRetry(error: unknown): boolean {
   return true; // network / unknown → transient
 }
 
+// Give-up bounds (audit R12): a permanently-failing action must eventually stop
+// consuming the 12s flusher and SURFACE, not loop silently forever. AGE is the
+// primary bound — 24h covers any realistic dead-zone + outage overlap (the
+// physical event is long over by then). The attempt ceiling is ONLY a
+// clock-skew backstop (a device whose clock made createdAt bogus-future would
+// never age out): at the 12s flush cadence 7,500 attempts ≈ 25h of CONTINUOUS
+// failure, deliberately just past the age cap — it must never be the bound
+// that trips first on a healthy clock (review catch: an earlier draft's 40
+// would have expired a money action after an 8-minute outage).
+export const MAX_ACTION_AGE_MS = 24 * 60 * 60 * 1000;
+export const MAX_ACTION_ATTEMPTS = 7_500;
+
+export function isExpired(action: QueuedAction, now: number): boolean {
+  return now - action.createdAt > MAX_ACTION_AGE_MS || (action.attempts ?? 0) >= MAX_ACTION_ATTEMPTS;
+}
+
 // Pure: perform each action, returning the ones that still need retrying. Takes the
 // items as an argument (no storage), so the retry policy is unit-testable directly.
+// Expired actions (see isExpired) are NOT attempted or retained — they're reported
+// via onExpired so the UI can hand the driver to ops instead of silently looping.
 export async function flushActions(
   items: QueuedAction[],
   perform: (action: QueuedAction) => Promise<void>,
+  onExpired?: (action: QueuedAction) => void,
+  now: number = Date.now(),
 ): Promise<QueuedAction[]> {
   const remaining: QueuedAction[] = [];
   for (const action of items) {
+    if (isExpired(action, now)) {
+      onExpired?.(action);
+      continue;
+    }
     try {
       await perform(action);
     } catch (error) {
-      if (shouldRetry(error)) remaining.push(action);
+      if (shouldRetry(error)) remaining.push({ ...action, attempts: (action.attempts ?? 0) + 1 });
     }
   }
   return remaining;
@@ -98,6 +125,42 @@ export async function loadQueue(): Promise<QueuedAction[]> {
 export async function saveQueue(items: QueuedAction[]): Promise<void> {
   await SecureStore.setItemAsync(KEY, JSON.stringify(items));
   publishQueueCount(items.length);
+}
+
+// Expired actions are ARCHIVED, not discarded (audit R12 review catch): a queued
+// COD `delivered` carries the cash amount — if it can never sync, ops needs the
+// payload to reconcile by hand, so it must survive the drop. Ring-buffered (last
+// 20) in its own SecureStore key; read it out with loadExpiredArchive when
+// walking a driver through an ops recovery.
+const EXPIRED_KEY = 'expired_actions';
+const EXPIRED_MAX = 20;
+
+export async function archiveExpired(action: QueuedAction): Promise<void> {
+  try {
+    const raw = await SecureStore.getItemAsync(EXPIRED_KEY);
+    let items: QueuedAction[] = [];
+    if (raw) {
+      try {
+        items = JSON.parse(raw) as QueuedAction[];
+      } catch {
+        items = [];
+      }
+    }
+    items = [...items.filter((a) => a.id !== action.id), action].slice(-EXPIRED_MAX);
+    await SecureStore.setItemAsync(EXPIRED_KEY, JSON.stringify(items));
+  } catch {
+    // archival is best-effort — never let it break the flush loop
+  }
+}
+
+export async function loadExpiredArchive(): Promise<QueuedAction[]> {
+  const raw = await SecureStore.getItemAsync(EXPIRED_KEY);
+  if (!raw) return [];
+  try {
+    return JSON.parse(raw) as QueuedAction[];
+  } catch {
+    return [];
+  }
 }
 
 // Add (or replace) a pending action, de-duped by id, and return the new queue.

@@ -17,6 +17,9 @@ vi.mock('expo-secure-store', () => {
 import {
   shouldRetry,
   flushActions,
+  isExpired,
+  MAX_ACTION_AGE_MS,
+  MAX_ACTION_ATTEMPTS,
   enqueueAction,
   loadQueue,
   saveQueue,
@@ -29,7 +32,9 @@ const action = (id: string): QueuedAction => ({
   id,
   deliveryId: id,
   action: 'delivered',
-  createdAt: 0,
+  // Fresh, not epoch: flushActions now expires actions older than MAX_ACTION_AGE_MS
+  // (audit R12), so an epoch-timestamped fixture would be dropped before perform().
+  createdAt: Date.now(),
 });
 
 describe('shouldRetry', () => {
@@ -62,6 +67,46 @@ describe('flushActions', () => {
 
   it('returns empty when everything succeeds', async () => {
     expect(await flushActions([action('a')], async () => {})).toEqual([]);
+  });
+
+  // Audit R12: bounded retries — a permanently-failing action must surface, not loop.
+  it('counts attempts on transient failure and expires at the attempt ceiling', async () => {
+    let remaining = [action('a')];
+    const fail = async () => {
+      throw new ApiError(503, 'down');
+    };
+    remaining = await flushActions(remaining, fail);
+    expect(remaining[0].attempts).toBe(1);
+    remaining[0].attempts = MAX_ACTION_ATTEMPTS; // fast-forward to the ceiling
+    const expired: string[] = [];
+    const performed: string[] = [];
+    remaining = await flushActions(
+      remaining,
+      async (a) => {
+        performed.push(a.id);
+      },
+      (a) => expired.push(a.id),
+    );
+    expect(performed).toEqual([]); // never attempted once expired
+    expect(expired).toEqual(['a']);
+    expect(remaining).toEqual([]);
+  });
+
+  it('expires actions older than the age cap without attempting them', async () => {
+    const stale = { ...action('old'), createdAt: 1_000 };
+    const expired: string[] = [];
+    const remaining = await flushActions(
+      [stale, action('fresh')],
+      async () => {},
+      (a) => expired.push(a.id),
+      1_000 + MAX_ACTION_AGE_MS + 1,
+    );
+    expect(expired).toEqual(['old']);
+    expect(remaining).toEqual([]);
+  });
+
+  it('isExpired is false for a fresh, unattempted action', () => {
+    expect(isExpired(action('a'), Date.now())).toBe(false);
   });
 });
 
