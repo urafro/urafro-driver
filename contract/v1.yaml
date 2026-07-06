@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: urAfro Next API
-  version: "1.2.0"
+  version: "1.10.0"
   description: >
     Crowdsourced last-mile delivery platform. A monetised delivery API, live in
     production. This file is the source of truth for the `/v1` surface; the NestJS
@@ -76,6 +76,7 @@ paths:
                   distance_m: { type: integer }
                   distance_source: { type: string, enum: [osrm, haversine] }
                   ceiling_minor: { type: integer, description: Fraud-guard ceiling (10× cost); never binds a real fare. }
+                  max_fee_minor: { type: integer, description: "E2 (optional): the merchant-authorized surge ceiling — the most the fee could reach with surge (fee_minor × maxMultiplier), or == fee_minor when surge is off. Static (fee + config, never live supply) → the quote stays symmetric. Older clients ignore it." }
                   rationale: { type: string }
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
@@ -104,6 +105,7 @@ paths:
               schema: { $ref: '#/components/schemas/Delivery' }
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
+        '409': { $ref: '#/components/responses/Conflict' }
         '422': { $ref: '#/components/responses/Unprocessable' }
     get:
       tags: [Deliveries]
@@ -165,6 +167,48 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Delivery' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /deliveries/{id}/collect-amount:
+    post:
+      tags: [Deliveries]
+      summary: Amend the COD amount to collect at the door
+      description: >-
+        The tenant's payment ledger moved (e.g. the buyer paid the merchant by
+        mobile money mid-run), so the courier must stop quoting the stale figure.
+        Allowed only before the doorstep leg (`pending`/`assigned`/`picked_up`;
+        409 from `in_transit` on — the door amount never changes mid-doorstep).
+        An INCREASE with an assigned courier re-checks their cash cap (409 if it
+        no longer fits); a reduction is always allowed. Emits a
+        `delivery.collect_updated` webhook. The agreed fare (`final_price_minor`)
+        is untouched — this amends the buyer's balance, never courier earnings.
+      operationId: updateDeliveryCollectAmount
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [collect_minor]
+              properties:
+                collect_minor:
+                  type: integer
+                  minimum: 0
+                  description: New COD due at the door (minor units); 0 = now prepaid.
+      responses:
+        '200':
+          description: Amended.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Delivery' }
+        '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '404': { $ref: '#/components/responses/NotFound' }
         '409': { $ref: '#/components/responses/Conflict' }
@@ -231,7 +275,18 @@ paths:
           description: Assigned to the winning courier.
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/Delivery' }
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Delivery'
+                  - type: object
+                    properties:
+                      driver_id:
+                        type: string
+                        format: uuid
+                        description: >-
+                          Flat convenience copy of driver.id (the implementation has
+                          always returned it; documented 2026-07-05 rather than removed
+                          — read the nested driver.id, this stays for compatibility).
         '401': { $ref: '#/components/responses/Unauthorized' }
         '404': { $ref: '#/components/responses/NotFound' }
         '409': { $ref: '#/components/responses/Conflict' }
@@ -279,6 +334,103 @@ paths:
                       uncollected_minor: { type: integer }
         '401': { $ref: '#/components/responses/Unauthorized' }
 
+  /fleets:
+    post:
+      tags: [Fleets]
+      summary: Create a fleet (your preferred riders)
+      description: >-
+        A named group of your own drivers to prefer for dispatch (Epic B). Add riders by
+        phone via /fleets/{fleetId}/members; a delivery then sets dispatch_policy
+        (fleet_first|fleet_only) + preferred_fleet_id to reach them first.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateFleetRequest' }
+      responses:
+        '201':
+          description: Created.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Fleet' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+    get:
+      tags: [Fleets]
+      summary: List your fleets
+      responses:
+        '200':
+          description: Your fleets.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { type: array, items: { $ref: '#/components/schemas/Fleet' } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /fleets/{fleetId}/members:
+    parameters:
+      - name: fleetId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      tags: [Fleets]
+      summary: List a fleet's riders + their onboarding state
+      responses:
+        '200':
+          description: Members.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { type: array, items: { $ref: '#/components/schemas/FleetMember' } }
+        '404': { description: Fleet not found. }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+    post:
+      tags: [Fleets]
+      summary: Add a rider to a fleet by phone
+      description: >-
+        Provisions the rider as a platform driver (find-or-create by phone). A new driver
+        is unverified/offline until they onboard via the driver app (OTP + KYC) and go
+        online — only then do they receive this fleet's deliveries.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AddFleetMemberRequest' }
+      responses:
+        '201':
+          description: Added.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  driver_id: { type: string, format: uuid }
+                  created: { type: boolean, description: "true if a new driver row was provisioned" }
+        '404': { description: Fleet not found. }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /fleets/{fleetId}/members/{driverId}:
+    delete:
+      tags: [Fleets]
+      summary: Remove a rider from a fleet (rollback a migration)
+      parameters:
+        - name: fleetId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - name: driverId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '204': { description: Removed. }
+        '404': { description: Fleet not found. }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
   /webhook-endpoints:
     post:
       tags: [Webhooks]
@@ -297,6 +449,14 @@ paths:
               required: [url]
               properties:
                 url: { type: string, format: uri }
+                event_types:
+                  type: [array, "null"]
+                  items: { type: string, maxLength: 64 }
+                  maxItems: 32
+                  description: >-
+                    Optional event-type filter: omitted/null = every event (the
+                    original behaviour). Values match emitted types literally, so
+                    new event types stay additive (unknown strings never match).
       responses:
         '201':
           description: Created — `secret` is shown only here.
@@ -488,6 +648,39 @@ paths:
                   data:
                     type: array
                     items: { $ref: '#/components/schemas/Offer' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /driver/board:
+    get:
+      tags: [Driver]
+      summary: The open job board (coarse, PII-scoped)
+      description: >
+        H1. The pending deliveries a VERIFIED driver could grab, as COARSE cards
+        only — distance-to-pickup, the driver's cut, and COD y/n. NO exact address,
+        landmark, or contact pre-claim; full detail is revealed only on claim. Flag +
+        supply gated: an empty list when the board is off or the driver is unverified.
+        Bounded to the 50 most recent pending jobs.
+      operationId: driverBoard
+      security:
+        - DriverBearerAuth: []
+      responses:
+        '200':
+          description: Coarse open-board cards (possibly empty).
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      required: [delivery_id, driver_fee_minor, cod]
+                      properties:
+                        delivery_id: { type: string, format: uuid }
+                        pickup_distance_km: { type: [number, "null"], description: "Straight-line km to pickup from the driver's last position; null if unknown." }
+                        driver_fee_minor: { type: integer, description: The driver's cut (minor units). }
+                        cod: { type: boolean, description: Whether the job carries cash-on-delivery. }
         '401': { $ref: '#/components/responses/Unauthorized' }
 
   /driver/profile:
@@ -907,7 +1100,8 @@ paths:
         Gophr-parity resettable timer. Pushes this driver's OWN live offer countdown
         forward once, with no acceptance-rate penalty. Only a still-offered, unexpired,
         never-reset offer qualifies; anything else (already reset, lapsed, claimed, or
-        not this driver's) returns 409. `id` is the delivery id.
+        not this driver's) returns 409. `id` is the delivery id (offers are keyed by
+        delivery + driver). Additive/expand-only — old clients simply never call it.
       operationId: driverResetOffer
       security:
         - DriverBearerAuth: []
@@ -927,39 +1121,6 @@ paths:
                 properties:
                   offer_expires_at: { type: string, format: date-time }
         '409': { description: The offer cannot be reset (already reset, lapsed, or claimed). }
-        '401': { $ref: '#/components/responses/Unauthorized' }
-
-  /driver/board:
-    get:
-      tags: [Driver]
-      summary: The open job board (coarse, PII-scoped)
-      description: >
-        H1. The pending deliveries a VERIFIED driver could grab, as COARSE cards
-        only — distance-to-pickup, the driver's cut, and COD y/n. NO exact address,
-        landmark, or contact pre-claim; full detail is revealed only on claim. Flag +
-        supply gated: an empty list when the board is off or the driver is unverified.
-        Bounded to the 50 most recent pending jobs.
-      operationId: driverBoard
-      security:
-        - DriverBearerAuth: []
-      responses:
-        '200':
-          description: Coarse open-board cards (possibly empty).
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  data:
-                    type: array
-                    items:
-                      type: object
-                      required: [delivery_id, driver_fee_minor, cod]
-                      properties:
-                        delivery_id: { type: string, format: uuid }
-                        pickup_distance_km: { type: [number, "null"], description: "Straight-line km to pickup from the driver's last position; null if unknown." }
-                        driver_fee_minor: { type: integer, description: The driver's cut (minor units). }
-                        cod: { type: boolean, description: Whether the job carries cash-on-delivery. }
         '401': { $ref: '#/components/responses/Unauthorized' }
 
   /driver/earnings:
@@ -1204,10 +1365,11 @@ paths:
       tags: [Driver]
       summary: Add a compatible job to the current run (batching)
       description: >
-        Claim a compatible job to ADD to the driver's in-progress run. Same result as
-        /claim but bounded to the concurrent-job limit and re-checks the combined COD across
-        all in-flight legs. 409 if at the limit, over the cap, on an auction, or not
-        claimable. Additive (A3) — old clients never call it.
+        Claim a compatible job to ADD to the driver's in-progress run (they're already on
+        one). Same result as /claim but bounded to the driver's concurrent-job limit and
+        re-checks the COMBINED COD across all their in-flight legs under lock. 409 if at the
+        limit, over the combined cap, on an auction, or not currently claimable. Additive
+        (A3) — old clients simply never call it.
       operationId: driverAppendDelivery
       security:
         - DriverBearerAuth: []
@@ -1231,9 +1393,11 @@ paths:
       tags: [Driver]
       summary: Grab a pending job from the open board
       description: >
-        GRAB a pending job off the open board — one the driver was NOT offered. Like /claim
-        but re-checks verification + vehicle capacity + the COD cap. 409 if the board is
-        closed, the job is gone / an auction, or the driver is ineligible. Additive (A3).
+        GRAB a pending job straight off the open board (see /driver/board) — one the driver
+        was NOT offered. Like /claim but re-checks verification + vehicle capacity + the COD
+        cap under lock. 409 if the board is closed, the job is gone / an auction, or the
+        driver is ineligible (unavailable / unverified / over capacity / over the COD cap).
+        Additive (A3) — old clients never call it.
       operationId: driverGrabDelivery
       security:
         - DriverBearerAuth: []
@@ -1528,7 +1692,12 @@ components:
       in: header
       required: false
       schema: { type: string, maxLength: 128 }
-      description: Replaying the same key returns the original delivery instead of creating a duplicate.
+      description: >-
+        Replaying the same key returns the original delivery instead of creating a
+        duplicate — but only while that delivery can still proceed. A key whose
+        delivery already ENDED (delivered/failed/cancelled/unassigned) is rejected
+        with 409: replaying it would silently re-attach a dead delivery to a retry.
+        Scope keys per dispatch attempt (e.g. suffix a retry counter).
 
   schemas:
     WebhookEndpoint:
@@ -1536,6 +1705,10 @@ components:
       properties:
         id: { type: string, format: uuid }
         url: { type: string, format: uri }
+        event_types:
+          type: [array, "null"]
+          items: { type: string }
+          description: Event-type filter; null = every event.
         created_at: { type: string, format: date-time }
     WebhookEndpointWithSecret:
       allOf:
@@ -1654,6 +1827,42 @@ components:
           format: uuid
           description: A fleet (owned by this tenant) to prefer under `dispatch_policy`.
 
+    CreateFleetRequest:
+      type: object
+      required: [name]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 120 }
+
+    AddFleetMemberRequest:
+      type: object
+      required: [phone]
+      properties:
+        phone:
+          type: string
+          description: The rider's phone (E.164-ish, the driver OTP-login key).
+        name:
+          type: string
+          maxLength: 120
+          description: Optional display name for a newly-provisioned driver.
+
+    Fleet:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        active: { type: boolean }
+        created_at: { type: string, format: date-time }
+
+    FleetMember:
+      type: object
+      description: A fleet rider + their onboarding/availability state.
+      properties:
+        driver_id: { type: string, format: uuid }
+        name: { type: string }
+        phone: { type: string }
+        verification_status: { type: string }
+        status: { type: string, description: "offline | available | busy" }
+
     DeliveryStatus:
       type: string
       enum: [pending, assigned, picked_up, in_transit, delivered, failed, unassigned, cancelled]
@@ -1723,6 +1932,13 @@ components:
         collect_minor:
           type: [integer, "null"]
           description: Cash-on-delivery amount (minor units); null = prepaid / nothing to collect.
+        cod_collected_minor:
+          type: [integer, "null"]
+          description: >-
+            Cash the courier actually BOOKED at completion (minor units). Present only
+            on `delivery.completed` webhook payloads (audit R6 write-back); absent/null
+            elsewhere. May differ from collect_minor (honest drivers enter what they
+            really took).
         opening_price_minor:
           type: [integer, "null"]
           description: >-
@@ -1744,8 +1960,8 @@ components:
           format: uuid
           description: >-
             F5 (batching): the legs of one driver's pooled run share this id; null on a
-            single-leg delivery. Additive — clients that ignore it treat each delivery as its
-            own run.
+            single-leg (non-batched) delivery. Additive — clients that ignore it treat every
+            delivery as its own run.
         batch_sequence:
           type: [integer, "null"]
           description: This leg's position (1, 2, …) within its batch; null when not batched.
@@ -2012,6 +2228,36 @@ components:
             the fallback. A match upgrades the PoD method to `otp`; a mismatch
             rejects the completion (400), capped at 5 attempts per delivery.
 
+    # ── Out-of-band transport payloads (documented 2026-07-05, audit R9) ─────────
+    # These ride transports OUTSIDE the REST paths (SSE streams, Expo push), but the
+    # SHAPES are contract: both consumer apps hand-parse them. Additive-only.
+    RealtimeEvent:
+      type: object
+      description: >-
+        SSE frame on GET /v1/realtime/deliveries/{id} (tenant, channel delivery:{id})
+        and GET /v1/driver/stream (driver, channel driver:{id}) — endpoints gated by
+        REALTIME_ENABLED and deliberately not modelled as REST paths. Types seen on
+        delivery:{id}: connected, heartbeat, delivery.picked_up/in_transit/failed/
+        completed/collect_updated (payload = Delivery), driver.location (payload =
+        {delivery_id, lat, lng}). On driver:{id}: connected, heartbeat, offer.new
+        (payload = {delivery_id}). Server heartbeats every ~25s; the driver app
+        treats 60s of silence as stale.
+      required: [type, timestamp]
+      properties:
+        type: { type: string }
+        timestamp: { type: string, format: date-time }
+        payload: { type: object, additionalProperties: true }
+    DriverPushData:
+      type: object
+      description: >-
+        The `data` payload of driver Expo push messages (Android channel id
+        'offers' — must match on both sides). Advisory only; the offers/active
+        polls remain the load-bearing source of truth.
+      required: [type]
+      properties:
+        type: { type: string, enum: [offer, assigned, cancelled, swept_offline] }
+        deliveryId: { type: string, format: uuid }
+
     WebhookEvent:
       type: object
       required: [id, type, created_at, data]
@@ -2031,11 +2277,20 @@ components:
             - delivery.auction_reverted  # ADR-036 T3: a no-clear customer-named auction reverted to a fixed-price delivery (fee_minor now the standard fare)
             - eta.updated
             - bid.updated
+            - delivery.collect_updated  # COD due-at-door amended by the tenant (audit R5); payload = the Delivery with the new collect_minor
         created_at: { type: string, format: date-time }
         data:
           type: object
           properties:
             delivery: { $ref: '#/components/schemas/Delivery' }
+          description: >-
+            For delivery.* and eta.updated the payload is the Delivery (eta.updated
+            adds eta_minutes; delivery.completed adds cod_collected_minor — the cash
+            the courier actually booked, for the tenant's own ledger write-back).
+            KNOWN DEVIATION: bid.updated currently ships a bid summary
+            ({delivery_id, bid_id, driver_id, price_minor, bid_type}) under this key,
+            not a Delivery — receivers should ignore event types they don't consume
+            (or register with an event_types filter).
 
     Error:
       type: object
