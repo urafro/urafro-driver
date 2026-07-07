@@ -43,7 +43,12 @@ export async function watchLocation(onChange: (c: Coords) => void): Promise<() =
 }
 
 export async function getCurrentLocation(): Promise<Coords | null> {
-  const { status } = await Location.requestForegroundPermissionsAsync();
+  // CHECK permission, don't RE-REQUEST it: every caller (go-online, the shift poll,
+  // reconcileShift) has already ensured it via ensureForegroundPermission(). A second
+  // requestForegroundPermissionsAsync() can surface/hang on a duplicate OS dialog on
+  // some Android devices — which latched the "Go online" spinner. getForegroundPermissions
+  // never blocks; a revoked-mid-shift permission → null → the "waiting for location" banner.
+  const { status } = await Location.getForegroundPermissionsAsync();
   if (status !== 'granted') return null;
   // Prefer the last known fix (instant) so going online isn't blocked on a cold GPS
   // lock — which can take 10s+ indoors and made the toggle feel hung / unresponsive.

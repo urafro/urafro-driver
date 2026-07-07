@@ -106,6 +106,10 @@ export default function HomeScreen({ focused }: { focused: boolean }) {
   const [online, setOnline] = useState(false);
   // null = not fetched yet (show "Checking for offers…"); [] = fetched, none nearby.
   const [offers, setOffers] = useState<Offer[] | null>(null);
+  // Did the last offers fetch fail? Distinguishes a genuine "loading" (offers null,
+  // no error) from a "can't reach the server, still retrying" — so the poll failing on
+  // flaky data never leaves an eternal "Checking for offers…" spinner with no explanation.
+  const [offersError, setOffersError] = useState(false);
   const [job, setJob] = useState<DriverDelivery | null>(null);
   // #66 (batching): does the platform allow concurrent runs (profile.max_concurrent_jobs>1)?
   // Default false ⇒ every batch path below is dormant and the app behaves byte-for-byte as a
@@ -236,6 +240,7 @@ export default function HomeScreen({ focused }: { focused: boolean }) {
         const { data } = await listOffers(token);
         const fresh = data ?? [];
         setOffers(fresh);
+        setOffersError(false); // a successful fetch clears any "can't reach the server" state
         // `silent` = refreshed because a push already notified the driver — just sync
         // the seen-set so the next poll doesn't fire a DUPLICATE local notification.
         // On a job (batch mode) also stay silent — don't buzz mid-run.
@@ -254,6 +259,7 @@ export default function HomeScreen({ focused }: { focused: boolean }) {
           await new Promise((r) => setTimeout(r, 700));
           return loadOffers(silent, retries - 1, reason);
         }
+        setOffersError(true); // gave up this round → the empty-state shows "retrying", not a stuck spinner
       }
     },
     [token, canBatch],
@@ -647,6 +653,7 @@ export default function HomeScreen({ focused }: { focused: boolean }) {
     setLocating(true);
     setError(null);
     setOffers(null); // show "Checking for offers…" until the first poll lands
+    setOffersError(false); // fresh shift → don't flash a stale "can't reach the server"
     setLocated(false); // re-prove location this shift (banner shows until the first ping lands)
     // Open the offers UI IMMEDIATELY (optimistic) — otherwise a push that lands during
     // the (possibly multi-second) go-online round-trip is fetched by the notification
@@ -666,6 +673,7 @@ export default function HomeScreen({ focused }: { focused: boolean }) {
         return;
       }
       const loc = await getCurrentLocation();
+      setLocating(false); // GPS phase done → the button flips from "Getting location…" to the POST spinner
       const state = await goOnline(token, loc ?? undefined);
       confirmedOnline = state.status !== 'offline';
       setOnline(confirmedOnline);
@@ -1297,11 +1305,16 @@ export default function HomeScreen({ focused }: { focused: boolean }) {
                 disabled={busy}
               >
                 {busy ? (
-                  <ActivityIndicator color={colors.btnPrimaryText} />
+                  // During go-online the GPS lock can take several seconds (cold/indoor);
+                  // say so instead of a bare spinner that reads as a hang. Falls to a plain
+                  // spinner for the short POST phase once located (locating cleared above).
+                  locating ? (
+                    <Text style={styles.toggleText}>Getting location…</Text>
+                  ) : (
+                    <ActivityIndicator color={colors.btnPrimaryText} />
+                  )
                 ) : (
-                  <Text style={styles.toggleText}>
-                    {locating ? 'Getting location…' : online ? 'Go offline' : 'Go online'}
-                  </Text>
+                  <Text style={styles.toggleText}>{online ? 'Go offline' : 'Go online'}</Text>
                 )}
               </Pressable>
               {online ? (
@@ -1331,7 +1344,9 @@ export default function HomeScreen({ focused }: { focused: boolean }) {
                     offers === null ? (
                       <View style={styles.checkingCard}>
                         <ActivityIndicator color={colors.textFaint} />
-                        <Text style={styles.checkingText}>Checking for offers…</Text>
+                        <Text style={styles.checkingText}>
+                          {offersError ? 'Can’t reach the server — retrying…' : 'Checking for offers…'}
+                        </Text>
                       </View>
                     ) : (
                       <OffersList
