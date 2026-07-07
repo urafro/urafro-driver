@@ -115,6 +115,12 @@ export default function HomeScreen({ focused }: { focused: boolean }) {
   // (unvalued vehicle → no collateral), so cash-collecting offers are filtered out server-side
   // while PREPAID offers still flow. null = not yet known (never flash the banner pre-load).
   const [codCap, setCodCap] = useState<number | null>(null);
+  // Located liveness: have we successfully sent a location ping THIS shift? The platform
+  // only offers deliveries to drivers with a non-null last_lat, and going online does NOT
+  // block on a GPS fix — so an online driver whose phone hasn't produced a fix (indoors /
+  // location off / cold GPS) is silently un-dispatchable. false while online ⇒ show the
+  // "waiting for your location" banner. Set true on any successful foreground ping.
+  const [located, setLocated] = useState(false);
   // #66: the driver's whole in-flight RUN (all legs, primary-first) when batching is on.
   // `job` stays the leg being worked (runLegs[0]); this drives the multi-stop run strip.
   const [runLegs, setRunLegs] = useState<DriverDelivery[] | null>(null);
@@ -207,9 +213,13 @@ export default function HomeScreen({ focused }: { focused: boolean }) {
       // An immediate liveness ping: resuming IS proof of life — refresh
       // lastSeenAt instantly so a near-stale shift survives the reopen.
       const loc = await getCurrentLocation();
-      if (loc) await updateLocation(token, loc.lat, loc.lng);
+      if (loc) {
+        await updateLocation(token, loc.lat, loc.lng);
+        setLocated(true); // the platform now has a position for us → dispatchable
+      }
     } else {
       setBgActive(false);
+      setLocated(false);
     }
   }, [token]);
 
@@ -486,7 +496,10 @@ export default function HomeScreen({ focused }: { focused: boolean }) {
     async function pingLocation() {
       try {
         const loc = await getCurrentLocation();
-        if (loc && !cancelled) await updateLocation(token, loc.lat, loc.lng);
+        if (loc && !cancelled) {
+          await updateLocation(token, loc.lat, loc.lng);
+          if (!cancelled) setLocated(true); // clears the "waiting for your location" banner
+        }
       } catch {
         // transient — the next tick retries
       }
@@ -634,6 +647,7 @@ export default function HomeScreen({ focused }: { focused: boolean }) {
     setLocating(true);
     setError(null);
     setOffers(null); // show "Checking for offers…" until the first poll lands
+    setLocated(false); // re-prove location this shift (banner shows until the first ping lands)
     // Open the offers UI IMMEDIATELY (optimistic) — otherwise a push that lands during
     // the (possibly multi-second) go-online round-trip is fetched by the notification
     // listener but stays HIDDEN behind the `online` render gate until getCurrentLocation
@@ -655,6 +669,9 @@ export default function HomeScreen({ focused }: { focused: boolean }) {
       const state = await goOnline(token, loc ?? undefined);
       confirmedOnline = state.status !== 'offline';
       setOnline(confirmedOnline);
+      // go-online already sent our position → seed `located` so the banner never flashes
+      // when we had a fix; a cold-GPS null leaves it false and the banner shows until a ping lands.
+      if (confirmedOnline && loc) setLocated(true);
     } catch {
       // go-online itself (permission → getCurrentLocation → the goOnline POST) failed —
       // drop the optimistic online and surface it. The advisory background-permission tail
@@ -695,6 +712,7 @@ export default function HomeScreen({ focused }: { focused: boolean }) {
       setOnline(false);
       setBgActive(false);
       setOffers(null);
+      setLocated(false);
     } catch {
       setError('Could not go offline — try again.');
     } finally {
@@ -1117,6 +1135,21 @@ export default function HomeScreen({ focused }: { focused: boolean }) {
           <Text style={styles.batteryBody}>
             Notifications are off, so you won&apos;t be alerted to new deliveries. Tap to open
             settings and allow them.
+          </Text>
+        </Pressable>
+      ) : null}
+      {/* Location liveness: online but the platform has no position for us yet, so NO offers
+          can reach us (matching requires a non-null last_lat). Actionable — tap to open
+          settings (turn location on / set it to precise). Clears on the first successful ping. */}
+      {!completed && online && !located ? (
+        <Pressable style={styles.batteryBanner} onPress={() => void Linking.openSettings()}>
+          <View style={styles.iconRow}>
+            <Feather name="map-pin" size={16} color={colors.batteryTitle} />
+            <Text style={styles.batteryTitle}>Waiting for your location</Text>
+          </View>
+          <Text style={styles.batteryBody}>
+            Offers can&apos;t reach you until your phone shares its GPS location. Make sure location is
+            on and precise, and you&apos;re in an open area — tap to open settings.
           </Text>
         </Pressable>
       ) : null}
