@@ -111,6 +111,10 @@ export default function HomeScreen({ focused }: { focused: boolean }) {
   // Default false ⇒ every batch path below is dormant and the app behaves byte-for-byte as a
   // single-job app (never polls offers while busy, never routes to /append, no run strip).
   const [canBatch, setCanBatch] = useState(false);
+  // COD eligibility (C8): the driver's collateral-backed cash cap. 0 = can't carry cash
+  // (unvalued vehicle → no collateral), so cash-collecting offers are filtered out server-side
+  // while PREPAID offers still flow. null = not yet known (never flash the banner pre-load).
+  const [codCap, setCodCap] = useState<number | null>(null);
   // #66: the driver's whole in-flight RUN (all legs, primary-first) when batching is on.
   // `job` stays the leg being worked (runLegs[0]); this drives the multi-stop run strip.
   const [runLegs, setRunLegs] = useState<DriverDelivery[] | null>(null);
@@ -194,6 +198,9 @@ export default function HomeScreen({ focused }: { focused: boolean }) {
     // #66 (batching): the platform capability gate. >1 unlocks the batch paths; at the
     // default 1 (or an old server that omits it) canBatch stays false — fully inert.
     setCanBatch((p.max_concurrent_jobs ?? 1) > 1);
+    // Track COD eligibility for the "cash jobs locked" banner below (reconcileShift is the
+    // profile choke point — runs on mount, focus/resume, and every 5th shift tick).
+    setCodCap(p.cod_cap_minor ?? null);
     if (onShift) {
       const alreadyStreaming = await isBackgroundActive();
       setBgActive(alreadyStreaming || (await startBackgroundLocation()));
@@ -1113,6 +1120,22 @@ export default function HomeScreen({ focused }: { focused: boolean }) {
           </Text>
         </Pressable>
       ) : null}
+      {/* COD-locked explainer (C8): the driver's cash cap is $0 (an unvalued vehicle → no
+          collateral), so cash-collecting offers are filtered out server-side. INFORMATIONAL —
+          prepaid offers still flow, so this must NOT read as "the feed is empty". The detail
+          (no vehicle vs awaiting valuation) lives on the Profile tab. */}
+      {!completed && online && codCap === 0 ? (
+        <View style={styles.codBanner}>
+          <View style={styles.iconRow}>
+            <Feather name="lock" size={16} color={colors.codText} />
+            <Text style={styles.codBannerTitle}>Cash jobs are locked</Text>
+          </View>
+          <Text style={styles.codBannerBody}>
+            Ops need to value your vehicle before you can carry cash. You&apos;ll still get prepaid
+            offers in the meantime — see Profile to set up cash-on-delivery.
+          </Text>
+        </View>
+      ) : null}
       {completed ? (
         <View style={styles.completeCard}>
           <View style={styles.completeCheck}>
@@ -1419,6 +1442,9 @@ const styles = StyleSheet.create({
   },
   batteryTitle: { ...typography.body, fontWeight: '700', color: colors.batteryTitle },
   batteryBody: { ...typography.caption, fontSize: 13, lineHeight: 18, color: colors.batteryBody, marginTop: space.xs },
+  codBanner: { backgroundColor: colors.codBg, borderRadius: radius.md, padding: 14, marginBottom: space.lg },
+  codBannerTitle: { ...typography.body, fontWeight: '700', color: colors.codText },
+  codBannerBody: { ...typography.caption, fontSize: 13, lineHeight: 18, color: colors.codText, marginTop: space.xs },
   // Payday moment (the loop's most motivating screen — previously silent).
   completeCard: { alignItems: 'center', paddingTop: space.xxl, gap: space.sm },
   completeCheck: {

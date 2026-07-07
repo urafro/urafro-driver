@@ -401,12 +401,23 @@ export default function ProfileScreen() {
                 verification tier goes up.
               </Text>
             </>
-          ) : (
+          ) : profile.vehicle == null ? (
+            // No vehicle on file → nothing for ops to value yet. Actionable (alert-circle).
             <View style={styles.codLocked}>
               <Feather name="alert-circle" size={18} color={colors.codText} />
               <Text style={styles.codLockedText}>
-                You can&apos;t carry cash-on-delivery jobs yet. Ask ops to value your vehicle so you can start
-                carrying COD.
+                Add your vehicle so ops can value it — then you can carry cash-on-delivery jobs.
+              </Text>
+            </View>
+          ) : (
+            // Vehicle on file but cap still $0 → awaiting the ops valuation. Waiting (clock).
+            // (A valued vehicle can also read $0 under a temporary ops cash restriction; rare,
+            // and this copy is a fine approximation for the pilot.)
+            <View style={styles.codLocked}>
+              <Feather name="clock" size={18} color={colors.codText} />
+              <Text style={styles.codLockedText}>
+                Your {profile.vehicle_label ?? 'vehicle'} is waiting on a value from ops. Once they value
+                it, you can start carrying cash-on-delivery jobs.
               </Text>
             </View>
           )}
