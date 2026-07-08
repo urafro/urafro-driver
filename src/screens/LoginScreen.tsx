@@ -237,8 +237,12 @@ const styles = StyleSheet.create({
   label: { ...typography.callout, fontWeight: '700', color: colors.textPrimary },
   helper: { ...typography.callout, color: colors.textMuted },
 
-  inputRow: { flexDirection: 'row', gap: space.sm },
+  // alignItems defaults to 'stretch', so if either box grows the other is dragged to
+  // match. Both boxes are pinned to a fixed height (below) so a paste can never stretch
+  // the row — the field can't grow, and the chip can't be stretched to follow it.
+  inputRow: { flexDirection: 'row', gap: space.sm, alignItems: 'center' },
   prefix: {
+    height: 48,
     justifyContent: 'center',
     paddingHorizontal: space.lg,
     backgroundColor: colors.surfaceAlt,
@@ -260,7 +264,7 @@ const styles = StyleSheet.create({
     paddingVertical: space.md,
     paddingHorizontal: space.lg,
   },
-  inputFlex: { flex: 1, minWidth: 0 },
+  inputFlex: { flex: 1, minWidth: 0, height: 48 }, // fixed, not minHeight — a paste can't grow it
   codeInput: {
     fontFamily: FONT,
     letterSpacing: 8,
