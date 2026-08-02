@@ -1,5 +1,18 @@
 # urAfro Driver — project instructions
 
+## START HERE — the cross-repo system map
+**The canonical architecture reference for the whole estate lives in the `urafro-next`
+repo: `docs/system-map.md`** (all four repos, both datastores, every seam and its
+credential, the load-bearing invariants — including this app's two hardest-won ones: the
+bodyless-POST `Content-Type` rule and `distanceInterval: 0`). **Read it before exploring
+the codebase.** It records the commit SHA each repo was verified against, so you can
+`git log <sha>..HEAD` instead of re-reading trees.
+Local path: `~/Documents/urafro-next/docs/system-map.md`.
+
+**STANDING RULE:** when a change alters the *system shape* — a new seam or credential, a
+contract change, a prod flag flip — update that file **in the same unit of work** and
+refresh its `Verified against` SHAs.
+
 ## Gophr-parity restructure — this repo's slice
 Part of a cross-repo restructure toward Gophr-parity (merchant ↔ driver fusion). The **canonical plan + rationale live in the `urafro-next` repo**: `docs/gophr-parity/{systems-design,stress-test,backlog}.md`. Board: https://github.com/orgs/urafro/projects/1 (open the "By wave" view).
 - **This repo's issues (driver app):** K2 #51 (component-test setup) · C4 #52 (live connection over the push+poll floor) · C5 #53 (realtime resilience + battery) · H2 #54 (driver "Available" tab) · F4 #55 (multi-leg sequenced run UI). All are sub-issues of platform epics in urafro-next (K, C, H, F).

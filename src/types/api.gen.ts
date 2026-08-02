@@ -1336,12 +1336,21 @@ export interface components {
             can_receive_payouts: boolean;
             can_handle_high_value_cod: boolean;
         };
+        /**
+         * @description The 5-class vehicle taxonomy (R25). Named so the enum has ONE definition — it is mirrored by VEHICLE_TYPES in code and CI-guarded for parity.
+         * @enum {string}
+         */
+        VehicleType: "bicycle" | "motorbike" | "car" | "van" | "foot" | "large_truck";
+        /**
+         * @description The whitelisted courier→recipient quick-messages (P2). There is no free-form body. Named so the enum has ONE definition — mirrored by COURIER_MESSAGE_TEMPLATES in code and CI-guarded for parity.
+         * @enum {string}
+         */
+        CourierMessageTemplate: "arriving" | "running_late" | "cant_find" | "cod_reminder";
         /** @description The driver's structured active vehicle (ADR-003 P0). */
         DriverVehicle: {
             /** Format: uuid */
             id: string;
-            /** @enum {string} */
-            type: "bicycle" | "motorbike" | "car" | "van" | "foot" | "large_truck";
+            type: components["schemas"]["VehicleType"];
             make?: string | null;
             model?: string | null;
             colour?: string | null;
@@ -1613,7 +1622,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        /** @description The fixed quote (minor units) */
+                        /** @description The fixed quote (minor units), cost-only. */
                         fee_minor: number;
                         distance_m: number;
                         /** @enum {string} */
@@ -1653,6 +1662,7 @@ export interface operations {
                     };
                 };
             };
+            400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
         };
     };
@@ -1901,7 +1911,10 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": {
-                    /** Format: uri */
+                    /**
+                     * Format: uri
+                     * @description Absolute http(s) URL. Other protocols and relative URLs are rejected with a 400.
+                     */
                     url: string;
                     /** @description Optional event-type filter: omitted/null = every event (the original behaviour). Values match emitted types literally, so new event types stay additive (unknown strings never match). */
                     event_types?: string[] | null;
@@ -1954,7 +1967,7 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": {
-                    /** @description E.164, e.g. +263771234567 */
+                    /** @description E.164, e.g. +263771234567. Enforced server-side — a non-matching value is a 400, not a silent no-op. */
                     phone: string;
                 };
             };
@@ -1985,9 +1998,9 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": {
-                    /** @description E.164. */
+                    /** @description E.164, e.g. +263771234567. */
                     phone: string;
-                    /** @description The 6-digit code. */
+                    /** @description Exactly 6 digits. */
                     code: string;
                 };
             };
@@ -2231,8 +2244,7 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": {
-                    /** @enum {string} */
-                    type: "bicycle" | "motorbike" | "car" | "van" | "foot" | "large_truck";
+                    type: components["schemas"]["VehicleType"];
                     make?: string;
                     model?: string;
                     colour?: string;
@@ -2615,7 +2627,7 @@ export interface operations {
                 };
             };
             401: components["responses"]["Unauthorized"];
-            /** @description The offer cannot be reset (already reset */
+            /** @description The offer cannot be reset (already reset, lapsed, or claimed). */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -3081,8 +3093,7 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": {
-                    /** @enum {string} */
-                    template: "arriving" | "running_late" | "cant_find" | "cod_reminder";
+                    template: components["schemas"]["CourierMessageTemplate"];
                 };
             };
         };

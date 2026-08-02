@@ -95,6 +95,21 @@ export default function EarningsScreen() {
         </View>
       ) : null}
 
+      {/* Referral credit. The server has always sent this, but the hand-written
+          Earnings type omitted the field, so it was invisible until 2026-08-01.
+          Stays hidden at zero — which is also the state while the reward is dark
+          (REFERRAL_REWARD_MINOR=0), so switching the reward on reveals it. */}
+      {earnings && earnings.referral_earned_minor > 0 ? (
+        <View style={styles.card}>
+          <Text style={styles.codTitle}>
+            Referral credit: {money(earnings.referral_earned_minor)}
+          </Text>
+          <Text style={styles.muted}>
+            Earned from drivers you referred. Paid out with your earnings.
+          </Text>
+        </View>
+      ) : null}
+
       {/* Illustrative weekly chart. There is no earnings-history endpoint yet, so the
           prior days are NOT real — to stay honest we show NO dollar figures on them
           and badge the card SAMPLE; only the day letters + relative bars hint at the

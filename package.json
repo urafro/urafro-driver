@@ -43,7 +43,7 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:component": "jest",
-    "gen:types": "openapi-typescript contract/v1.yaml -o src/types/api.gen.ts"
+    "gen:types": "openapi-typescript contract/v1.yaml -o src/types/api.gen.ts && node scripts/gen-contract-stamp.mjs contract/v1.yaml src/types/contract.stamp.ts"
   },
   "private": true
 }
