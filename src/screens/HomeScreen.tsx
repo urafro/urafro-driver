@@ -193,6 +193,11 @@ export default function HomeScreen({
   // Latest job, readable from inside the (token-scoped) flush interval.
   const jobRef = useRef<DriverDelivery | null>(null);
   jobRef.current = job;
+  // Same trick, for the flush closure: its effect deps are [token, performAction], so a
+  // bare `canBatch` captured there would be the mount-time value for the life of the
+  // screen — and canBatch flips from a SERVER field (max_concurrent_jobs), not a release.
+  const canBatchRef = useRef(false);
+  canBatchRef.current = canBatch;
 
   // Connectivity signal (Phase 2.4): when the link returns, drain the offline queue
   // IMMEDIATELY rather than waiting out the 12s flush interval — the whole reason the
@@ -287,9 +292,20 @@ export default function HomeScreen({
       // but the DOCUMENT-driven recompute does not, so a driver whose licence lapses is
       // still `available` and still streaming at the moment we route them out.
       await goOffline(token).catch(() => {}); // best-effort: a dead network must not block teardown
+      // RE-VALIDATE after the await. On a cold start the active-job restore is an async
+      // storage read racing this effect: reconcileShift can set lapsedStatus before the
+      // snapshot lands, so we may have entered the teardown believing the driver was
+      // clear and had a live delivery appear underneath us during a multi-second
+      // goOffline on 2G. Bail rather than kill the GPS on a run in progress.
+      if (jobRef.current) return;
       await stopBackgroundLocation().catch(() => {});
       setOnline(false);
       setBgActive(false);
+      // NB: the snapshot is NOT cleared here. The persist effect owns that key and has
+      // already cleared it — `job` went null in an earlier commit, and this effect only
+      // runs once `completed` is dismissed, later still. Clearing here would be a no-op
+      // in the normal flow and, in the mount window above, would delete a LIVE job's
+      // crash-recovery snapshot. One writer.
       await onProfileStale?.();
     })();
   }, [lapsedStatus, job, completed, staleSeq, token, onProfileStale]);
@@ -662,6 +678,12 @@ export default function HomeScreen({
       try {
         const queue = await loadQueue();
         if (queue.length === 0) return; // count already 0 in the queue store
+        // Read the job id and the queued payload BEFORE draining: flushActions can take
+        // many seconds on 2G (each action can burn the 10s request timeout), and the
+        // independent 15s active-job poll can null the job in that window — after which
+        // we would skip the reconcile and the payday card entirely.
+        const id = jobRef.current?.id;
+        const deliveredQueued = id != null ? queue.find((a) => a.deliveryId === id && a.action === 'delivered') : undefined;
         const remaining = await flushActions(queue, performAction, (expired) => {
           // Audit R12: a bounded queue must never let a money-bearing action vanish
           // silently — 24h unsynced means something is genuinely wrong, and the
@@ -680,13 +702,33 @@ export default function HomeScreen({
         await saveQueue(remaining); // publishes the new depth to the OfflineBanner
         if (cancelled) return;
 
-        const id = jobRef.current?.id;
         const synced =
           id != null && queue.some((a) => a.deliveryId === id) && !remaining.some((a) => a.deliveryId === id);
         if (synced && id) {
           try {
             const fresh = await getDelivery(token, id);
-            if (!cancelled) setJob(fresh.status === 'delivered' || fresh.status === 'failed' ? null : fresh);
+            if (!cancelled) {
+              // A delivery completed OFFLINE reaches this point instead of act()'s
+              // success path, which is where `completed` (the payday + cash-to-hand-in
+              // card) is normally set. Without this the card never appeared for an
+              // offline drop at all, and — since the verification hand-back waits on
+              // `completed` — a lapsed driver would be moved to Onboarding the instant a
+              // background flush landed, with the COD figure shown nowhere.
+              // SINGLE-LEG ONLY. act()'s batch branch banks each leg into
+              // runEarnedRef/runCodRef and pays out once the whole run ends; this path
+              // knows about one delivery id. Showing it during a batch would quote one
+              // leg's cash as the run's total (driver holding $80, card saying $50) and
+              // render "Delivered!" mid-run. Inert at the pilot's cap=1, but that cap is
+              // a server flag flip away — exactly the latent-bug-on-an-un-updatable-build
+              // shape this app cannot afford. The run-aware version belongs with Epic F.
+              if (fresh.status === 'delivered' && !canBatchRef.current) {
+                setCompleted({
+                  earnedMinor: fresh.driver_fee_minor ?? jobRef.current?.driver_fee_minor ?? null,
+                  codMinor: deliveredQueued?.codCollectedMinor ?? 0,
+                });
+              }
+              setJob(fresh.status === 'delivered' || fresh.status === 'failed' ? null : fresh);
+            }
           } catch (e) {
             // Clear only when the server SAYS it's not ours — a network blip here
             // must not wipe a live job (+ its snapshot); the active-job poll retries.
