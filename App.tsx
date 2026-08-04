@@ -32,7 +32,7 @@ const TABS: { key: Tab; label: string; icon: keyof typeof Feather.glyphMap }[] =
 // AppState listener are the on-shift liveness heartbeat; unmounting them while the
 // driver browses History would stop offer notifications and (eventually) get them
 // swept off shift. History/Profile mount fresh per visit (cheap; refetch on open).
-function Tabs() {
+function Tabs({ onProfileStale }: { onProfileStale: () => void | Promise<void> }) {
   const [tab, setTab] = useState<Tab>('shift');
   const { active } = useActiveJob();
   // Authoritative offline / queued-sync status, shown on EVERY tab (network hardening,
@@ -49,7 +49,7 @@ function Tabs() {
   return (
     <View style={styles.root}>
       <View style={[styles.screen, tab !== 'shift' && styles.hidden]}>
-        <HomeScreen focused={tab === 'shift'} />
+        <HomeScreen focused={tab === 'shift'} onProfileStale={onProfileStale} />
       </View>
       {tab === 'earnings' ? (
         <View style={styles.screen}>
@@ -139,7 +139,14 @@ function Root() {
   if (profile && profile.verification_status !== 'verified') {
     return <Onboarding token={session.token} profile={profile} onReload={loadProfile} />;
   }
-  return <Tabs />;
+  // A driver's verification can lapse WHILE they're in here (ops suspend, or a document
+  // re-upload drops them to in_review). Root only fetches the profile on mount, so
+  // without this they'd stay in the tabbed app — being refused by the server on every
+  // claim — until the app restarted. HomeScreen already re-fetches the profile on its
+  // shift tick; this lets it hand the decision back so the re-render routes them to
+  // Onboarding, which owns the per-state explanation. HomeScreen holds the call back
+  // while they're mid-delivery (see lib/verification).
+  return <Tabs onProfileStale={loadProfile} />;
 }
 
 export default function App() {
