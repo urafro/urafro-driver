@@ -8,6 +8,7 @@ import { ToastProvider, OfflineBanner } from './src/components/ui';
 import { useQueuedCount } from './src/hooks/useQueuedCount';
 import { getProfile, type DriverProfile } from './src/lib/api';
 import { onNotificationResponse } from './src/lib/notifications';
+import { loadActiveJob } from './src/lib/session';
 import { colors, FONT } from './src/theme';
 import LoginScreen from './src/screens/LoginScreen';
 import Onboarding from './src/screens/Onboarding';
@@ -107,9 +108,15 @@ function Root() {
   // undefined = not loaded yet · null = load failed/none · DriverProfile = decide
   const [profile, setProfile] = useState<DriverProfile | null | undefined>(undefined);
 
+  // undefined = snapshot not read yet. Whether the driver is holding a delivery, read
+  // from the SecureStore snapshot — the same one HomeScreen restores from after the OS
+  // kills the app mid-run (routine on low-end Android).
+  const [hasActiveJob, setHasActiveJob] = useState<boolean | undefined>(undefined);
+
   // Reset on any session change so a fresh sign-in re-decides from a clean spinner.
   useEffect(() => {
     setProfile(undefined);
+    setHasActiveJob(undefined);
   }, [session]);
 
   const loadProfile = useCallback(async () => {
@@ -122,9 +129,41 @@ function Root() {
     }
   }, [session]);
 
+  const refreshActiveJob = useCallback(async () => {
+    // The SecureStore READ must be inside the try, not just the parse: expo-secure-store
+    // throws (DecryptException, a missing/unknown scheme, GeneralSecurityException) as
+    // well as returning null. This is called as `void refreshActiveJob()`, so a rejection
+    // would leave hasActiveJob permanently `undefined` — and a non-verified driver would
+    // sit on the gate's spinner below forever, with no retry and no reachable Sign out,
+    // identically on every relaunch. Before this gate existed they reached Onboarding.
+    //
+    // Fails to FALSE, deliberately. A snapshot we cannot read is one HomeScreen cannot
+    // restore either (its restore has the same shape), so routing them to Tabs buys the
+    // driver nothing, while Onboarding at least keeps Sign out reachable.
+    let raw: string | null = null;
+    try {
+      raw = await loadActiveJob();
+      if (!raw) return setHasActiveJob(false);
+      const status = (JSON.parse(raw) as { status?: string }).status;
+      setHasActiveJob(status === 'assigned' || status === 'picked_up' || status === 'in_transit');
+    } catch {
+      setHasActiveJob(false); // unreadable or unparseable snapshot — treat as no job
+    }
+  }, []);
+
   useEffect(() => {
     void loadProfile();
-  }, [loadProfile]);
+    void refreshActiveJob();
+  }, [loadProfile, refreshActiveJob]);
+
+  // What HomeScreen calls when it believes a lapsed driver is clear. BOTH facts must be
+  // re-read: refreshing only the profile would leave `hasActiveJob` stale-true from the
+  // cold start, so Root would send them straight back to Tabs and HomeScreen would ask
+  // again — a re-fetch loop. HomeScreen clears the snapshot before calling, so this read
+  // is deterministic rather than racing its own persist effect.
+  const redecideRouting = useCallback(async () => {
+    await Promise.all([loadProfile(), refreshActiveJob()]);
+  }, [loadProfile, refreshActiveJob]);
 
   if (loading || (session && profile === undefined)) {
     return (
@@ -137,7 +176,24 @@ function Root() {
   // Not-yet-verified drivers (unverified / in_review / suspended / banned) get the
   // onboarding + verification flow; only `verified` reaches the tabbed app.
   if (profile && profile.verification_status !== 'verified') {
-    return <Onboarding token={session.token} profile={profile} onReload={loadProfile} />;
+    // THE MID-JOB EXCEPTION, applied at cold start too. Deciding on the profile alone
+    // sent a suspended driver whose app the OS killed mid-run straight to Onboarding:
+    // job snapshot unread, lifecycle buttons gone, offline queue undrained, and the
+    // customer's cash unaccounted for. urafro-next does not re-check verification on the
+    // lifecycle transitions — it expects them to finish — so let them.
+    // Only blocks the non-verified path; a verified driver never waits on this read.
+    if (hasActiveJob === undefined) {
+      return (
+        <View style={styles.loading}>
+          <ActivityIndicator color={colors.textPrimary} size="large" />
+        </View>
+      );
+    }
+    if (!hasActiveJob) {
+      return <Onboarding token={session.token} profile={profile} onReload={loadProfile} />;
+    }
+    // Holding a delivery → fall through to the tabbed app. They finish the run, then
+    // HomeScreen hands routing back here and this gate sends them to Onboarding.
   }
   // A driver's verification can lapse WHILE they're in here (ops suspend, or a document
   // re-upload drops them to in_review). Root only fetches the profile on mount, so
@@ -146,7 +202,7 @@ function Root() {
   // shift tick; this lets it hand the decision back so the re-render routes them to
   // Onboarding, which owns the per-state explanation. HomeScreen holds the call back
   // while they're mid-delivery (see lib/verification).
-  return <Tabs onProfileStale={loadProfile} />;
+  return <Tabs onProfileStale={redecideRouting} />;
 }
 
 export default function App() {
