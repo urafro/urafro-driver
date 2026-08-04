@@ -80,6 +80,7 @@ import ActiveJob, { type LifecycleAction, type ActionExtra } from '../components
 import ShiftStatus from '../components/ShiftStatus';
 import { OfferAlert, Text, type OfferAlertData } from '../components/ui';
 import { assignmentErrorCopy } from '../lib/assignment-errors';
+import { isBlockedFromJobs, verificationBannerCopy } from '../lib/verification';
 import { useIsStopped } from '../hooks/useIsStopped';
 import { useConnectivity } from '../hooks/useConnectivity';
 
@@ -99,7 +100,17 @@ const FLUSH_MS = 12000;
 // → claim → on a job. Lifecycle actions are 2G-resilient: a transient failure
 // queues the action and a background flush retries it until it lands (and then
 // reconciles the on-screen job). Location pings + offer polls degrade softly.
-export default function HomeScreen({ focused }: { focused: boolean }) {
+export default function HomeScreen({
+  focused,
+  onProfileStale,
+}: {
+  focused: boolean;
+  // Ask App's Root to re-decide routing (it re-fetches the profile). Called when this
+  // screen learns the driver is no longer `verified` AND holds no in-flight job — Root
+  // then renders Onboarding, which owns the per-state explanation. Optional so the
+  // screen still stands alone in tests.
+  onProfileStale?: () => void | Promise<void>;
+}) {
   const { session } = useSession();
   const token = session?.token ?? '';
   const { setActive } = useActiveJob();
@@ -120,6 +131,16 @@ export default function HomeScreen({ focused }: { focused: boolean }) {
   // (unvalued vehicle → no collateral), so cash-collecting offers are filtered out server-side
   // while PREPAID offers still flow. null = not yet known (never flash the banner pre-load).
   const [codCap, setCodCap] = useState<number | null>(null);
+  // Verification that lapsed WHILE in the tabbed app. Non-null ⇒ the platform will refuse
+  // this driver new jobs. Mid-run it renders the banner; once they're clear the effect
+  // below hands routing back to Root, which sends them to Onboarding.
+  const [lapsedStatus, setLapsedStatus] = useState<string | null>(null);
+  // Bumped by every reconcile that SEES a lapse. Without it the hand-back fires exactly
+  // once: `lapsedStatus` re-sets to an identical string (React bails), `job` stays null
+  // because the server refuses every claim, and `onProfileStale` is stable — so one
+  // failed re-fetch on a 2G dropout froze all three deps and silently restored the old
+  // "stuck in the tabbed app until restart" bug. This re-arms it each tick.
+  const [staleSeq, setStaleSeq] = useState(0);
   // Located liveness: have we successfully sent a location ping THIS shift? The platform
   // only offers deliveries to drivers with a non-null last_lat, and going online does NOT
   // block on a GPS fix — so an online driver whose phone hasn't produced a fix (indoors /
@@ -212,6 +233,22 @@ export default function HomeScreen({ focused }: { focused: boolean }) {
     // Track COD eligibility for the "cash jobs locked" banner below (reconcileShift is the
     // profile choke point — runs on mount, focus/resume, and every 5th shift tick).
     setCodCap(p.cod_cap_minor ?? null);
+
+    // Verification that lapsed mid-session. This profile fetch already carried the answer
+    // and used to discard it, so a driver suspended (or bounced to in_review by their own
+    // document re-upload) stayed in the tabbed app being refused on every claim until the
+    // app was restarted — App.tsx only decides routing on mount.
+    //
+    // RECORD ONLY. The route-or-warn decision belongs to the effect below, which reads
+    // settled state; deciding it inline here would race the active-job restore (an async
+    // storage read on mount). If this fetch won that race, a driver who IS mid-run would
+    // look job-less and get bounced out of a live delivery.
+    if (isBlockedFromJobs(p.verification_status)) {
+      setLapsedStatus(p.verification_status ?? 'unverified');
+      setStaleSeq((n) => n + 1); // re-arm the hand-back even if the status string is unchanged
+    } else {
+      setLapsedStatus(null);
+    }
     if (onShift) {
       const alreadyStreaming = await isBackgroundActive();
       setBgActive(alreadyStreaming || (await startBackgroundLocation()));
@@ -227,6 +264,35 @@ export default function HomeScreen({ focused }: { focused: boolean }) {
       setLocated(false);
     }
   }, [token]);
+
+  // Hand routing back to App's Root once a lapsed driver is genuinely clear of their run.
+  // Keyed on `job` (settled React state), so it fires whenever the run ends — including
+  // when the storage restore lands after the profile fetch, and when they finish the
+  // delivery they were mid-way through. While `job` is non-null they keep working and see
+  // the banner instead: urafro-next does not re-check verification on the lifecycle
+  // transitions, so the server expects them to finish, and Onboarding has no job UI.
+  useEffect(() => {
+    // `job` null means "the delivery just ended", not "the driver is clear" — `completed`
+    // is set in the SAME commit as setJob(null) and holds the payday + COD-to-hand-in
+    // figures. In a batch that total is the only time the whole run's cash is shown.
+    // Unmounting over it would take it with us; "Back to offers" clears `completed` and
+    // re-fires this at a moment the driver has acknowledged.
+    if (!lapsedStatus || job || completed) return;
+    void (async () => {
+      // Wind the shift DOWN before handing routing back. Onboarding has no shift UI, and
+      // goOfflineNow (the End-shift button on this screen) is the app's ONLY caller of
+      // stopBackgroundLocation — unmount without this and the phone keeps streaming 15s
+      // GPS fixes behind a false "on shift" notification, unstoppable short of a
+      // reinstall. Not hypothetical: ops suspend/ban forces status='offline' server-side,
+      // but the DOCUMENT-driven recompute does not, so a driver whose licence lapses is
+      // still `available` and still streaming at the moment we route them out.
+      await goOffline(token).catch(() => {}); // best-effort: a dead network must not block teardown
+      await stopBackgroundLocation().catch(() => {});
+      setOnline(false);
+      setBgActive(false);
+      await onProfileStale?.();
+    })();
+  }, [lapsedStatus, job, completed, staleSeq, token, onProfileStale]);
 
   // Fetch offers NOW — called eagerly on open/resume (so a notification tap paints
   // the offer fast instead of waiting for the poll, which is itself gated behind
@@ -780,7 +846,7 @@ export default function HomeScreen({ focused }: { focused: boolean }) {
         // sweep took them off shift while backgrounded, so resync the toggle to truth.
         const { reason, message } = assignmentErrorCopy(e, 'claim');
         setError(message);
-        if (reason === 'off_shift') void reconcileShift().catch(() => {});
+        if (reason === 'off_shift' || reason === 'unverified') void reconcileShift().catch(() => {});
       } finally {
         setClaimingId(null);
       }
@@ -819,7 +885,7 @@ export default function HomeScreen({ focused }: { focused: boolean }) {
         console.warn('append failed:', e instanceof ApiError ? `${e.status} ${e.message}` : e);
         const { reason, message } = assignmentErrorCopy(e, 'append');
         setError(message);
-        if (reason === 'off_shift') void reconcileShift().catch(() => {});
+        if (reason === 'off_shift' || reason === 'unverified') void reconcileShift().catch(() => {});
       } finally {
         setClaimingId(null);
       }
@@ -850,7 +916,7 @@ export default function HomeScreen({ focused }: { focused: boolean }) {
         // online — which cannot fix lapsed paperwork. The classifier keeps them apart.
         const { reason, message } = assignmentErrorCopy(e, 'grab');
         setError(message);
-        if (reason === 'off_shift') void reconcileShift().catch(() => {});
+        if (reason === 'off_shift' || reason === 'unverified') void reconcileShift().catch(() => {});
       } finally {
         setClaimingId(null);
       }
@@ -1126,6 +1192,19 @@ export default function HomeScreen({ focused }: { focused: boolean }) {
             on and precise, and you&apos;re in an open area — tap to open settings.
           </Text>
         </Pressable>
+      ) : null}
+      {/* Verification lapsed MID-RUN. Only ever rendered while a leg is in flight — a
+          clear driver is routed to Onboarding instead (reconcileShift → onProfileStale),
+          which owns the full per-state screen. This is the only place they learn what
+          happened, so it leads with the delivery they still owe. */}
+      {job && lapsedStatus && verificationBannerCopy(lapsedStatus) ? (
+        <View style={styles.codBanner}>
+          <View style={styles.iconRow}>
+            <Feather name="alert-triangle" size={16} color={colors.codText} />
+            <Text style={styles.codBannerTitle}>{verificationBannerCopy(lapsedStatus)!.title}</Text>
+          </View>
+          <Text style={styles.codBannerBody}>{verificationBannerCopy(lapsedStatus)!.body}</Text>
+        </View>
       ) : null}
       {/* COD-locked explainer (C8): the driver's cash cap is $0 (an unvalued vehicle → no
           collateral), so cash-collecting offers are filtered out server-side. INFORMATIONAL —
