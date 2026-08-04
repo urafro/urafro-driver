@@ -79,6 +79,7 @@ import BoardList from '../components/BoardList';
 import ActiveJob, { type LifecycleAction, type ActionExtra } from '../components/ActiveJob';
 import ShiftStatus from '../components/ShiftStatus';
 import { OfferAlert, Text, type OfferAlertData } from '../components/ui';
+import { assignmentErrorCopy } from '../lib/assignment-errors';
 import { useIsStopped } from '../hooks/useIsStopped';
 import { useConnectivity } from '../hooks/useConnectivity';
 
@@ -772,23 +773,14 @@ export default function HomeScreen({ focused }: { focused: boolean }) {
         } catch {
           // recovery probe failed — fall through to the ordinary error handling
         }
-        if (e instanceof ApiError && e.status === 409) {
-          // The server distinguishes three 409s — so should the driver. The
-          // "not available" case means the sweep took them off shift while the
-          // app was backgrounded: say so, and resync the toggle to the truth.
-          if (e.message.includes('not available')) {
-            setError("You're off shift — go online again to receive and claim jobs.");
-            void reconcileShift().catch(() => {});
-          } else if (e.message.includes('no active offer')) {
-            setError('That offer expired — the next one will pop up here.');
-          } else {
-            setError('That job was just taken — try another.');
-          }
-        } else if (e instanceof ApiError) {
-          setError('Could not claim that job — please try again.');
-        } else {
-          setError('No connection — check your signal and try again.');
-        }
+        // One shared classifier across claim/append/grab (lib/assignment-errors). claim
+        // used to branch on only two of the server's 409s, so verification, vehicle
+        // capacity and the cash cap all landed on "just taken" — the driver kept tapping
+        // other jobs, failing every time, never told why. `off_shift` also means the
+        // sweep took them off shift while backgrounded, so resync the toggle to truth.
+        const { reason, message } = assignmentErrorCopy(e, 'claim');
+        setError(message);
+        if (reason === 'off_shift') void reconcileShift().catch(() => {});
       } finally {
         setClaimingId(null);
       }
@@ -825,26 +817,9 @@ export default function HomeScreen({ focused }: { focused: boolean }) {
         void loadOffers(true); // drop the accepted offer from the list
       } catch (e) {
         console.warn('append failed:', e instanceof ApiError ? `${e.status} ${e.message}` : e);
-        if (e instanceof ApiError && e.status === 409) {
-          if (e.message.includes('concurrent-job limit')) {
-            setError('Your run is full — finish a drop first.');
-          } else if (e.message.includes('capacity')) {
-            setError("That job won't fit your vehicle — try another.");
-          } else if (e.message.includes('COD')) {
-            setError("That job's cash is over your limit for this run — try another.");
-          } else if (e.message.includes('not available')) {
-            setError("You're off shift — go online again to take jobs.");
-            void reconcileShift().catch(() => {});
-          } else if (e.message.includes('no active offer')) {
-            setError('That offer expired — the next one will pop up here.');
-          } else {
-            setError('That job was just taken — try another.');
-          }
-        } else if (e instanceof ApiError) {
-          setError('Could not add that job — please try again.');
-        } else {
-          setError('No connection — check your signal and try again.');
-        }
+        const { reason, message } = assignmentErrorCopy(e, 'append');
+        setError(message);
+        if (reason === 'off_shift') void reconcileShift().catch(() => {});
       } finally {
         setClaimingId(null);
       }
@@ -871,20 +846,11 @@ export default function HomeScreen({ focused }: { focused: boolean }) {
         setOffers(null);
       } catch (e) {
         console.warn('grab failed:', e instanceof ApiError ? `${e.status} ${e.message}` : e);
-        if (e instanceof ApiError && e.status === 409) {
-          if (e.message.includes('not available') || e.message.includes('not verified')) {
-            setError("You're off shift — go online again to grab jobs.");
-            void reconcileShift().catch(() => {});
-          } else if (e.message.includes('COD') || e.message.includes('capacity')) {
-            setError("That job's too big for your cash limit or vehicle — try another.");
-          } else {
-            setError('That job was just taken — try another.');
-          }
-        } else if (e instanceof ApiError) {
-          setError('Could not grab that job — please try again.');
-        } else {
-          setError('No connection — check your signal and try again.');
-        }
+        // grab used to fold "not verified" in with "off shift" and tell the driver to go
+        // online — which cannot fix lapsed paperwork. The classifier keeps them apart.
+        const { reason, message } = assignmentErrorCopy(e, 'grab');
+        setError(message);
+        if (reason === 'off_shift') void reconcileShift().catch(() => {});
       } finally {
         setClaimingId(null);
       }
