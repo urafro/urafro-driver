@@ -6,5 +6,5 @@
 //
 // If this file changes, the contract changed. If it did NOT change after a
 // re-vendor, the vendored copy is byte-identical to what it was before.
-export const CONTRACT_VERSION = '1.11.0';
-export const CONTRACT_SHA256 = '5eb904a7bbfcc4b9cf8801476075c3b679acd4cc521fe209d51b2b425b68c285';
+export const CONTRACT_VERSION = '1.12.0';
+export const CONTRACT_SHA256 = 'b1a677ca444383588f10c698d7f5bb4ab93af24a69be3b44bca1a904d240bbf5';

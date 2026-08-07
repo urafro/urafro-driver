@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
 import { clearSession, loadSession, saveSession, type Session } from '../lib/session';
 import { setUnauthorizedHandler } from '../lib/api';
+import { unregisterForPush } from '../lib/notifications';
 
 // App-wide auth state. On mount it rehydrates the session from the secure store,
 // so a logged-in driver skips the login screen on relaunch. signIn/signOut
@@ -38,8 +39,24 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   }
 
   async function signOut(): Promise<void> {
+    // Capture the bearer before it's wiped, so we can drop this device's push token —
+    // without that a signed-out phone keeps waking up for the PREVIOUS driver's
+    // offers (the server keys push tokens on the token, not the session). Read from
+    // the store, not the `session` state: the 401 handler above holds a mount-time
+    // closure where `session` is still null.
+    //
+    // The read is BEST-EFFORT and must never gate the wipe: SecureStore rejects on
+    // keystore errors (a decrypt failure after the keystore is invalidated, an OS
+    // restore onto a new device), and a driver who taps "sign out" has to end up
+    // signed out even then. Worst case we lose the push cleanup, never the credential
+    // wipe, so the clear stays exactly as reliable as it was before this read existed.
+    const current = await loadSession().catch(() => null);
     await clearSession();
     setSession(null);
+    // Fired AFTER the clear and never awaited, so a dead network can't hang the
+    // sign-out and a 401 on the DELETE lands back here as a no-op. unregisterForPush
+    // swallows every failure.
+    if (current) void unregisterForPush(current.token);
   }
 
   return (

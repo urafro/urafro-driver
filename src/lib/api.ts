@@ -377,6 +377,21 @@ export function getEarnings(token: string): Promise<Earnings> {
   return request('/driver/earnings', { method: 'GET', token });
 }
 
+/** Per-day earnings behind the weekly chart — one bucket per day, OLDEST FIRST,
+ *  ending on today, with quiet days returned as zeros. Also derived from the
+ *  contract; `EarningsDay` is an index INTO that derived type, not a re-spelling. */
+export type EarningsHistory =
+  paths['/driver/earnings/history']['get']['responses'][200]['content']['application/json'];
+export type EarningsDay = EarningsHistory['days'][number];
+
+/** `days` is clamped server-side (1..31); omit it to take the server's default of 7. */
+export function getEarningsHistory(token: string, days?: number): Promise<EarningsHistory> {
+  return request(`/driver/earnings/history${days != null ? `?days=${days}` : ''}`, {
+    method: 'GET',
+    token,
+  });
+}
+
 export function registerPushToken(
   token: string,
   pushToken: string,

@@ -5,9 +5,21 @@ export interface Coords {
   lng: number;
 }
 
-// Foreground location only — background GPS (the hard part on low-end Android) is a
-// later phase. Requests permission on first use; returns null if denied or
-// unavailable so callers degrade gracefully (the driver just won't get offers).
+// The FOREGROUND half of location. The background half is shipped and lives in
+// `background-location.ts` (an expo-task-manager task started on go-online, which
+// keeps streaming fixes while the app is backgrounded or the screen is locked).
+//
+// The two run TOGETHER: the shift poll does NOT defer to the background task while it
+// is streaming. HomeScreen calls getCurrentLocation on every tick even then, because
+// the background stream stops ticking on a stationary phone (Samsung suppresses
+// same-position fixes at the system level) and the driver would go heartbeat-stale
+// and be swept off shift while staring at the open app. That invariant is
+// load-bearing: see the "ALWAYS ping location" comment on the poll in
+// `src/screens/HomeScreen.tsx` before changing anything here.
+//
+// Permission is requested on first use (ensureForegroundPermission / watchLocation;
+// getCurrentLocation only CHECKS it — see its own note); null is returned if denied
+// or unavailable so callers degrade gracefully (the driver just won't get offers).
 /** Request foreground location permission. Separated from getCurrentLocation so the
  *  caller can distinguish "permission denied" (block) from "no fix yet" (proceed —
  *  the background stream will supply a position). */

@@ -378,7 +378,7 @@ export interface paths {
         put?: never;
         /**
          * Register a webhook endpoint
-         * @description Register a URL to receive delivery.* events. The signing `secret` is returned ONCE — store it; every event carries an `X-Delivery-Signature: sha256=<hmac-hex>` header over the raw JSON body.
+         * @description Register a URL to receive delivery.* events. The signing `secret` is returned ONCE, so store it. Every event carries three headers: `X-Delivery-Signature: sha256=<hmac-hex>` over the raw JSON body (the legacy scheme, still sent), `X-Delivery-Timestamp: <unix seconds>` for when the bytes went on the wire, and `X-Delivery-Signature-V2: sha256=<hmac-hex>` over `<timestamp>.<raw body>`. Verify V2 and reject a timestamp outside a 5 minute window, which is what makes a captured event unreplayable. Verify against the EXACT bytes received, before parsing. New consumers should implement V2 only; the legacy header exists so an already-deployed receiver keeps working while both sides roll out, and it will be removed once no consumer needs it.
          */
         post: operations["createWebhookEndpoint"];
         delete?: never;
@@ -805,6 +805,26 @@ export interface paths {
          * @description All-time accrued payable balance (credits − debits on the driver_payable ledger account) plus today's earnings, where "today" is the Africa/Harare local day. Amounts are minor units.
          */
         get: operations["driverEarnings"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/driver/earnings/history": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The driver's per-day earnings history
+         * @description Daily totals from the same `driver_payable` ledger the summary folds, one bucket per day, OLDEST FIRST, ending on today. Days are the driver's region-local day (the launch region is UTC+2), so the last bucket always equals /driver/earnings `today_minor`. Every day in the window is returned, including days with no work (`earned_minor: 0`) — a new driver gets a flat week, not an empty array. Amounts are minor units in one currency, which the response names. Additive/expand-only — old clients simply never call it.
+         */
+        get: operations["driverEarningsHistory"];
         put?: never;
         post?: never;
         delete?: never;
@@ -2659,6 +2679,47 @@ export interface operations {
                         cod_owed_minor: number;
                         /** @description Unpaid two-sided referral credit owed to this driver (ADR-041); 0 while the reward is dark. */
                         referral_earned_minor: number;
+                        /** @example USD */
+                        currency: string;
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+        };
+    };
+    driverEarningsHistory: {
+        parameters: {
+            query?: {
+                /** @description How many days to return, ending today. Clamped server-side to 1..31; an absent or unparseable value falls back to 7. */
+                days?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Per-day earnings over the requested window. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @description One entry per day in the window, oldest first. */
+                        days: {
+                            /**
+                             * Format: date
+                             * @description The region-local calendar day, YYYY-MM-DD.
+                             */
+                            date: string;
+                            /** @description Credits minus debits on driver_payable that day; 0 for a day with no work. */
+                            earned_minor: number;
+                            /** @description Distinct deliveries credited that day (driver-level entries are not counted). */
+                            deliveries: number;
+                        }[];
+                        /** @description Sum of `earned_minor` across the window. */
+                        total_minor: number;
                         /** @example USD */
                         currency: string;
                     };
