@@ -83,7 +83,8 @@
           "photosPermission": "urAfro Driver accesses your photos so you can upload your ID and verification documents.",
           "cameraPermission": "urAfro Driver uses your camera to take a delivery photo as proof of delivery."
         }
-      ]
+      ],
+      "@sentry/react-native/expo"
     ],
     "extra": {
       "eas": {

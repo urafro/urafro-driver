@@ -117,6 +117,9 @@ this app is **reliable background GPS on low-end Android** (ADR-001 risk).
 - **expo-secure-store** for the bearer token (OS keystore, never plain storage)
 - **A thin fetch client** (`src/lib/api.ts`) — no SDK; mirrors the backend's ethos
 - **Contract-first:** API types are **generated** from `urafro-next/openapi/v1.yaml`, vendored here as `contract/v1.yaml`
+- **Crash reporting:** `@sentry/react-native` + its Expo config plugin, **inert until
+  `EXPO_PUBLIC_SENTRY_DSN` is set** and only reaching devices via a new EAS build.
+  Scrubs all PII before send (`src/lib/observability/`); activation steps in the README.
 
 ## Commands
 
@@ -139,6 +142,7 @@ src/components/         the shift + run surfaces; `ui/` holds the design-system 
 src/state/              session and active-job React contexts
 src/lib/api.ts          typed /v1/driver/* client
 src/lib/session.ts      secure token + driver-id storage
+src/lib/observability/  Sentry init (DSN-gated) + the PII scrubber it sends through
 src/theme.ts            design tokens — colours/type/spacing (CI rejects colour literals elsewhere)
 src/types/api.gen.ts    GENERATED from the OpenAPI contract — do not hand-edit
 contract/v1.yaml        vendored copy of urafro-next's /v1 contract
