@@ -5,6 +5,7 @@
   "dependencies": {
     "@expo/vector-icons": "^15.0.2",
     "@react-native-community/netinfo": "12.0.1",
+    "@sentry/react-native": "~7.11.0",
     "expo": "~56.0.8",
     "expo-audio": "~56.0.12",
     "expo-battery": "~56.0.4",
@@ -43,7 +44,8 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:component": "jest",
-    "gen:types": "openapi-typescript contract/v1.yaml -o src/types/api.gen.ts"
+    "gen:types": "openapi-typescript contract/v1.yaml -o src/types/api.gen.ts && node scripts/gen-contract-stamp.mjs contract/v1.yaml src/types/contract.stamp.ts"
   },
-  "private": true
+  "private": true,
+  "license": "UNLICENSED"
 }

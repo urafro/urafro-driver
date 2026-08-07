@@ -1,7 +1,7 @@
 import { Platform } from 'react-native';
 import * as Notifications from 'expo-notifications';
 import Constants from 'expo-constants';
-import { registerPushToken } from './api';
+import { registerPushToken, removePushToken } from './api';
 import { notifyPlace } from './format';
 
 // Driver notifications (ADR-002 Phase A.1, app half).
@@ -39,6 +39,17 @@ export async function ensureNotificationChannel(): Promise<void> {
   });
 }
 
+/** This device's Expo push token. Throws on Android until the FCM credential is
+ *  configured in EAS — expected pre-Firebase; the local path still notifies. */
+async function devicePushToken(): Promise<string> {
+  const projectId: string | undefined =
+    Constants.expoConfig?.extra?.eas?.projectId ?? Constants.easConfig?.projectId;
+  const expoToken = await Notifications.getExpoPushTokenAsync(
+    projectId ? { projectId } : undefined,
+  );
+  return expoToken.data;
+}
+
 /**
  * Ask notification permission (Android 13+ shows a real prompt) and register
  * this device's Expo push token with the platform. Safe to call repeatedly;
@@ -49,17 +60,26 @@ export async function registerForPush(token: string): Promise<boolean> {
     await ensureNotificationChannel();
     const perm = await Notifications.requestPermissionsAsync();
     if (!perm.granted) return false;
-    const projectId: string | undefined =
-      Constants.expoConfig?.extra?.eas?.projectId ?? Constants.easConfig?.projectId;
-    // Throws on Android until the FCM credential is configured in EAS — expected
-    // pre-Firebase; the local path still notifies.
-    const expoToken = await Notifications.getExpoPushTokenAsync(
-      projectId ? { projectId } : undefined,
-    );
-    await registerPushToken(token, expoToken.data, Platform.OS === 'ios' ? 'ios' : 'android');
+    await registerPushToken(token, await devicePushToken(), Platform.OS === 'ios' ? 'ios' : 'android');
     return true;
   } catch {
     return false;
+  }
+}
+
+/**
+ * The mirror of registerForPush, called on sign-out: drop THIS device's push token
+ * from the driver's account so a signed-out phone stops waking up for the previous
+ * driver's offers. The server keys tokens on the token itself, so leaving it behind
+ * means a handed-over or shared phone keeps buzzing for someone who is no longer
+ * logged in. Best-effort in the same spirit as registerForPush — never throws, so
+ * sign-out can fire it and move on without waiting for the network.
+ */
+export async function unregisterForPush(token: string): Promise<void> {
+  try {
+    await removePushToken(token, await devicePushToken());
+  } catch {
+    // push cleanup is advisory — never let it hold up (or fail) a sign-out
   }
 }
 

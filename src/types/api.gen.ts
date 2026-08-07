@@ -378,7 +378,7 @@ export interface paths {
         put?: never;
         /**
          * Register a webhook endpoint
-         * @description Register a URL to receive delivery.* events. The signing `secret` is returned ONCE — store it; every event carries an `X-Delivery-Signature: sha256=<hmac-hex>` header over the raw JSON body.
+         * @description Register a URL to receive delivery.* events. The signing `secret` is returned ONCE, so store it. Every event carries three headers: `X-Delivery-Signature: sha256=<hmac-hex>` over the raw JSON body (the legacy scheme, still sent), `X-Delivery-Timestamp: <unix seconds>` for when the bytes went on the wire, and `X-Delivery-Signature-V2: sha256=<hmac-hex>` over `<timestamp>.<raw body>`. Verify V2 and reject a timestamp outside a 5 minute window, which is what makes a captured event unreplayable. Verify against the EXACT bytes received, before parsing. New consumers should implement V2 only; the legacy header exists so an already-deployed receiver keeps working while both sides roll out, and it will be removed once no consumer needs it.
          */
         post: operations["createWebhookEndpoint"];
         delete?: never;
@@ -805,6 +805,26 @@ export interface paths {
          * @description All-time accrued payable balance (credits − debits on the driver_payable ledger account) plus today's earnings, where "today" is the Africa/Harare local day. Amounts are minor units.
          */
         get: operations["driverEarnings"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/driver/earnings/history": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The driver's per-day earnings history
+         * @description Daily totals from the same `driver_payable` ledger the summary folds, one bucket per day, OLDEST FIRST, ending on today. Days are the driver's region-local day (the launch region is UTC+2), so the last bucket always equals /driver/earnings `today_minor`. Every day in the window is returned, including days with no work (`earned_minor: 0`) — a new driver gets a flat week, not an empty array. Amounts are minor units in one currency, which the response names. Additive/expand-only — old clients simply never call it.
+         */
+        get: operations["driverEarningsHistory"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1330,18 +1350,34 @@ export interface components {
             /** @enum {string} */
             status?: "available" | "offline" | "busy";
         };
+        /**
+         * @description Why `can_receive_payouts` is false. `payouts_not_configured` is a PLATFORM misconfiguration (the server cannot encrypt an account reference, so `POST /v1/driver/payout-methods` returns 503) and is NOT anything the driver can clear: surface it as "payouts are unavailable right now", never as a step for the courier to complete. The other three are driver state, already visible as `verification_status` / `kyc_tier` / the payout-methods list. Named so the enum has ONE definition: it is mirrored by PAYOUTS_BLOCKED_REASONS in code and CI-guarded for parity.
+         * @enum {string}
+         */
+        PayoutsBlockedReason: "payouts_not_configured" | "not_verified" | "kyc_tier_too_low" | "no_payout_method";
         /** @description Computed gates the app renders affordances off — never a single flag. P0 derives can_go_online from approval; later phases add payouts/COD. */
         DriverCapabilities: {
             can_go_online: boolean;
             can_receive_payouts: boolean;
             can_handle_high_value_cod: boolean;
+            /** @description Why `can_receive_payouts` is false; null when it is true. Advisory and additive: it never gates anything, and a client that ignores it behaves exactly as before. Added because a bare `false` was indistinguishable from a server misconfiguration that no courier could clear. */
+            payouts_blocked_reason?: components["schemas"]["PayoutsBlockedReason"] | null;
         };
+        /**
+         * @description The 5-class vehicle taxonomy (R25). Named so the enum has ONE definition — it is mirrored by VEHICLE_TYPES in code and CI-guarded for parity.
+         * @enum {string}
+         */
+        VehicleType: "bicycle" | "motorbike" | "car" | "van" | "foot" | "large_truck";
+        /**
+         * @description The whitelisted courier→recipient quick-messages (P2). There is no free-form body. Named so the enum has ONE definition — mirrored by COURIER_MESSAGE_TEMPLATES in code and CI-guarded for parity.
+         * @enum {string}
+         */
+        CourierMessageTemplate: "arriving" | "running_late" | "cant_find" | "cod_reminder";
         /** @description The driver's structured active vehicle (ADR-003 P0). */
         DriverVehicle: {
             /** Format: uuid */
             id: string;
-            /** @enum {string} */
-            type: "bicycle" | "motorbike" | "car" | "van" | "foot" | "large_truck";
+            type: components["schemas"]["VehicleType"];
             make?: string | null;
             model?: string | null;
             colour?: string | null;
@@ -1613,7 +1649,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        /** @description The fixed quote (minor units) */
+                        /** @description The fixed quote (minor units), cost-only. */
                         fee_minor: number;
                         distance_m: number;
                         /** @enum {string} */
@@ -1653,6 +1689,7 @@ export interface operations {
                     };
                 };
             };
+            400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
         };
     };
@@ -1901,7 +1938,10 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": {
-                    /** Format: uri */
+                    /**
+                     * Format: uri
+                     * @description Absolute http(s) URL. Other protocols and relative URLs are rejected with a 400.
+                     */
                     url: string;
                     /** @description Optional event-type filter: omitted/null = every event (the original behaviour). Values match emitted types literally, so new event types stay additive (unknown strings never match). */
                     event_types?: string[] | null;
@@ -1954,7 +1994,7 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": {
-                    /** @description E.164, e.g. +263771234567 */
+                    /** @description E.164, e.g. +263771234567. Enforced server-side — a non-matching value is a 400, not a silent no-op. */
                     phone: string;
                 };
             };
@@ -1985,9 +2025,9 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": {
-                    /** @description E.164. */
+                    /** @description E.164, e.g. +263771234567. */
                     phone: string;
-                    /** @description The 6-digit code. */
+                    /** @description Exactly 6 digits. */
                     code: string;
                 };
             };
@@ -2231,8 +2271,7 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": {
-                    /** @enum {string} */
-                    type: "bicycle" | "motorbike" | "car" | "van" | "foot" | "large_truck";
+                    type: components["schemas"]["VehicleType"];
                     make?: string;
                     model?: string;
                     colour?: string;
@@ -2615,7 +2654,7 @@ export interface operations {
                 };
             };
             401: components["responses"]["Unauthorized"];
-            /** @description The offer cannot be reset (already reset */
+            /** @description The offer cannot be reset (already reset, lapsed, or claimed). */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -2647,6 +2686,47 @@ export interface operations {
                         cod_owed_minor: number;
                         /** @description Unpaid two-sided referral credit owed to this driver (ADR-041); 0 while the reward is dark. */
                         referral_earned_minor: number;
+                        /** @example USD */
+                        currency: string;
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+        };
+    };
+    driverEarningsHistory: {
+        parameters: {
+            query?: {
+                /** @description How many days to return, ending today. Clamped server-side to 1..31; an absent or unparseable value falls back to 7. */
+                days?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Per-day earnings over the requested window. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @description One entry per day in the window, oldest first. */
+                        days: {
+                            /**
+                             * Format: date
+                             * @description The region-local calendar day, YYYY-MM-DD.
+                             */
+                            date: string;
+                            /** @description Credits minus debits on driver_payable that day; 0 for a day with no work. */
+                            earned_minor: number;
+                            /** @description Distinct deliveries credited that day (driver-level entries are not counted). */
+                            deliveries: number;
+                        }[];
+                        /** @description Sum of `earned_minor` across the window. */
+                        total_minor: number;
                         /** @example USD */
                         currency: string;
                     };
@@ -3081,8 +3161,7 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": {
-                    /** @enum {string} */
-                    template: "arriving" | "running_late" | "cant_find" | "cod_reminder";
+                    template: components["schemas"]["CourierMessageTemplate"];
                 };
             };
         };

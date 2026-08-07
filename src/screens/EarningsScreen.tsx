@@ -1,22 +1,34 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { Feather } from '@expo/vector-icons';
-import { getEarnings, type Earnings } from '../lib/api';
+import {
+  getEarnings,
+  getEarningsHistory,
+  type Earnings,
+  type EarningsHistory,
+} from '../lib/api';
 import { money } from '../lib/format';
 import { useSession } from '../state/session';
 import { colors, shadow, typography, space, radius } from '../theme';
 import { Text } from '../components/ui';
 import { animateNext } from '../lib/motion';
+import EarningsChart, { EARNINGS_HISTORY_DAYS } from '../components/EarningsChart';
 import PayoutScreen from './PayoutScreen';
 
-// A dedicated earnings view (the prototype's Earnings tab). The numbers are the
-// real GET /driver/earnings; the 7-day bars are illustrative — there's no
-// earnings-history endpoint yet, so they're seeded relative to today's real
-// total and labelled as a sample (not invented money the ledger doesn't have).
+// A dedicated earnings view (the prototype's Earnings tab). Every figure here is
+// real ledger money: the summary comes from GET /driver/earnings and the weekly
+// bars from GET /driver/earnings/history. The bars used to be hardcoded sample
+// data badged SAMPLE because no history endpoint existed (#50/#68) — the badge and
+// the invented numbers are gone with it.
+
 export default function EarningsScreen() {
   const { session } = useSession();
   const token = session?.token ?? '';
   const [earnings, setEarnings] = useState<Earnings | null>(null);
+  const [history, setHistory] = useState<EarningsHistory | null>(null);
+  const [historyFailed, setHistoryFailed] = useState(false);
+  // Bumped by the chart's Try again — re-runs the load effect without a remount.
+  const [reloadKey, setReloadKey] = useState(0);
   // Cash-out lives under the Earnings tab (no nav lib — the prototype groups it
   // here too); a local toggle swaps the dedicated Payout screen in and out.
   const [showPayout, setShowPayout] = useState(false);
@@ -24,30 +36,35 @@ export default function EarningsScreen() {
   useEffect(() => {
     if (!token) return;
     let cancelled = false;
-    void getEarnings(token)
-      .then(e => {
-        if (!cancelled) setEarnings(e);
-      })
-      .catch(() => {
-        // non-critical — the screen renders dashes until it loads
-      });
+    setHistoryFailed(false);
+    // One round trip each, in parallel: on a 3G uplink the two reads cost about what
+    // one did. allSettled, not all — a failed chart must not blank the live balance
+    // above it, and a failed summary must not blank the chart.
+    void Promise.allSettled([
+      getEarnings(token),
+      getEarningsHistory(token, EARNINGS_HISTORY_DAYS),
+    ]).then(([summary, week]) => {
+      if (cancelled) return;
+      if (summary.status === 'fulfilled') setEarnings(summary.value);
+      if (week.status === 'fulfilled') {
+        animateNext('base'); // the skeleton settles into the bars instead of popping
+        setHistory(week.value);
+      } else {
+        setHistoryFailed(true);
+      }
+    });
     return () => {
       cancelled = true;
     };
-  }, [token]);
+  }, [token, reloadKey]);
+
+  const retryHistory = useCallback(() => {
+    animateNext('base');
+    setHistoryFailed(false);
+    setReloadKey(k => k + 1);
+  }, []);
 
   const todayMinor = earnings?.today_minor ?? 0;
-  // Sample week ending on today's real total (no history endpoint — see label).
-  const week = [
-    { d: 'F', minor: 980 },
-    { d: 'Sa', minor: 1240 },
-    { d: 'Su', minor: 1620 },
-    { d: 'M', minor: 860 },
-    { d: 'Tu', minor: 1890 },
-    { d: 'W', minor: 1130 },
-    { d: 'Th', minor: todayMinor, today: true },
-  ];
-  const max = Math.max(1, ...week.map(w => w.minor));
 
   if (showPayout) {
     return (
@@ -95,36 +112,26 @@ export default function EarningsScreen() {
         </View>
       ) : null}
 
-      {/* Illustrative weekly chart. There is no earnings-history endpoint yet, so the
-          prior days are NOT real — to stay honest we show NO dollar figures on them
-          and badge the card SAMPLE; only the day letters + relative bars hint at the
-          shape of the real chart to come. */}
-      <View style={styles.card}>
-        <View style={styles.chartHead}>
-          <Text style={styles.cardLabel}>Last 7 days</Text>
-          <View style={styles.sampleBadge}>
-            <Text style={styles.sampleBadgeText}>SAMPLE</Text>
-          </View>
+      {/* Referral credit. The server has always sent this, but the hand-written
+          Earnings type omitted the field, so it was invisible until 2026-08-01.
+          Stays hidden at zero — which is also the state while the reward is dark
+          (REFERRAL_REWARD_MINOR=0), so switching the reward on reveals it. */}
+      {earnings && earnings.referral_earned_minor > 0 ? (
+        <View style={styles.card}>
+          <Text style={styles.codTitle}>
+            Referral credit: {money(earnings.referral_earned_minor)}
+          </Text>
+          <Text style={styles.muted}>
+            Earned from drivers you referred. Paid out with your earnings.
+          </Text>
         </View>
-        <View style={styles.chart}>
-          {week.map(w => (
-            <View key={w.d} style={styles.barCol}>
-              <View
-                style={[
-                  styles.bar,
-                  { height: Math.max(6, (w.minor / max) * 96) },
-                  w.today ? styles.barToday : styles.barOther,
-                ]}
-              />
-              <Text style={[styles.barDay, w.today && styles.barDayToday]}>{w.d}</Text>
-            </View>
-          ))}
-        </View>
-        <Text style={styles.sampleNote}>
-          An example of how your week will look — real daily earnings appear here once history
-          tracking lands.
-        </Text>
-      </View>
+      ) : null}
+
+      {/* The real weekly chart, straight off the payout ledger — loading, empty and
+          failed states all handled inside (see EarningsChart). It is deliberately a
+          separate read from the summary above, so a failed chart never blanks the
+          driver's live balance. */}
+      <EarningsChart history={history} failed={historyFailed} onRetry={retryHistory} />
 
       <Pressable
         style={styles.payoutCard}
@@ -174,17 +181,6 @@ const styles = StyleSheet.create({
   cardValue: { ...typography.heading, fontSize: 20, lineHeight: 26, color: colors.money },
   codCard: { backgroundColor: colors.batteryBg },
   codTitle: { ...typography.subheading, fontWeight: '700', color: colors.textPrimary },
-  chartHead: { flexDirection: 'row', alignItems: 'center', gap: space.sm },
-  sampleBadge: { backgroundColor: colors.surfaceAlt, borderRadius: radius.pill, paddingHorizontal: 10, paddingVertical: 3 },
-  sampleBadgeText: { ...typography.micro, letterSpacing: 0.6, color: colors.textMuted },
-  chart: { flexDirection: 'row', alignItems: 'flex-end', gap: space.sm, height: 120, marginTop: space.lg },
-  barCol: { flex: 1, alignItems: 'center', gap: space.xs },
-  bar: { width: '100%', borderTopLeftRadius: 6, borderTopRightRadius: 6 },
-  barToday: { backgroundColor: colors.tabActive },
-  barOther: { backgroundColor: colors.btnPrimaryBg },
-  barDay: { ...typography.caption, fontSize: 11, lineHeight: 14, color: colors.textFaint },
-  barDayToday: { color: colors.tabActive, fontWeight: '700' },
-  sampleNote: { ...typography.caption, color: colors.textFaint, marginTop: space.md },
   payoutCard: {
     flexDirection: 'row',
     alignItems: 'center',

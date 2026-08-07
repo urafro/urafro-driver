@@ -2,10 +2,13 @@ import type { components } from '../types/api.gen';
 
 type Geo = components['schemas']['GeoLocation'];
 
-// API money amounts are minor units (USD cents).
+// API money amounts are minor units (USD cents). A negative amount (a correction or
+// clawback on the earnings ledger) leads with the sign — "-$2.50", never "$-2.50",
+// which reads as a rendering bug on a money screen rather than as money taken off.
 export function money(minor: number | null | undefined): string {
   if (minor == null) return '—';
-  return `$${(minor / 100).toFixed(2)}`;
+  const sign = minor < 0 ? '-' : '';
+  return `${sign}$${(Math.abs(minor) / 100).toFixed(2)}`;
 }
 
 // A human label for a stop: landmark first (critical in informal areas), then the
@@ -87,6 +90,21 @@ export function dayLabel(iso: string | null | undefined, nowMs: number = Date.no
   if (sameLocalDay(d, new Date(nowMs))) return 'Today';
   if (sameLocalDay(d, new Date(nowMs - 86_400_000))) return 'Yesterday';
   return d.toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' });
+}
+
+// ── Earnings chart ────────────────────────────────────────────────────────────
+
+const WEEKDAY_TAGS = ['Su', 'M', 'Tu', 'W', 'Th', 'F', 'Sa'];
+
+// The bar label for one day of the earnings chart, from the server's YYYY-MM-DD
+// calendar date. Parsed as LOCAL date PARTS on purpose: `new Date('2026-06-10')`
+// reads a bare date as UTC midnight, which slides the weekday by one anywhere west
+// of Greenwich — a bar labelled with the wrong day is worse than no label. '' if the
+// date is unparseable, so a malformed row loses its tag rather than the whole chart.
+export function weekdayTag(date: string | null | undefined): string {
+  const [y, m, d] = (date ?? '').split('-').map(Number);
+  if (!y || !m || !d) return '';
+  return WEEKDAY_TAGS[new Date(y, m - 1, d).getDay()];
 }
 
 function sameLocalDay(a: Date, b: Date): boolean {

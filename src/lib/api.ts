@@ -1,10 +1,20 @@
 import { API_V1 } from '../config';
-import type { components } from '../types/api.gen';
+import type { components, paths } from '../types/api.gen';
 
 // Typed client for the urAfro Next /v1/driver/* API. Response shapes come straight
 // from the platform's OpenAPI contract (src/types/api.gen.ts, regenerated via
 // `npm run gen:types`), so the client can never drift from the server. A plain
 // fetch wrapper — no SDK — mirroring the backend's own ethos.
+//
+// EVERY exported wire type below is DERIVED from the generated types — never
+// hand-written, even when the contract has no named component for it (use a
+// `paths[...]` lookup instead, as BoardJob and HistoryItem do).
+//
+// This rule exists because hand-written mirrors DID drift, silently: `Earnings`
+// omitted `referral_earned_minor` for its whole life, so referral credit could
+// never appear in the app. CI could not catch it — the "Contract types in sync"
+// gate only regenerates api.gen.ts and never checked that hand-written types
+// agreed with it. A derived alias makes the compiler the gate.
 
 type Schemas = components['schemas'];
 export type Delivery = Schemas['Delivery'];
@@ -113,13 +123,13 @@ export function listOffers(token: string): Promise<{ data: Offer[] }> {
 // H2: the open job board — COARSE pending jobs a verified driver could grab (distance,
 // the driver's cut, COD y/n; NO address/contact pre-claim). Full detail is revealed only
 // on claim (reuses claimDelivery). Empty when the board flag is off / the driver's
-// unverified. Mirrors the contract's inline board item (no named component).
-export interface BoardJob {
-  delivery_id: string;
-  pickup_distance_km?: number | null;
-  driver_fee_minor: number;
-  cod: boolean;
-}
+// unverified.
+//
+// DERIVED from the contract's inline board item, not hand-written — see the note at the
+// top of this file about why every one of these is now a lookup.
+export type BoardJob = NonNullable<
+  paths['/driver/board']['get']['responses'][200]['content']['application/json']['data']
+>[number];
 export function getBoard(token: string): Promise<{ data: BoardJob[] }> {
   return request('/driver/board', { method: 'GET', token });
 }
@@ -194,21 +204,12 @@ export function markDelivered(
 /** Presigned PUT to upload a proof-of-delivery photo for an active job (ADR-041/R11).
  *  The driver PUTs the bytes to `upload.url`, then marks delivered with method='photo'
  *  (the server stamps the deterministic key). 503 when photo storage is unconfigured. */
-export interface PodPhotoUpload {
-  storage_key: string;
-  upload: { url: string; method: 'PUT'; expires_in: number };
-}
+export type PodPhotoUpload = Schemas['PresignedUpload'];
 export function getPodPhotoUrl(token: string, id: string): Promise<PodPhotoUpload> {
   return request(`/driver/deliveries/${id}/pod-photo-url`, { method: 'POST', token });
 }
 
-export type FailureReason =
-  | 'customer_unreachable'
-  | 'wrong_address'
-  | 'customer_refused'
-  | 'cash_refused'
-  | 'vehicle_problem'
-  | 'other';
+export type FailureReason = Schemas['FailureReason'];
 
 export function markFailed(token: string, id: string, reason?: FailureReason): Promise<DriverDelivery> {
   return request(`/driver/deliveries/${id}/failed`, {
@@ -331,17 +332,13 @@ export function putVehicle(
 }
 
 // ── History + decline (ADR-002 B) ─────────────────────────────────────────────
-export type PodMethod = 'photo' | 'signature' | 'otp' | 'manual';
+export type PodMethod = NonNullable<Schemas['ProofOfDelivery']['method']>;
 
 /** A past job (the Jobs tab): the public delivery shape + the driver's cut + the
  *  per-job facts that make it a real work record — how it was confirmed, when it
  *  completed, and the cash actually collected. NO contacts (stale customer PII). */
-export type HistoryItem = Delivery & {
-  driver_fee_minor?: number | null;
-  pod_method?: PodMethod | null;
-  delivered_at?: string | null;
-  cod_collected_minor?: number | null;
-};
+export type HistoryItem =
+  paths['/driver/deliveries']['get']['responses'][200]['content']['application/json']['data'][number];
 
 /** A page of job history. Pass `opts.before` = the previous page's `next_before`
  *  (opaque cursor) to load older jobs; `next_before` is null when there are none. */
@@ -369,16 +366,30 @@ export function resetOffer(token: string, id: string): Promise<{ offer_expires_a
 }
 
 // ── Earnings + push (ADR-002 A.1/A.4) ────────────────────────────────────────
-export interface Earnings {
-  payable_minor: number;
-  today_minor: number;
-  today_deliveries: number;
-  cod_owed_minor: number;
-  currency: string;
-}
+// Was hand-written, and had silently DRIFTED: it omitted `referral_earned_minor`,
+// which the contract marks required and the server has always returned. The screen
+// therefore could not show referral credit at all. Derived from the contract now, so
+// the compiler catches the next one.
+export type Earnings =
+  paths['/driver/earnings']['get']['responses'][200]['content']['application/json'];
 
 export function getEarnings(token: string): Promise<Earnings> {
   return request('/driver/earnings', { method: 'GET', token });
+}
+
+/** Per-day earnings behind the weekly chart — one bucket per day, OLDEST FIRST,
+ *  ending on today, with quiet days returned as zeros. Also derived from the
+ *  contract; `EarningsDay` is an index INTO that derived type, not a re-spelling. */
+export type EarningsHistory =
+  paths['/driver/earnings/history']['get']['responses'][200]['content']['application/json'];
+export type EarningsDay = EarningsHistory['days'][number];
+
+/** `days` is clamped server-side (1..31); omit it to take the server's default of 7. */
+export function getEarningsHistory(token: string, days?: number): Promise<EarningsHistory> {
+  return request(`/driver/earnings/history${days != null ? `?days=${days}` : ''}`, {
+    method: 'GET',
+    token,
+  });
 }
 
 export function registerPushToken(

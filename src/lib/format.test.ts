@@ -10,6 +10,7 @@ import {
   podMethodLabel,
   dayLabel,
   timeLabel,
+  weekdayTag,
 } from './format';
 
 describe('money', () => {
@@ -17,6 +18,12 @@ describe('money', () => {
     expect(money(2000)).toBe('$20.00');
     expect(money(150)).toBe('$1.50');
     expect(money(0)).toBe('$0.00');
+  });
+
+  it('leads a negative amount with the sign, not the dollar', () => {
+    // A clawback outrunning a day's credits. "$-2.50" reads as a broken figure.
+    expect(money(-250)).toBe('-$2.50');
+    expect(money(-1)).toBe('-$0.01');
   });
 
   it('shows a dash for null / undefined', () => {
@@ -145,5 +152,26 @@ describe('timeLabel', () => {
   it('returns "" for a missing timestamp', () => {
     expect(timeLabel(null)).toBe('');
     expect(timeLabel(undefined)).toBe('');
+  });
+});
+
+describe('weekdayTag', () => {
+  it('tags each weekday distinctly (Tu/Th and Sa/Su never collide)', () => {
+    // 2026-06-08 is a Monday.
+    expect(
+      ['08', '09', '10', '11', '12', '13', '14'].map((d) => weekdayTag(`2026-06-${d}`)),
+    ).toEqual(['M', 'Tu', 'W', 'Th', 'F', 'Sa', 'Su']);
+  });
+
+  it('reads the date as local parts, not UTC midnight', () => {
+    // `new Date('2026-06-14')` is UTC midnight, which is still the 13th (a Saturday)
+    // anywhere west of Greenwich. The tag must follow the calendar date it was given.
+    expect(weekdayTag('2026-06-14')).toBe('Su');
+  });
+
+  it('drops the tag rather than the chart when the date is unusable', () => {
+    expect(weekdayTag('')).toBe('');
+    expect(weekdayTag(null)).toBe('');
+    expect(weekdayTag('not-a-date')).toBe('');
   });
 });

@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: urAfro Next API
-  version: "1.10.0"
+  version: "1.13.0"
   description: >
     Crowdsourced last-mile delivery platform. A monetised delivery API, live in
     production. This file is the source of truth for the `/v1` surface; the NestJS
@@ -72,10 +72,10 @@ paths:
                 type: object
                 required: [fee_minor, distance_m, distance_source, ceiling_minor, rationale]
                 properties:
-                  fee_minor: { type: integer, description: The fixed quote (minor units), cost-only. }
+                  fee_minor: { type: integer, description: "The fixed quote (minor units), cost-only." }
                   distance_m: { type: integer }
                   distance_source: { type: string, enum: [osrm, haversine] }
-                  ceiling_minor: { type: integer, description: Fraud-guard ceiling (10× cost); never binds a real fare. }
+                  ceiling_minor: { type: integer, description: "Fraud-guard ceiling (10× cost); never binds a real fare." }
                   max_fee_minor: { type: integer, description: "E2 (optional): the merchant-authorized surge ceiling — the most the fee could reach with surge (fee_minor × maxMultiplier), or == fee_minor when surge is off. Static (fee + config, never live supply) → the quote stays symmetric. Older clients ignore it." }
                   rationale: { type: string }
         '400': { $ref: '#/components/responses/BadRequest' }
@@ -129,6 +129,7 @@ paths:
                   data:
                     type: array
                     items: { $ref: '#/components/schemas/Delivery' }
+        '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
 
   /deliveries/{id}:
@@ -386,7 +387,7 @@ paths:
                 type: object
                 properties:
                   data: { type: array, items: { $ref: '#/components/schemas/FleetMember' } }
-        '404': { description: Fleet not found. }
+        '404': { description: "Fleet not found." }
         '401': { $ref: '#/components/responses/Unauthorized' }
     post:
       tags: [Fleets]
@@ -410,7 +411,7 @@ paths:
                 properties:
                   driver_id: { type: string, format: uuid }
                   created: { type: boolean, description: "true if a new driver row was provisioned" }
-        '404': { description: Fleet not found. }
+        '404': { description: "Fleet not found." }
         '401': { $ref: '#/components/responses/Unauthorized' }
 
   /fleets/{fleetId}/members/{driverId}:
@@ -427,8 +428,8 @@ paths:
           required: true
           schema: { type: string, format: uuid }
       responses:
-        '204': { description: Removed. }
-        '404': { description: Fleet not found. }
+        '204': { description: "Removed." }
+        '404': { description: "Fleet not found." }
         '401': { $ref: '#/components/responses/Unauthorized' }
 
   /webhook-endpoints:
@@ -437,8 +438,16 @@ paths:
       summary: Register a webhook endpoint
       description: >
         Register a URL to receive delivery.* events. The signing `secret` is
-        returned ONCE — store it; every event carries an
-        `X-Delivery-Signature: sha256=<hmac-hex>` header over the raw JSON body.
+        returned ONCE, so store it. Every event carries three headers:
+        `X-Delivery-Signature: sha256=<hmac-hex>` over the raw JSON body (the
+        legacy scheme, still sent), `X-Delivery-Timestamp: <unix seconds>` for
+        when the bytes went on the wire, and
+        `X-Delivery-Signature-V2: sha256=<hmac-hex>` over `<timestamp>.<raw body>`.
+        Verify V2 and reject a timestamp outside a 5 minute window, which is what
+        makes a captured event unreplayable. Verify against the EXACT bytes
+        received, before parsing. New consumers should implement V2 only; the
+        legacy header exists so an already-deployed receiver keeps working while
+        both sides roll out, and it will be removed once no consumer needs it.
       operationId: createWebhookEndpoint
       requestBody:
         required: true
@@ -448,7 +457,11 @@ paths:
               type: object
               required: [url]
               properties:
-                url: { type: string, format: uri }
+                url:
+                  type: string
+                  format: uri
+                  maxLength: 2048
+                  description: "Absolute http(s) URL. Other protocols and relative URLs are rejected with a 400."
                 event_types:
                   type: [array, "null"]
                   items: { type: string, maxLength: 64 }
@@ -493,7 +506,7 @@ paths:
           required: true
           schema: { type: string, format: uuid }
       responses:
-        '204': { description: Deleted. }
+        '204': { description: "Deleted." }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '404': { $ref: '#/components/responses/NotFound' }
 
@@ -518,7 +531,10 @@ paths:
               type: object
               required: [phone]
               properties:
-                phone: { type: string, description: 'E.164, e.g. +263771234567' }
+                phone:
+                  type: string
+                  pattern: '^\+[1-9]\d{6,14}$'
+                  description: "E.164, e.g. +263771234567. Enforced server-side — a non-matching value is a 400, not a silent no-op."
       responses:
         '202':
           description: If eligible, an OTP was sent.
@@ -547,8 +563,14 @@ paths:
               type: object
               required: [phone, code]
               properties:
-                phone: { type: string, description: 'E.164.' }
-                code: { type: string, description: 'The 6-digit code.' }
+                phone:
+                  type: string
+                  pattern: '^\+[1-9]\d{6,14}$'
+                  description: "E.164, e.g. +263771234567."
+                code:
+                  type: string
+                  pattern: '^\d{6}$'
+                  description: "Exactly 6 digits."
       responses:
         '200':
           description: Verified — bearer token issued.
@@ -624,7 +646,7 @@ paths:
                 lat: { type: number, format: double, minimum: -90, maximum: 90 }
                 lng: { type: number, format: double, minimum: -180, maximum: 180 }
       responses:
-        '204': { description: Recorded. }
+        '204': { description: "Recorded." }
         '401': { $ref: '#/components/responses/Unauthorized' }
 
   /driver/offers:
@@ -679,8 +701,8 @@ paths:
                       properties:
                         delivery_id: { type: string, format: uuid }
                         pickup_distance_km: { type: [number, "null"], description: "Straight-line km to pickup from the driver's last position; null if unknown." }
-                        driver_fee_minor: { type: integer, description: The driver's cut (minor units). }
-                        cod: { type: boolean, description: Whether the job carries cash-on-delivery. }
+                        driver_fee_minor: { type: integer, description: "The driver's cut (minor units)." }
+                        cod: { type: boolean, description: "Whether the job carries cash-on-delivery." }
         '401': { $ref: '#/components/responses/Unauthorized' }
 
   /driver/profile:
@@ -724,7 +746,7 @@ paths:
                 emergency_contact_name: { type: string, maxLength: 120 }
                 emergency_contact_phone: { type: string, maxLength: 40 }
       responses:
-        '204': { description: Updated. }
+        '204': { description: "Updated." }
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
 
@@ -764,7 +786,7 @@ paths:
               type: object
               required: [type]
               properties:
-                type: { type: string, enum: [bicycle, motorbike, car, van, foot, large_truck] }
+                type: { $ref: '#/components/schemas/VehicleType' }
                 make: { type: string, maxLength: 40 }
                 model: { type: string, maxLength: 40 }
                 colour: { type: string, maxLength: 30 }
@@ -820,7 +842,7 @@ paths:
                   maxItems: 50
                   items: { $ref: '#/components/schemas/ScheduleWindow' }
       responses:
-        '204': { description: Saved. }
+        '204': { description: "Saved." }
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
 
@@ -869,7 +891,7 @@ paths:
               schema: { $ref: '#/components/schemas/PresignedUpload' }
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
-        '503': { description: Document storage is not configured. }
+        '503': { description: "Document storage is not configured." }
 
   /driver/documents/confirm:
     post:
@@ -888,7 +910,7 @@ paths:
               properties:
                 document_id: { type: string, format: uuid }
       responses:
-        '204': { description: Confirmed. }
+        '204': { description: "Confirmed." }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '404': { $ref: '#/components/responses/NotFound' }
 
@@ -909,7 +931,7 @@ paths:
               properties:
                 version: { type: string, maxLength: 40 }
       responses:
-        '204': { description: Accepted. }
+        '204': { description: "Accepted." }
         '401': { $ref: '#/components/responses/Unauthorized' }
 
   /driver/payout-methods:
@@ -959,7 +981,7 @@ paths:
               schema: { $ref: '#/components/schemas/PayoutMethod' }
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
-        '503': { description: Payouts are not configured. }
+        '503': { description: "Payouts are not configured." }
 
   /driver/payout-methods/{id}/default:
     post:
@@ -974,7 +996,7 @@ paths:
           required: true
           schema: { type: string, format: uuid }
       responses:
-        '204': { description: Default updated. }
+        '204': { description: "Default updated." }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '404': { $ref: '#/components/responses/NotFound' }
 
@@ -1002,7 +1024,7 @@ paths:
                 stars: { type: integer, minimum: 1, maximum: 5 }
                 comment: { type: string, maxLength: 500 }
       responses:
-        '204': { description: Rated. }
+        '204': { description: "Rated." }
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '404': { $ref: '#/components/responses/NotFound' }
@@ -1089,7 +1111,7 @@ paths:
           required: true
           schema: { type: string, format: uuid }
       responses:
-        '204': { description: Declined (or already moot). }
+        '204': { description: "Declined (or already moot)." }
         '401': { $ref: '#/components/responses/Unauthorized' }
 
   /driver/offers/{id}/reset:
@@ -1120,7 +1142,7 @@ paths:
                 required: [offer_expires_at]
                 properties:
                   offer_expires_at: { type: string, format: date-time }
-        '409': { description: The offer cannot be reset (already reset, lapsed, or claimed). }
+        '409': { description: "The offer cannot be reset (already reset, lapsed, or claimed)." }
         '401': { $ref: '#/components/responses/Unauthorized' }
 
   /driver/earnings:
@@ -1155,6 +1177,61 @@ paths:
                   currency: { type: string, example: USD }
         '401': { $ref: '#/components/responses/Unauthorized' }
 
+  /driver/earnings/history:
+    get:
+      tags: [Driver]
+      summary: The driver's per-day earnings history
+      description: >
+        Daily totals from the same `driver_payable` ledger the summary folds, one
+        bucket per day, OLDEST FIRST, ending on today. Days are the driver's
+        region-local day (the launch region is UTC+2), so the last bucket always
+        equals /driver/earnings `today_minor`. Every day in the window is returned,
+        including days with no work (`earned_minor: 0`) — a new driver gets a flat
+        week, not an empty array. Amounts are minor units in one currency, which the
+        response names. Additive/expand-only — old clients simply never call it.
+      operationId: driverEarningsHistory
+      security:
+        - DriverBearerAuth: []
+      parameters:
+        - name: days
+          in: query
+          required: false
+          description: >
+            How many days to return, ending today. Clamped server-side to 1..31; an
+            absent or unparseable value falls back to 7.
+          schema: { type: integer, minimum: 1, maximum: 31, default: 7 }
+      responses:
+        '200':
+          description: Per-day earnings over the requested window.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [days, total_minor, currency]
+                properties:
+                  days:
+                    type: array
+                    description: One entry per day in the window, oldest first.
+                    items:
+                      type: object
+                      required: [date, earned_minor, deliveries]
+                      properties:
+                        date:
+                          type: string
+                          format: date
+                          description: "The region-local calendar day, YYYY-MM-DD."
+                        earned_minor:
+                          type: integer
+                          description: "Credits minus debits on driver_payable that day; 0 for a day with no work."
+                        deliveries:
+                          type: integer
+                          description: "Distinct deliveries credited that day (driver-level entries are not counted)."
+                  total_minor:
+                    type: integer
+                    description: Sum of `earned_minor` across the window.
+                  currency: { type: string, example: USD }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
   /driver/referrals:
     get:
       tags: [Driver]
@@ -1175,10 +1252,10 @@ paths:
                 type: object
                 required: [code, referred_count, reward_minor, referral_earned_minor]
                 properties:
-                  code: { type: string, description: The driver's shareable referral code. }
-                  referred_count: { type: integer, description: Drivers who have applied this code. }
-                  reward_minor: { type: integer, description: Current per-side reward (REFERRAL_REWARD_MINOR; 0 = dark). }
-                  referral_earned_minor: { type: integer, description: Unpaid referral credit owed to this driver. }
+                  code: { type: string, description: "The driver's shareable referral code." }
+                  referred_count: { type: integer, description: "Drivers who have applied this code." }
+                  reward_minor: { type: integer, description: "Current per-side reward (REFERRAL_REWARD_MINOR; 0 = dark)." }
+                  referral_earned_minor: { type: integer, description: "Unpaid referral credit owed to this driver." }
         '401': { $ref: '#/components/responses/Unauthorized' }
 
   /driver/referrals/apply:
@@ -1238,7 +1315,7 @@ paths:
                 token: { type: string, maxLength: 200 }
                 platform: { type: string, enum: [android, ios] }
       responses:
-        '204': { description: Registered. }
+        '204': { description: "Registered." }
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
     delete:
@@ -1257,7 +1334,7 @@ paths:
               properties:
                 token: { type: string, maxLength: 200 }
       responses:
-        '204': { description: Removed (idempotent). }
+        '204': { description: "Removed (idempotent)." }
         '401': { $ref: '#/components/responses/Unauthorized' }
 
   /driver/deliveries/active:
@@ -1332,7 +1409,7 @@ paths:
                 stars: { type: integer, minimum: 1, maximum: 5 }
                 comment: { type: string, maxLength: 500 }
       responses:
-        '204': { description: Rated. }
+        '204': { description: "Rated." }
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '404': { $ref: '#/components/responses/NotFound' }
@@ -1591,9 +1668,7 @@ paths:
               type: object
               required: [template]
               properties:
-                template:
-                  type: string
-                  enum: [arriving, running_late, cant_find, cod_reminder]
+                template: { $ref: '#/components/schemas/CourierMessageTemplate' }
       responses:
         '200':
           description: Processed. `sent` indicates whether an SMS actually went out.
@@ -2001,6 +2076,19 @@ components:
           enum: [available, offline, busy]
 
     # ADR-003 driver-profile schemas (P0).
+    PayoutsBlockedReason:
+      type: string
+      description: >
+        Why `can_receive_payouts` is false. `payouts_not_configured` is a PLATFORM
+        misconfiguration (the server cannot encrypt an account reference, so
+        `POST /v1/driver/payout-methods` returns 503) and is NOT anything the driver can
+        clear: surface it as "payouts are unavailable right now", never as a step for the
+        courier to complete. The other three are driver state, already visible as
+        `verification_status` / `kyc_tier` / the payout-methods list. Named so the enum has
+        ONE definition: it is mirrored by PAYOUTS_BLOCKED_REASONS in code and CI-guarded
+        for parity.
+      enum: [payouts_not_configured, not_verified, kyc_tier_too_low, no_payout_method]
+
     DriverCapabilities:
       type: object
       description: >-
@@ -2011,6 +2099,30 @@ components:
         can_go_online: { type: boolean }
         can_receive_payouts: { type: boolean }
         can_handle_high_value_cod: { type: boolean }
+        payouts_blocked_reason:
+          oneOf:
+            - { $ref: '#/components/schemas/PayoutsBlockedReason' }
+            - { type: "null" }
+          description: >
+            Why `can_receive_payouts` is false; null when it is true. Advisory and
+            additive: it never gates anything, and a client that ignores it behaves exactly
+            as before. Added because a bare `false` was indistinguishable from a server
+            misconfiguration that no courier could clear.
+
+    VehicleType:
+      type: string
+      description: >
+        The 5-class vehicle taxonomy (R25). Named so the enum has ONE definition —
+        it is mirrored by VEHICLE_TYPES in code and CI-guarded for parity.
+      enum: [bicycle, motorbike, car, van, foot, large_truck]
+
+    CourierMessageTemplate:
+      type: string
+      description: >
+        The whitelisted courier→recipient quick-messages (P2). There is no free-form
+        body. Named so the enum has ONE definition — mirrored by
+        COURIER_MESSAGE_TEMPLATES in code and CI-guarded for parity.
+      enum: [arriving, running_late, cant_find, cod_reminder]
 
     DriverVehicle:
       type: object
@@ -2018,7 +2130,7 @@ components:
       required: [id, type]
       properties:
         id: { type: string, format: uuid }
-        type: { type: string, enum: [bicycle, motorbike, car, van, foot, large_truck] }
+        type: { $ref: '#/components/schemas/VehicleType' }
         make: { type: [string, "null"] }
         model: { type: [string, "null"] }
         colour: { type: [string, "null"] }
@@ -2139,7 +2251,7 @@ components:
       description: A weekly availability window in local minutes-of-day (ADR-003 P4).
       required: [day_of_week, start_minute, end_minute]
       properties:
-        day_of_week: { type: integer, minimum: 0, maximum: 6, description: 0=Sun … 6=Sat }
+        day_of_week: { type: integer, minimum: 0, maximum: 6, description: "0=Sun … 6=Sat" }
         start_minute: { type: integer, minimum: 0, maximum: 1439 }
         end_minute: { type: integer, minimum: 1, maximum: 1440 }
 

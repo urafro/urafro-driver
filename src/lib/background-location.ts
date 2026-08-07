@@ -10,9 +10,10 @@ import { colors } from '../theme';
 // foreground AND background) to this TaskManager task, which posts them to the
 // platform. The task runs headless — no React context — so it reads the token from
 // the secure store itself. NOTE: background-location tasks DO NOT run in Expo Go;
-// this requires a development/EAS build to actually execute (built to spec, pending
-// on-device verification). The app degrades to foreground-only location when the
-// background permission is denied.
+// this requires a development/EAS build to actually execute — which is how it was
+// device-verified (EAS preview build on a real Samsung: fixes kept streaming with
+// the screen locked and the driver moving). The app degrades to foreground-only
+// location when the background permission is denied.
 
 export const LOCATION_TASK = 'urafro-driver-location';
 

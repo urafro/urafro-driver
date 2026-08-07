@@ -452,9 +452,20 @@ export default function ActiveJob({
           <Text variant="title" color="textPrimary">
             Why can&apos;t this be completed?
           </Text>
+          {/* HONEST COPY: this used to promise "won't count against you when the
+              reason checks out". Nothing on the platform vets a reason — no code
+              path reads failure_reason to decide anything about the driver — so
+              that was a fairness mechanic the app was inventing. State only what
+              the platform actually does: the reason is persisted on the delivery
+              and rides the `delivery.failed` webhook to the merchant, which is
+              what ops works from. Claims about consequences to the DRIVER stay
+              off this panel in both directions: a failure DOES already move the
+              driver's completion_rate (the Profile tab renders it as "% completed"),
+              and this app cannot be force-updated, so any promise made here outlives
+              the flag flip that would falsify it. */}
           <Text variant="body" color="textFaint">
-            The merchant is told and the job is offered to another driver. This won&apos;t count against you when the
-            reason checks out.
+            The merchant is told and can send the job out again. The reason you pick goes on the record, and it&apos;s
+            what ops uses to sort out what happened.
           </Text>
           {FAILURE_REASONS.map((r) => (
             <Pressable
