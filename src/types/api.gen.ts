@@ -1350,11 +1350,18 @@ export interface components {
             /** @enum {string} */
             status?: "available" | "offline" | "busy";
         };
+        /**
+         * @description Why `can_receive_payouts` is false. `payouts_not_configured` is a PLATFORM misconfiguration (the server cannot encrypt an account reference, so `POST /v1/driver/payout-methods` returns 503) and is NOT anything the driver can clear: surface it as "payouts are unavailable right now", never as a step for the courier to complete. The other three are driver state, already visible as `verification_status` / `kyc_tier` / the payout-methods list. Named so the enum has ONE definition: it is mirrored by PAYOUTS_BLOCKED_REASONS in code and CI-guarded for parity.
+         * @enum {string}
+         */
+        PayoutsBlockedReason: "payouts_not_configured" | "not_verified" | "kyc_tier_too_low" | "no_payout_method";
         /** @description Computed gates the app renders affordances off — never a single flag. P0 derives can_go_online from approval; later phases add payouts/COD. */
         DriverCapabilities: {
             can_go_online: boolean;
             can_receive_payouts: boolean;
             can_handle_high_value_cod: boolean;
+            /** @description Why `can_receive_payouts` is false; null when it is true. Advisory and additive: it never gates anything, and a client that ignores it behaves exactly as before. Added because a bare `false` was indistinguishable from a server misconfiguration that no courier could clear. */
+            payouts_blocked_reason?: components["schemas"]["PayoutsBlockedReason"] | null;
         };
         /**
          * @description The 5-class vehicle taxonomy (R25). Named so the enum has ONE definition — it is mirrored by VEHICLE_TYPES in code and CI-guarded for parity.

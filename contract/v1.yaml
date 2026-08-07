@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: urAfro Next API
-  version: "1.12.0"
+  version: "1.13.0"
   description: >
     Crowdsourced last-mile delivery platform. A monetised delivery API, live in
     production. This file is the source of truth for the `/v1` surface; the NestJS
@@ -2076,6 +2076,19 @@ components:
           enum: [available, offline, busy]
 
     # ADR-003 driver-profile schemas (P0).
+    PayoutsBlockedReason:
+      type: string
+      description: >
+        Why `can_receive_payouts` is false. `payouts_not_configured` is a PLATFORM
+        misconfiguration (the server cannot encrypt an account reference, so
+        `POST /v1/driver/payout-methods` returns 503) and is NOT anything the driver can
+        clear: surface it as "payouts are unavailable right now", never as a step for the
+        courier to complete. The other three are driver state, already visible as
+        `verification_status` / `kyc_tier` / the payout-methods list. Named so the enum has
+        ONE definition: it is mirrored by PAYOUTS_BLOCKED_REASONS in code and CI-guarded
+        for parity.
+      enum: [payouts_not_configured, not_verified, kyc_tier_too_low, no_payout_method]
+
     DriverCapabilities:
       type: object
       description: >-
@@ -2086,6 +2099,15 @@ components:
         can_go_online: { type: boolean }
         can_receive_payouts: { type: boolean }
         can_handle_high_value_cod: { type: boolean }
+        payouts_blocked_reason:
+          oneOf:
+            - { $ref: '#/components/schemas/PayoutsBlockedReason' }
+            - { type: "null" }
+          description: >
+            Why `can_receive_payouts` is false; null when it is true. Advisory and
+            additive: it never gates anything, and a client that ignores it behaves exactly
+            as before. Added because a bare `false` was indistinguishable from a server
+            misconfiguration that no courier could clear.
 
     VehicleType:
       type: string
