@@ -1355,6 +1355,11 @@ export interface components {
          * @enum {string}
          */
         PayoutsBlockedReason: "payouts_not_configured" | "not_verified" | "kyc_tier_too_low" | "no_payout_method";
+        /**
+         * @description Why `cod_cap_minor` is 0, i.e. why the courier will be shown no cash-collecting work at all. `ops_restriction` is a deliberate ops cash ceiling on this courier (it appears nowhere else in this payload and the courier cannot clear it: they have to be told to contact ops). `not_verified` means verification is what zeroes the cap, and is already visible as `verification_status`. The list is exhaustive: since ADR-010 a verified courier's cap has a $20 floor, so absent data (an unvalued vehicle) can no longer produce a 0. Named so the enum has ONE definition — it is mirrored by COD_BLOCKED_REASONS in code and CI-guarded for parity.
+         * @enum {string}
+         */
+        CodBlockedReason: "ops_restriction" | "not_verified";
         /** @description Computed gates the app renders affordances off — never a single flag. P0 derives can_go_online from approval; later phases add payouts/COD. */
         DriverCapabilities: {
             can_go_online: boolean;
@@ -1411,12 +1416,14 @@ export interface components {
             verification_status: "unverified" | "in_review" | "verified" | "suspended" | "banned";
             /** @description 0 none · 1 identity verified · 2 identity + licence (gates payouts/high-value COD). */
             kyc_tier: number;
-            /** @description The driver's collateral-backed COD cash limit (minor units) = min(⅓·vehicle estimated value, KYC-tier ceiling, ops override). 0 until ops value a vehicle — an unvalued driver can't carry COD (ADR-002 §10 / C1). */
+            /** @description The driver's collateral-backed COD cash limit (minor units) = min(max(⅓·vehicle estimated value, starter allowance), KYC-tier ceiling, ops override) (ADR-002 §10 / C1). The starter allowance is $20 and applies only to a VERIFIED courier, as the floor under an unvalued (or cheaply valued) vehicle — before ADR-010 an unvalued vehicle meant 0, which removed every cash job from the courier's offers with nothing to say why. An unverified courier with an unvalued vehicle is still 0. A 0 here is always explained by `cod_blocked_reason`. */
             cod_cap_minor: number;
             /** @description COD cash the driver currently holds and owes onward (minor units) (C2). */
             cod_outstanding_minor: number;
             /** @description Remaining COD the driver can still accept = max(0, cap − outstanding) (C8). */
             cod_headroom_minor: number;
+            /** @description Why `cod_cap_minor` is 0; null when it is above 0. Advisory and additive (ADR-010): it never gates anything, and a client that ignores it behaves exactly as before. Added because a 0 cap silently filters every cash-collecting job out of the courier's offers, and neither the courier nor the app could tell an ops cash restriction from a step nobody had done yet — the app had to guess from whether a vehicle row existed. */
+            cod_blocked_reason?: components["schemas"]["CodBlockedReason"] | null;
             /** @enum {string} */
             status: "available" | "offline" | "busy";
             /** @description #66 (batching). How many jobs the driver may run at once (platform config). 1 (default) ⇒ no batching — the app never polls offers while busy. >1 ⇒ the app surfaces on-route batch offers (added via /append) and the multi-leg run screen. Additive (A3) — omit-safe for old clients. */

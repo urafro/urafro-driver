@@ -49,6 +49,28 @@ export function press(instance: ReactTestInstance): void {
   });
 }
 
+/** Fire a Pressable's onPress TWICE inside one act() — a real double tap, where both
+ *  presses land before React has re-rendered with the first one's state. The `disabled`
+ *  prop and any state check are useless against this, so it is the only way to test a
+ *  synchronous re-entry guard (see CourierMessages: a fumbled tap must not text a
+ *  customer twice). */
+export function doublePress(instance: ReactTestInstance): void {
+  act(() => {
+    const { onPress } = instance.props as { onPress: () => void };
+    onPress();
+    onPress();
+  });
+}
+
+/** Let pending promises settle (a mocked fetch/API call) and re-render, inside act().
+ *  Two awaits: one for the mock's own resolution, one for the state update it queues. */
+export async function flush(): Promise<void> {
+  await act(async () => {
+    await Promise.resolve();
+    await Promise.resolve();
+  });
+}
+
 /** Unmount inside act() (runs effect cleanups — clears the offer countdown interval). */
 export function unmount(r: ReactTestRenderer): void {
   act(() => {

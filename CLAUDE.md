@@ -48,7 +48,14 @@ received-by note, and **proof of delivery three ways** — the at-door 4-digit c
 copy; the code rides the offline queue with a manual-fallback replay so a rejected code
 never strands a delivery), a **delivery photo** (camera → presigned binary PUT →
 `method='photo'`; live connection required, so this path never queues), and a subdued
-manual fallback. **Onboarding + identity** (ADR-003): the root is session- AND
+manual fallback. On the delivery leg it also carries the **customer-message card**
+(`src/components/CourierMessages.tsx`, built 2026-08-08 on readiness-audit decision D6):
+four fixed templates that the PLATFORM texts the recipient via
+`POST /driver/deliveries/:id/message`, so a courier does not have to hand out their own
+number to say "arriving" or "running late". The WhatsApp quick-replies moved under it as
+the labelled fallback rather than being deleted, because that rail is cost-gated on the
+platform's `RECIPIENT_SMS_ENABLED` and the card degrades to an honest "texts are off"
+note when the server answers `sent: false`. **Onboarding + identity** (ADR-003): the root is session- AND
 approval-gated, so a not-yet-`verified` driver lands in `src/screens/Onboarding.tsx`
 (ID + profile photo + terms; licence optional, raises the KYC tier) and only a verified
 one reaches the tabs. **Money screens:** Earnings (payable / today / COD owed /
@@ -82,14 +89,14 @@ Shift stays mounted and is merely hidden via `display:'none'` because its polls 
 listeners are the shift heartbeat, plus a persistent "on a delivery" chip on the other
 tabs so a wandering driver can't lose an in-flight job.
 
-**Next:** everything merged since the last founder device pass (the #89–#93 fixes and
-the contract-derived wire types) is on `main` but has NOT reached a handset — it needs
-an EAS preview build and a device pass. The remaining big rocks are platform-side, not
+**Next:** everything merged since the last founder device pass (the #89–#93 fixes, the
+contract-derived wire types, and the D6 customer-message card) is on `main` but has NOT
+reached a handset — it needs an EAS preview build and a device pass. The remaining big rocks are platform-side, not
 here: driver payouts and tenant pricing/invoicing (Phase C).
 **Tests:** `npm test` (vitest) covers the pure logic — api client, formatters, phone,
 geo, links, the queue retry policy, realtime, run/leg ordering, auction, and a
 contract-mirror guard; `npm run test:component` (jest-expo) renders the offers, board,
-active-job and earnings-chart components. The two runners split by extension: vitest
+active-job, courier-message and earnings-chart components. The two runners split by extension: vitest
 owns `*.test.ts`, jest owns `*.test.tsx`. My background is as an amateur
 business owner — weight your input toward the gaps I can't cover myself.
 

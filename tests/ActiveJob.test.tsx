@@ -70,6 +70,31 @@ describe('ActiveJob (component)', () => {
     unmount(single);
   });
 
+  it('D6: the customer-message card rides the delivery leg only, priced for a COD job', () => {
+    // Heading to the MERCHANT: "arriving now" would be about the wrong stop, so the
+    // card stays off the pickup leg (the send behaviour itself is CourierMessages.test).
+    const pickup = render(withToast(<ActiveJob job={assignedJob()} token="tok" onAction={jest.fn()} busy={false} />));
+    expect(textOf(pickup.root)).not.toContain('Tell the customer');
+    unmount(pickup);
+
+    const drop = render(
+      withToast(
+        <ActiveJob
+          job={assignedJob({ status: 'in_transit', collect_minor: 350 })}
+          token="tok"
+          onAction={jest.fn()}
+          busy={false}
+        />,
+      ),
+    );
+    const text = textOf(drop.root);
+    expect(text).toContain('Tell the customer');
+    expect(text).toContain('Arriving now');
+    expect(text).toContain('Have $3.50 cash ready'); // COD template, priced from the job
+    expect(text).toContain("I'm outside"); // the WhatsApp fallback moved here with it
+    unmount(drop);
+  });
+
   it('#66: a multi-leg run renders the pickup-first route strip (all pickups, then all drops)', () => {
     const legA = assignedJob({ id: 'A', status: 'assigned' });
     const legB = assignedJob({ id: 'B', status: 'assigned' });

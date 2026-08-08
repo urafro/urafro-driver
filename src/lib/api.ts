@@ -220,6 +220,38 @@ export function markFailed(token: string, id: string, reason?: FailureReason): P
   });
 }
 
+// ── Courier → recipient coordination SMS (P2 trust layer / ADR-041) ──────────
+/** One of the four whitelisted templates. There is no free-form body: the courier
+ *  picks a template and the PLATFORM renders and sends the text on its own SMS rail,
+ *  so the recipient sees URAFRO rather than the courier's number. That is the whole
+ *  reason this channel exists while masked calling stays deferred (ADR-042). */
+export type CourierMessageTemplate = Schemas['CourierMessageTemplate'];
+
+/** The endpoint's own 200 body. There is no named component for it in the contract,
+ *  so it is looked up from `paths` — never re-spelled here (see the header note).
+ *
+ *  `sent: false` is a SUCCESSFUL call that texted nobody: the recipient-SMS cost gate
+ *  is off (`disabled`), the order carries no recipient phone (`no_recipient_phone`),
+ *  or the SMS rail hiccupped (`send_failed`). A 200 therefore never means "the
+ *  customer was told" — the caller has to read `sent`. */
+export type CourierMessageResult =
+  paths['/driver/deliveries/{id}/message']['post']['responses'][200]['content']['application/json'];
+
+/** Send the recipient one fixed coordination SMS for an active job of THIS driver's.
+ *  404 when the delivery isn't theirs, 409 once it is terminal, 400 for `cod_reminder`
+ *  on a job with nothing to collect (the UI hides that template instead). */
+export function sendCourierMessage(
+  token: string,
+  id: string,
+  template: CourierMessageTemplate,
+): Promise<CourierMessageResult> {
+  return request(`/driver/deliveries/${id}/message`, {
+    method: 'POST',
+    token,
+    body: JSON.stringify({ template }),
+  });
+}
+
 // ── Profile + vehicle (ADR-003 P0) ────────────────────────────────────────────
 // Types come straight from the regenerated contract so the client can't drift.
 // (cod_cap_minor is the collateral-backed cap; cod_outstanding_minor/headroom are

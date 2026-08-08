@@ -8,11 +8,12 @@ import { watchLocation, type Coords } from '../lib/location';
 import { metersBetween } from '../lib/geo';
 import { money, placeLabel } from '../lib/format';
 import { runStops } from '../lib/run';
-import { mapsUrl, telUrl, waUrl } from '../lib/links';
+import { mapsUrl, telUrl } from '../lib/links';
 import { colors, FONT, iconSize, PILL, radius, shadow, space } from '../theme';
 import { animateNext } from '../lib/motion';
 import { Stepper, Text, Transition, useToast } from './ui';
 import RouteMap from './RouteMap';
+import CourierMessages from './CourierMessages';
 
 export type LifecycleAction = 'picked_up' | 'in_transit' | 'delivered' | 'failed';
 export interface ActionExtra {
@@ -53,9 +54,14 @@ const FAILURE_REASONS: { value: FailureReason; label: string; sub: string }[] = 
   { value: 'other', label: 'Something else', sub: 'Tell ops on WhatsApp afterwards' },
 ];
 
-// One-tap messages for the customer on the way to the door — the driver
-// shouldn't be typing on a moped. WhatsApp is the channel in this market.
-const QUICK_REPLIES = ["I'm outside", '5 minutes away', "Can't find you — call me?"];
+// D6 (2026-08-08): the one-tap customer messages now live in CourierMessages, which
+// leads with the platform-sent SMS templates and keeps the WhatsApp quick-replies as
+// the labelled fallback. The statuses that surface it: server-side the templates are
+// allowed in every active status, but on the PICKUP leg "arriving now" would mean
+// arriving at the MERCHANT, and a wrong text to a customer is worse than one the
+// courier waits a few minutes to send. So it appears after pickup, exactly where the
+// customer-facing quick-replies already lived.
+const CAN_MESSAGE_CUSTOMER = new Set(['picked_up', 'in_transit']);
 
 // The 4-segment progress stepper (Claimed / Picked up / On the way / Delivered).
 const STEPS = ['Claimed', 'Picked up', 'On the way', 'Delivered'];
@@ -254,9 +260,6 @@ export default function ActiveJob({
   const call = () => {
     if (target.contact?.phone) void Linking.openURL(telUrl(target.contact.phone));
   };
-  // Quick-replies only make sense heading to the customer (the dropoff leg) and
-  // only when we have their number.
-  const customerPhone = !goingToPickup ? target.contact?.phone : undefined;
 
   const stepsDone = STEP_DONE[status] ?? 1;
   const hasGeo = target.geo?.lat != null && target.geo?.lng != null;
@@ -381,23 +384,23 @@ export default function ActiveJob({
               </Pressable>
             ) : null}
           </View>
-
-          {customerPhone ? (
-            <View style={styles.waRow}>
-              {QUICK_REPLIES.map((m) => (
-                <Pressable key={m} style={styles.waChip} onPress={() => void Linking.openURL(waUrl(customerPhone, m))}>
-                  <View style={styles.waChipInner}>
-                    <Feather name="message-circle" size={iconSize.sm} color={colors.textPrimary} />
-                    <Text variant="callout" color="textPrimary" style={styles.waChipText}>
-                      {m}
-                    </Text>
-                  </View>
-                </Pressable>
-              ))}
-            </View>
-          ) : null}
         </View>
       </Transition>
+
+      {/* D6: the customer-coordination card — four fixed templates the PLATFORM texts
+          the recipient (so the courier's number stays off the routine messages), with
+          the WhatsApp quick-replies kept below as the labelled fallback. Keyed on the
+          job so a pooled run's next leg starts with a clean send state instead of
+          inheriting the previous customer's "Sent" chips. */}
+      {CAN_MESSAGE_CUSTOMER.has(status) && job.id != null ? (
+        <CourierMessages
+          key={job.id}
+          jobId={job.id}
+          token={token}
+          collectMinor={codDue}
+          phone={target.contact?.phone ?? undefined}
+        />
+      ) : null}
 
       {/* Active-job map (Option B): the driver's live position relative to the
           current stop (merchant before pickup, customer after) on a Leaflet/OSM map.
@@ -686,19 +689,6 @@ const styles = StyleSheet.create({
   legBtnPrimary: { backgroundColor: colors.tabActive },
   legBtnGhost: { borderWidth: 1, borderColor: colors.textPrimary },
   legBtnInner: { flexDirection: 'row', alignItems: 'center', gap: space.xs },
-
-  waRow: { flexDirection: 'row', flexWrap: 'wrap', gap: space.sm, marginTop: space.sm },
-  waChip: {
-    minHeight: 48,
-    justifyContent: 'center',
-    backgroundColor: colors.bg,
-    borderRadius: PILL,
-    borderWidth: 1,
-    borderColor: colors.border,
-    paddingHorizontal: space.md,
-  },
-  waChipInner: { flexDirection: 'row', alignItems: 'center', gap: space.xs },
-  waChipText: {},
 
   // Earn / collect
   moneyRow: { flexDirection: 'row', alignItems: 'center', gap: space.sm },
